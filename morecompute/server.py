@@ -92,6 +92,10 @@ class NotebookServer:
             # Send current notebook data
             if self.notebook_handler:
                 emit('notebook_data', self.notebook_handler.to_dict())
+            else:
+                # Send empty notebook data to initialize the frontend
+                empty_notebook = NotebookHandler()
+                emit('notebook_data', empty_notebook.to_dict())
         
         @self.socketio.on('disconnect')
         def handle_disconnect():

@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "lib": ["dom", "es2015", "es2017"],
+    "strict": false,
+    "skipLibCheck": true
+  }
+}

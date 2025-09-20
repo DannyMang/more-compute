@@ -47,13 +47,6 @@ def main(file_or_command, port, host, no_browser, debug):
     if notebook_file:
         server.set_notebook_file(notebook_file)
     
-    # Start server in a separate thread
-    server_thread = Thread(target=lambda: server.run(debug=debug), daemon=True)
-    server_thread.start()
-    
-    # Wait a moment for server to start
-    time.sleep(1)
-    
     # Open browser
     url = f"http://{host}:{port}"
     
@@ -68,12 +61,25 @@ def main(file_or_command, port, host, no_browser, debug):
     if not no_browser:
         webbrowser.open(url)
     
-    try:
-        # Keep the main thread alive
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        if not debug:
+    if debug:
+        # Run server directly in main thread for debug mode
+        try:
+            server.run(debug=True)
+        except KeyboardInterrupt:
+            print("\nShutting down MoreCompute...")
+    else:
+        # Run server in thread for clean mode
+        server_thread = Thread(target=lambda: server.run(debug=False), daemon=True)
+        server_thread.start()
+        
+        # Wait a moment for server to start
+        time.sleep(1)
+        
+        try:
+            # Keep the main thread alive
+            while True:
+                time.sleep(1)
+        except KeyboardInterrupt:
             # Ask for confirmation
             click.echo("\n")
             if click.confirm("Are you sure you want to quit?"):
@@ -85,9 +91,6 @@ def main(file_or_command, port, host, no_browser, debug):
                         time.sleep(1)
                 except KeyboardInterrupt:
                     click.echo("\n        Thanks for using MoreCompute!\n")
-        else:
-            print("\nShutting down MoreCompute...")
-        server.shutdown()
 
 
 if __name__ == '__main__':
