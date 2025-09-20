@@ -1,0 +1,63 @@
+Metadata-Version: 2.1
+Name: morecompute
+Version: 0.1.0
+Summary: An interactive notebook environment like Marimo and Google Colab
+Home-page: https://github.com/yourusername/morecompute
+Author: Your Name
+Author-email: your.email@example.com
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3.8
+Classifier: Programming Language :: Python :: 3.9
+Classifier: Programming Language :: Python :: 3.10
+Classifier: Programming Language :: Python :: 3.11
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: flask>=2.0.0
+Requires-Dist: flask-socketio>=5.0.0
+Requires-Dist: jupyter>=1.0.0
+Requires-Dist: nbformat>=5.0.0
+Requires-Dist: websocket-client>=1.0.0
+Requires-Dist: click>=8.0.0
+
+# MoreCompute
+
+An interactive notebook environment similar to Marimo and Google Colab that runs locally.
+
+## Installation
+
+```bash
+pip install morecompute
+```
+
+## Usage
+
+### Create a new notebook
+```bash
+kernal_run new
+```
+
+### Open an existing notebook
+```bash
+kernal_run your_notebook.py
+# or
+kernal_run your_notebook.ipynb
+```
+
+## Features
+
+- Interactive notebook interface similar to Google Colab
+- Support for both `.py` and `.ipynb` files
+- Real-time cell execution
+- Local development environment
+- Web-based interface accessible via localhost
+
+## Development
+
+To install in development mode:
+```bash
+pip install -e .
+```

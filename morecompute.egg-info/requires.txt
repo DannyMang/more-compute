@@ -1,0 +1,6 @@
+flask>=2.0.0
+flask-socketio>=5.0.0
+jupyter>=1.0.0
+nbformat>=5.0.0
+websocket-client>=1.0.0
+click>=8.0.0

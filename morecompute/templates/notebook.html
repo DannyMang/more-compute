@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MoreCompute Notebook</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/default.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/matchbrackets.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <h1 class="logo">
+                    <span class="logo-icon">⚡</span>
+                    MoreCompute
+                </h1>
+                <div class="header-controls">
+                    <button id="add-cell-btn" class="btn btn-primary">
+                        + Code
+                    </button>
+                    <button id="add-text-cell-btn" class="btn btn-secondary">
+                        + Text
+                    </button>
+                    <button id="save-btn" class="btn btn-secondary">
+                        💾 Save
+                    </button>
+                    <button id="reset-kernel-btn" class="btn btn-danger">
+                        🔄 Reset
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main content -->
+        <main class="main-content">
+            <div class="notebook-container">
+                <div id="notebook" class="notebook">
+                    <!-- Cells will be dynamically added here -->
+                </div>
+            </div>
+        </main>
+
+        <!-- Status bar -->
+        <footer class="status-bar">
+            <div class="status-info">
+                <span id="connection-status" class="status-item">🔌 Connecting...</span>
+                <span id="kernel-status" class="status-item">🧠 Ready</span>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Cell template -->
+    <template id="cell-template">
+        <div class="cell" data-cell-index="">
+            <div class="cell-controls">
+                <div class="cell-type-selector">
+                    <select class="cell-type-dropdown">
+                        <option value="code">Code</option>
+                        <option value="markdown">Markdown</option>
+                    </select>
+                </div>
+                <div class="cell-actions">
+                    <button class="btn-icon run-cell-btn" title="Run cell (Shift+Enter)">
+                        ▶️
+                    </button>
+                    <button class="btn-icon delete-cell-btn" title="Delete cell">
+                        🗑️
+                    </button>
+                </div>
+            </div>
+            <div class="cell-content">
+                <div class="cell-input">
+                    <div class="cell-prompt">
+                        <span class="execution-count">[ ]</span>
+                    </div>
+                    <div class="cell-editor-container">
+                        <textarea class="cell-editor"></textarea>
+                    </div>
+                </div>
+                <div class="cell-output" style="display: none;">
+                    <div class="output-content"></div>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <script src="{{ url_for('static', filename='notebook.js') }}"></script>
+</body>
+</html>
