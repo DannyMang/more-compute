@@ -12,9 +12,10 @@ from .executor import CellExecutor
 class NotebookServer:
     """Flask server for the interactive notebook interface"""
     
-    def __init__(self, host='localhost', port=8888):
+    def __init__(self, host='localhost', port=8888, debug=False):
         self.host = host
         self.port = port
+        self.debug = debug
         self.notebook_handler: Optional[NotebookHandler] = None
         self.executor = CellExecutor()
         
@@ -72,20 +73,30 @@ class NotebookServer:
         def get_variables():
             """Get current kernel variables"""
             return jsonify(self.executor.get_variables())
+        
+        @self.app.route('/assets/<path:filename>')
+        def serve_assets(filename):
+            """Serve assets from the assets directory"""
+            import os
+            from flask import send_from_directory
+            assets_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets')
+            return send_from_directory(assets_dir, filename)
     
     def _setup_socket_handlers(self):
         """Setup SocketIO event handlers"""
         
         @self.socketio.on('connect')
         def handle_connect():
-            print('Client connected')
+            if self.debug:
+                print('Client connected')
             # Send current notebook data
             if self.notebook_handler:
                 emit('notebook_data', self.notebook_handler.to_dict())
         
         @self.socketio.on('disconnect')
         def handle_disconnect():
-            print('Client disconnected')
+            if self.debug:
+                print('Client disconnected')
         
         @self.socketio.on('execute_cell')
         def handle_execute_cell(data):
@@ -216,7 +227,16 @@ class NotebookServer:
     
     def run(self, debug=False):
         """Run the Flask server"""
-        print(f"Starting MoreCompute server on {self.host}:{self.port}")
+        if debug:
+            print(f"Starting MoreCompute server on {self.host}:{self.port}")
+        
+        # Configure logging based on debug mode
+        import logging
+        if not debug:
+            # Suppress Flask and Werkzeug logs
+            logging.getLogger('werkzeug').setLevel(logging.ERROR)
+            self.app.logger.disabled = True
+        
         self.socketio.run(self.app, host=self.host, port=self.port, debug=debug)
     
     def shutdown(self):

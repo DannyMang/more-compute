@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MoreCompute Notebook</title>
+    <title>MoreCompute</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/default.min.css">
@@ -12,81 +12,93 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/matchbrackets.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 </head>
 <body>
     <div id="app">
-        <!-- Header -->
-        <header class="header">
-            <div class="header-content">
-                <h1 class="logo">
-                    <span class="logo-icon">⚡</span>
-                    MoreCompute
-                </h1>
-                <div class="header-controls">
-                    <button id="add-cell-btn" class="btn btn-primary">
-                        + Code
-                    </button>
-                    <button id="add-text-cell-btn" class="btn btn-secondary">
-                        + Text
-                    </button>
-                    <button id="save-btn" class="btn btn-secondary">
-                        💾 Save
-                    </button>
-                    <button id="reset-kernel-btn" class="btn btn-danger">
-                        🔄 Reset
-                    </button>
+        <!-- Main notebook area -->
+        <div class="notebook-wrapper">
+            <div id="notebook" class="notebook">
+                <!-- Empty state -->
+                <div id="empty-state" class="empty-state">
+                    <div class="add-cell-line" data-position="0">
+                        <div class="add-cell-button" data-cell-type="code">
+                            <img src="/assets/icons/add.svg" alt="Add cell" />
+                            <div class="cell-type-menu">
+                                <button class="cell-type-option" data-type="code">Code</button>
+                                <button class="cell-type-option" data-type="markdown">Text</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </header>
-
-        <!-- Main content -->
-        <main class="main-content">
-            <div class="notebook-container">
-                <div id="notebook" class="notebook">
-                    <!-- Cells will be dynamically added here -->
-                </div>
-            </div>
-        </main>
-
-        <!-- Status bar -->
-        <footer class="status-bar">
-            <div class="status-info">
-                <span id="connection-status" class="status-item">🔌 Connecting...</span>
-                <span id="kernel-status" class="status-item">🧠 Ready</span>
-            </div>
-        </footer>
+        </div>
+        
+        <!-- Hidden elements -->
+        <div style="display: none;">
+            <span id="connection-status">Connected</span>
+            <span id="kernel-status">Ready</span>
+        </div>
     </div>
 
     <!-- Cell template -->
     <template id="cell-template">
-        <div class="cell" data-cell-index="">
-            <div class="cell-controls">
-                <div class="cell-type-selector">
-                    <select class="cell-type-dropdown">
-                        <option value="code">Code</option>
-                        <option value="markdown">Markdown</option>
-                    </select>
-                </div>
-                <div class="cell-actions">
-                    <button class="btn-icon run-cell-btn" title="Run cell (Shift+Enter)">
-                        ▶️
-                    </button>
-                    <button class="btn-icon delete-cell-btn" title="Delete cell">
-                        🗑️
-                    </button>
+        <div class="cell-wrapper">
+            <!-- Add line above -->
+            <div class="add-cell-line add-line-above" data-position="above">
+                <div class="add-cell-button">
+                    <img src="/assets/icons/add.svg" alt="Add cell" />
+                    <div class="cell-type-menu">
+                        <button class="cell-type-option" data-type="code">Code</button>
+                        <button class="cell-type-option" data-type="markdown">Text</button>
+                    </div>
                 </div>
             </div>
-            <div class="cell-content">
-                <div class="cell-input">
-                    <div class="cell-prompt">
-                        <span class="execution-count">[ ]</span>
-                    </div>
-                    <div class="cell-editor-container">
-                        <textarea class="cell-editor"></textarea>
+            
+            <!-- Main cell -->
+            <div class="cell" data-cell-index="">
+                <!-- Cell controls (appear on hover) -->
+                <div class="cell-hover-controls">
+                    <div class="cell-actions-right">
+                        <button class="cell-action run-cell-btn" title="Run cell (Shift+Enter)">
+                            <img src="/assets/icons/play.svg" alt="Run" />
+                        </button>
+                        <button class="cell-action drag-handle" title="Drag to reorder">
+                            <img src="/assets/icons/up-down.svg" alt="Drag" />
+                        </button>
+                        <button class="cell-action delete-cell-btn" title="Delete cell">
+                            <img src="/assets/icons/trash.svg" alt="Delete" />
+                        </button>
                     </div>
                 </div>
-                <div class="cell-output" style="display: none;">
-                    <div class="output-content"></div>
+                
+                <!-- Cell content -->
+                <div class="cell-content">
+                    <div class="cell-input">
+                        <div class="cell-editor-container">
+                            <textarea class="cell-editor"></textarea>
+                        </div>
+                    </div>
+                    <div class="cell-output" style="display: none;">
+                        <div class="output-content"></div>
+                    </div>
+                </div>
+                
+                <!-- Execution count indicator -->
+                <div class="execution-indicator">
+                    <span class="execution-count">[ ]</span>
+                    <span class="execution-time" style="display: none;"></span>
+                </div>
+            </div>
+            
+            <!-- Add line below -->
+            <div class="add-cell-line add-line-below" data-position="below">
+                <div class="add-cell-button">
+                    <img src="/assets/icons/add.svg" alt="Add cell" />
+                    <div class="cell-type-menu">
+                        <button class="cell-type-option" data-type="code">Code</button>
+                        <button class="cell-type-option" data-type="markdown">Text</button>
+                    </div>
                 </div>
             </div>
         </div>

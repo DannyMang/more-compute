@@ -12,7 +12,8 @@ from .notebook import NotebookHandler
 @click.option('--port', '-p', default=8888, help='Port to run the server on')
 @click.option('--host', '-h', default='localhost', help='Host to run the server on')
 @click.option('--no-browser', is_flag=True, help='Do not open browser automatically')
-def main(file_or_command, port, host, no_browser):
+@click.option('--debug', is_flag=True, help='Show debug logs and Flask output')
+def main(file_or_command, port, host, no_browser, debug):
     """
     MoreCompute Interactive Notebook
     
@@ -25,7 +26,7 @@ def main(file_or_command, port, host, no_browser):
     if file_or_command == 'new':
         # Create a new notebook
         notebook_file = None
-        print("Creating new notebook...")
+        filename = "intro.py"
     else:
         # Open existing file
         if not os.path.exists(file_or_command):
@@ -37,17 +38,17 @@ def main(file_or_command, port, host, no_browser):
             return
             
         notebook_file = os.path.abspath(file_or_command)
-        print(f"Opening notebook: {notebook_file}")
+        filename = os.path.basename(file_or_command)
     
     # Start the server
-    server = NotebookServer(host=host, port=port)
+    server = NotebookServer(host=host, port=port, debug=debug)
     
     # Set the current notebook file
     if notebook_file:
         server.set_notebook_file(notebook_file)
     
     # Start server in a separate thread
-    server_thread = Thread(target=server.run, daemon=True)
+    server_thread = Thread(target=lambda: server.run(debug=debug), daemon=True)
     server_thread.start()
     
     # Wait a moment for server to start
@@ -55,7 +56,14 @@ def main(file_or_command, port, host, no_browser):
     
     # Open browser
     url = f"http://{host}:{port}"
-    print(f"MoreCompute notebook server running at: {url}")
+    
+    if not debug:
+        # Clean output
+        click.echo(f"\n        Edit {filename} in your browser!")
+        click.echo(f"\n        ➜  URL: {url}\n")
+    else:
+        # Debug output
+        print(f"MoreCompute notebook server running at: {url}")
     
     if not no_browser:
         webbrowser.open(url)
@@ -65,7 +73,20 @@ def main(file_or_command, port, host, no_browser):
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nShutting down MoreCompute...")
+        if not debug:
+            # Ask for confirmation
+            click.echo("\n")
+            if click.confirm("Are you sure you want to quit?"):
+                click.echo("\n        Thanks for using MoreCompute!\n")
+            else:
+                # Continue running
+                try:
+                    while True:
+                        time.sleep(1)
+                except KeyboardInterrupt:
+                    click.echo("\n        Thanks for using MoreCompute!\n")
+        else:
+            print("\nShutting down MoreCompute...")
         server.shutdown()
 
 

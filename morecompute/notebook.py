@@ -53,8 +53,8 @@ class NotebookHandler:
         if file_path and os.path.exists(file_path):
             self.load_file()
         elif not file_path:
-            # Create a new notebook with one empty cell
-            self.cells = [Cell()]
+            # Create a new notebook with one empty text cell
+            self.cells = [Cell(cell_type="markdown", source="")]
     
     def load_file(self):
         """Load notebook from either .py or .ipynb file"""
