@@ -336,6 +336,33 @@ body {
     margin-top: 2px;
 }
 
+/* Execution Status Icon */
+.execution-status {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 16;
+    opacity: 0;
+    animation: fadeInStatus 0.3s ease forwards;
+}
+
+@keyframes fadeInStatus {
+    0% {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+.status-icon {
+    width: 16px;
+    height: 16px;
+    display: block;
+}
+
 /* Cell Output */
 .cell-output {
     border-top: 1px solid #f3f4f6;

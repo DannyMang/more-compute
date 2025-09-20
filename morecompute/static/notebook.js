@@ -1,467 +1,473 @@
-console.log('notebook.js loading...');
 class NotebookApp {
-    constructor() {
-        this.cells = [];
-        this.currentCellIndex = null;
-        this.editors = new Map();
-        this.sortable = null;
-        console.log('NotebookApp constructor called!');
-        this.socket = io();
-        this.initializeEventListeners();
-        this.initializeSocketListeners();
-        console.log('NotebookApp fully initialized!');
+  constructor() {
+    this.cells = [];
+    this.currentCellIndex = null;
+    this.editors = new Map();
+    this.sortable = null;
+    this.socket = io();
+    this.initializeEventListeners();
+    this.initializeSocketListeners();
+  }
+  initializeEventListeners() {
+    document.addEventListener("keydown", (e) => {
+      if (e.shiftKey && e.key === "Enter") {
+        e.preventDefault();
+        this.executeCurrentCell();
+      }
+      if (e.ctrlKey && e.key === "s") {
+        e.preventDefault();
+        this.saveNotebook();
+      }
+      if (e.key === "Escape") {
+        this.clearActiveCells();
+      }
+    });
+    this.initializeSortable();
+  }
+  initializeSocketListeners() {
+    this.socket.on("connect", () => {
+      const statusEl = document.getElementById("connection-status");
+      if (statusEl) statusEl.textContent = "🔌 Connected";
+    });
+    this.socket.on("disconnect", () => {
+      const statusEl = document.getElementById("connection-status");
+      if (statusEl) statusEl.textContent = "🔌 Disconnected";
+    });
+    this.socket.on("notebook_data", (data) => {
+      this.loadNotebook(data);
+    });
+    this.socket.on("execution_result", (data) => {
+      this.handleExecutionResult(data);
+    });
+    this.socket.on("execution_error", (data) => {
+      console.error("Execution error:", data.error);
+      this.showError(data.error);
+    });
+    this.socket.on("notebook_updated", (data) => {
+      this.loadNotebook(data);
+    });
+    this.socket.on("kernel_reset", () => {
+      this.clearAllOutputs();
+      const statusEl = document.getElementById("kernel-status");
+      if (statusEl) statusEl.textContent = "🧠 Reset";
+    });
+    this.socket.on("save_success", (data) => {
+      this.showSaveSuccess(data.file_path);
+    });
+    this.socket.on("save_error", (data) => {
+      console.error("Save error:", data.error);
+      this.showError("Save failed: " + data.error);
+    });
+  }
+  loadNotebook(data) {
+    this.cells = data.cells || [];
+    this.renderNotebook();
+  }
+  renderNotebook() {
+    const notebook = document.getElementById("notebook");
+    const emptyState = document.getElementById("empty-state");
+    if (!notebook || !emptyState) return;
+    const existingCells = notebook.querySelectorAll(".cell-wrapper");
+    existingCells.forEach((cell) => cell.remove());
+    if (this.cells.length === 0) {
+      emptyState.style.display = "flex";
+      this.setupAddCellListeners(emptyState.querySelector(".add-cell-line"), 0);
+    } else {
+      emptyState.style.display = "none";
+      this.cells.forEach((cellData, index) => {
+        this.renderCell(cellData, index);
+      });
+      this.initializeSortable();
     }
-    initializeEventListeners() {
-        document.addEventListener('keydown', (e) => {
-            if (e.shiftKey && e.key === 'Enter') {
-                e.preventDefault();
-                this.executeCurrentCell();
-            }
-            if (e.ctrlKey && e.key === 's') {
-                e.preventDefault();
-                this.saveNotebook();
-            }
-            if (e.key === 'Escape') {
-                this.clearActiveCells();
-            }
-        });
-        this.initializeSortable();
+  }
+  renderCell(cellData, index) {
+    const template = document.getElementById("cell-template");
+    if (!template) return;
+    const cellWrapper = template.content.cloneNode(true);
+    const cell = cellWrapper.querySelector(".cell");
+    const wrapper = cellWrapper.querySelector(".cell-wrapper");
+    if (!cell || !wrapper) return;
+    cell.setAttribute("data-cell-index", index.toString());
+    wrapper.setAttribute("data-cell-index", index.toString());
+    const executionCount = cell.querySelector(".execution-count");
+    if (executionCount) {
+      if (cellData.execution_count) {
+        executionCount.textContent = `[${cellData.execution_count}]`;
+      } else {
+        executionCount.textContent = "[ ]";
+      }
     }
-    initializeSocketListeners() {
-        this.socket.on('connect', () => {
-            const statusEl = document.getElementById('connection-status');
-            if (statusEl)
-                statusEl.textContent = '🔌 Connected';
-        });
-        this.socket.on('disconnect', () => {
-            const statusEl = document.getElementById('connection-status');
-            if (statusEl)
-                statusEl.textContent = '🔌 Disconnected';
-        });
-        this.socket.on('notebook_data', (data) => {
-            this.loadNotebook(data);
-        });
-        this.socket.on('execution_result', (data) => {
-            this.handleExecutionResult(data);
-        });
-        this.socket.on('execution_error', (data) => {
-            console.error('Execution error:', data.error);
-            this.showError(data.error);
-        });
-        this.socket.on('notebook_updated', (data) => {
-            this.loadNotebook(data);
-        });
-        this.socket.on('kernel_reset', () => {
-            this.clearAllOutputs();
-            const statusEl = document.getElementById('kernel-status');
-            if (statusEl)
-                statusEl.textContent = '🧠 Reset';
-        });
-        this.socket.on('save_success', (data) => {
-            this.showSaveSuccess(data.file_path);
-        });
-        this.socket.on('save_error', (data) => {
-            console.error('Save error:', data.error);
-            this.showError('Save failed: ' + data.error);
-        });
+    const editor = cell.querySelector(".cell-editor");
+    if (editor) {
+      editor.value = cellData.source || "";
     }
-    loadNotebook(data) {
-        this.cells = data.cells || [];
-        this.renderNotebook();
+    this.setupCellEventListeners(wrapper, index);
+    const addLineAbove = wrapper.querySelector(".add-line-above");
+    const addLineBelow = wrapper.querySelector(".add-line-below");
+    this.setupAddCellListeners(addLineAbove, index);
+    this.setupAddCellListeners(addLineBelow, index + 1);
+    const notebook = document.getElementById("notebook");
+    if (notebook) {
+      notebook.appendChild(wrapper);
     }
-    renderNotebook() {
-        const notebook = document.getElementById('notebook');
-        const emptyState = document.getElementById('empty-state');
-        if (!notebook || !emptyState)
-            return;
-        const existingCells = notebook.querySelectorAll('.cell-wrapper');
-        existingCells.forEach(cell => cell.remove());
-        if (this.cells.length === 0) {
-            emptyState.style.display = 'flex';
-            this.setupAddCellListeners(emptyState.querySelector('.add-cell-line'), 0);
-        }
-        else {
-            emptyState.style.display = 'none';
-            this.cells.forEach((cellData, index) => {
-                this.renderCell(cellData, index);
-            });
-            this.initializeSortable();
-        }
+    this.initializeCodeMirror(cell, index, cellData.cell_type || "code");
+    if (cellData.outputs && cellData.outputs.length > 0) {
+      this.renderCellOutputs(cell, cellData.outputs);
     }
-    renderCell(cellData, index) {
-        const template = document.getElementById('cell-template');
-        if (!template)
-            return;
-        const cellWrapper = template.content.cloneNode(true);
-        const cell = cellWrapper.querySelector('.cell');
-        const wrapper = cellWrapper.querySelector('.cell-wrapper');
-        if (!cell || !wrapper)
-            return;
-        cell.setAttribute('data-cell-index', index.toString());
-        wrapper.setAttribute('data-cell-index', index.toString());
-        const executionCount = cell.querySelector('.execution-count');
-        if (executionCount) {
-            if (cellData.execution_count) {
-                executionCount.textContent = `[${cellData.execution_count}]`;
-            }
-            else {
-                executionCount.textContent = '[ ]';
-            }
-        }
-        const editor = cell.querySelector('.cell-editor');
-        if (editor) {
-            editor.value = cellData.source || '';
-        }
-        this.setupCellEventListeners(wrapper, index);
-        const addLineAbove = wrapper.querySelector('.add-line-above');
-        const addLineBelow = wrapper.querySelector('.add-line-below');
-        this.setupAddCellListeners(addLineAbove, index);
-        this.setupAddCellListeners(addLineBelow, index + 1);
-        const notebook = document.getElementById('notebook');
-        if (notebook) {
-            notebook.appendChild(wrapper);
-        }
-        this.initializeCodeMirror(cell, index, cellData.cell_type || 'code');
-        if (cellData.outputs && cellData.outputs.length > 0) {
-            this.renderCellOutputs(cell, cellData.outputs);
-        }
+  }
+  initializeSortable() {
+    const notebook = document.getElementById("notebook");
+    if (!notebook) return;
+    if (this.sortable) {
+      this.sortable.destroy();
     }
-    initializeSortable() {
-        const notebook = document.getElementById('notebook');
-        if (!notebook)
-            return;
-        if (this.sortable) {
-            this.sortable.destroy();
+    this.sortable = Sortable.create(notebook, {
+      handle: ".drag-handle",
+      animation: 150,
+      ghostClass: "sortable-ghost",
+      dragClass: "sortable-drag",
+      filter: ".empty-state",
+      onEnd: (evt) => {
+        const oldIndex = evt.oldIndex;
+        const newIndex = evt.newIndex;
+        if (oldIndex !== newIndex) {
+          this.reorderCells(oldIndex, newIndex);
         }
-        this.sortable = Sortable.create(notebook, {
-            handle: '.drag-handle',
-            animation: 150,
-            ghostClass: 'sortable-ghost',
-            dragClass: 'sortable-drag',
-            filter: '.empty-state',
-            onEnd: (evt) => {
-                const oldIndex = evt.oldIndex;
-                const newIndex = evt.newIndex;
-                if (oldIndex !== newIndex) {
-                    this.reorderCells(oldIndex, newIndex);
-                }
-            }
-        });
+      },
+    });
+  }
+  setupAddCellListeners(addLine, insertIndex) {
+    if (!addLine) {
+      console.log("No addLine found");
+      return;
     }
-    setupAddCellListeners(addLine, insertIndex) {
-        if (!addLine) {
-            console.log('No addLine found');
-            return;
-        }
-        const addButton = addLine.querySelector('.add-cell-button');
-        const menu = addLine.querySelector('.cell-type-menu');
-        console.log('Setting up add cell listeners for index:', insertIndex);
-        console.log('Add button:', addButton);
-        console.log('Menu:', menu);
-        if (addButton) {
-            addButton.addEventListener('click', (e) => {
-                console.log('Add button clicked!');
-                e.preventDefault();
-                e.stopPropagation();
-                this.showCellTypeMenu(menu);
-            });
-        }
-        const codeOption = menu === null || menu === void 0 ? void 0 : menu.querySelector('[data-type="code"]');
-        const markdownOption = menu === null || menu === void 0 ? void 0 : menu.querySelector('[data-type="markdown"]');
-        console.log('Code option:', codeOption);
-        console.log('Markdown option:', markdownOption);
-        if (codeOption) {
-            codeOption.addEventListener('click', (e) => {
-                console.log('Code option clicked! Adding code cell at index:', insertIndex);
-                e.preventDefault();
-                e.stopPropagation();
-                this.addCell('code', insertIndex);
-                this.hideCellTypeMenu(menu);
-            });
-        }
-        if (markdownOption) {
-            markdownOption.addEventListener('click', (e) => {
-                console.log('Markdown option clicked! Adding markdown cell at index:', insertIndex);
-                e.preventDefault();
-                e.stopPropagation();
-                this.addCell('markdown', insertIndex);
-                this.hideCellTypeMenu(menu);
-            });
-        }
+    const addButton = addLine.querySelector(".add-cell-button");
+    const menu = addLine.querySelector(".cell-type-menu");
+    if (addButton) {
+      addButton.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.showCellTypeMenu(menu);
+      });
     }
-    showCellTypeMenu(menu) {
-        if (menu) {
-            menu.style.display = 'block';
-        }
+    const codeOption =
+      menu === null || menu === void 0
+        ? void 0
+        : menu.querySelector('[data-type="code"]');
+    const markdownOption =
+      menu === null || menu === void 0
+        ? void 0
+        : menu.querySelector('[data-type="markdown"]');
+    if (codeOption) {
+      codeOption.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.addCell("code", insertIndex);
+        this.hideCellTypeMenu(menu);
+      });
     }
-    hideCellTypeMenu(menu) {
-        if (menu) {
-            menu.style.display = 'none';
-        }
+    if (markdownOption) {
+      markdownOption.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.addCell("markdown", insertIndex);
+        this.hideCellTypeMenu(menu);
+      });
     }
-    clearActiveCells() {
-        document.querySelectorAll('.cell.active').forEach(cell => {
-            cell.classList.remove('active');
-        });
-        this.currentCellIndex = null;
+  }
+  showCellTypeMenu(menu) {
+    if (menu) {
+      menu.style.display = "block";
     }
-    reorderCells(oldIndex, newIndex) {
-        const cell = this.cells.splice(oldIndex, 1)[0];
-        this.cells.splice(newIndex, 0, cell);
-        this.updateCellIndices();
+  }
+  hideCellTypeMenu(menu) {
+    if (menu) {
+      menu.style.display = "none";
     }
-    updateCellIndices() {
-        const wrappers = document.querySelectorAll('.cell-wrapper');
-        wrappers.forEach((wrapper, index) => {
-            const cell = wrapper.querySelector('.cell');
-            if (cell) {
-                cell.setAttribute('data-cell-index', index.toString());
-                wrapper.setAttribute('data-cell-index', index.toString());
-            }
-        });
+  }
+  clearActiveCells() {
+    document.querySelectorAll(".cell.active").forEach((cell) => {
+      cell.classList.remove("active");
+    });
+    this.currentCellIndex = null;
+  }
+  reorderCells(oldIndex, newIndex) {
+    const cell = this.cells.splice(oldIndex, 1)[0];
+    this.cells.splice(newIndex, 0, cell);
+    this.updateCellIndices();
+  }
+  updateCellIndices() {
+    const wrappers = document.querySelectorAll(".cell-wrapper");
+    wrappers.forEach((wrapper, index) => {
+      const cell = wrapper.querySelector(".cell");
+      if (cell) {
+        cell.setAttribute("data-cell-index", index.toString());
+        wrapper.setAttribute("data-cell-index", index.toString());
+      }
+    });
+  }
+  focusNextCell(currentIndex) {
+    const nextIndex = currentIndex + 1;
+    if (nextIndex < this.cells.length) {
+      this.setActiveCell(nextIndex);
+    } else {
+      this.addCell("markdown", nextIndex);
     }
-    focusNextCell(currentIndex) {
-        const nextIndex = currentIndex + 1;
-        if (nextIndex < this.cells.length) {
-            this.setActiveCell(nextIndex);
-        }
-        else {
-            this.addCell('markdown', nextIndex);
-        }
+  }
+  initializeCodeMirror(cell, index, cellType) {
+    const textarea = cell.querySelector(".cell-editor");
+    if (!textarea) return;
+    const mode = cellType === "code" ? "python" : "text/plain";
+    const editor = CodeMirror.fromTextArea(textarea, {
+      mode: mode,
+      lineNumbers: false,
+      theme: "default",
+      autoCloseBrackets: cellType === "code",
+      matchBrackets: cellType === "code",
+      indentUnit: 4,
+      lineWrapping: true,
+      placeholder:
+        cellType === "code"
+          ? "Enter your code here..."
+          : "Enter markdown text here...",
+      extraKeys: {
+        "Shift-Enter": () => {
+          if (cellType === "code") {
+            this.executeCell(index);
+          } else {
+            this.focusNextCell(index);
+          }
+        },
+        "Ctrl-Enter": () => {
+          this.executeCell(index);
+        },
+        Tab: cellType === "code" ? "indentMore" : false,
+        "Shift-Tab": cellType === "code" ? "indentLess" : false,
+      },
+    });
+    this.editors.set(index, editor);
+    editor.on("change", () => {
+      const source = editor.getValue();
+      this.updateCellSource(index, source);
+    });
+    editor.on("focus", () => {
+      this.setActiveCell(index);
+    });
+  }
+  setupCellEventListeners(wrapper, index) {
+    const cell = wrapper.querySelector(".cell");
+    if (!cell) return;
+    const runBtn = cell.querySelector(".run-cell-btn");
+    if (runBtn) {
+      runBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.executeCell(index);
+      });
     }
-    initializeCodeMirror(cell, index, cellType) {
-        const textarea = cell.querySelector('.cell-editor');
-        if (!textarea)
-            return;
-        const mode = cellType === 'code' ? 'python' : 'text/plain';
-        const editor = CodeMirror.fromTextArea(textarea, {
-            mode: mode,
-            lineNumbers: false,
-            theme: 'default',
-            autoCloseBrackets: cellType === 'code',
-            matchBrackets: cellType === 'code',
-            indentUnit: 4,
-            lineWrapping: true,
-            placeholder: cellType === 'code' ? 'Enter your code here...' : 'Enter markdown text here...',
-            extraKeys: {
-                'Shift-Enter': () => {
-                    if (cellType === 'code') {
-                        this.executeCell(index);
-                    }
-                    else {
-                        this.focusNextCell(index);
-                    }
-                },
-                'Ctrl-Enter': () => {
-                    this.executeCell(index);
-                },
-                'Tab': cellType === 'code' ? 'indentMore' : false,
-                'Shift-Tab': cellType === 'code' ? 'indentLess' : false
-            }
-        });
-        this.editors.set(index, editor);
-        editor.on('change', () => {
-            const source = editor.getValue();
-            this.updateCellSource(index, source);
-        });
-        editor.on('focus', () => {
-            this.setActiveCell(index);
-        });
+    const deleteBtn = cell.querySelector(".delete-cell-btn");
+    if (deleteBtn) {
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.deleteCell(index);
+      });
     }
-    setupCellEventListeners(wrapper, index) {
-        const cell = wrapper.querySelector('.cell');
-        if (!cell)
-            return;
-        const runBtn = cell.querySelector('.run-cell-btn');
-        if (runBtn) {
-            runBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.executeCell(index);
-            });
-        }
-        const deleteBtn = cell.querySelector('.delete-cell-btn');
-        if (deleteBtn) {
-            deleteBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.deleteCell(index);
-            });
-        }
-        cell.addEventListener('click', () => {
-            this.setActiveCell(index);
-        });
-        const dragHandle = cell.querySelector('.drag-handle');
-        if (dragHandle) {
-            dragHandle.addEventListener('mousedown', (e) => {
-                // Sortable handles the dragging
-            });
-        }
+    cell.addEventListener("click", () => {
+      this.setActiveCell(index);
+    });
+    const dragHandle = cell.querySelector(".drag-handle");
+    if (dragHandle) {
+      dragHandle.addEventListener("mousedown", (e) => {
+        // Sortable handles the dragging
+      });
     }
-    addCell(cellType = 'code', index = -1) {
-        const insertIndex = index !== undefined && index >= 0 ? index : this.cells.length;
-        console.log('addCell called with:', { cellType, index, insertIndex });
-        this.socket.emit('add_cell', {
-            index: insertIndex,
-            cell_type: cellType,
-            source: ''
-        });
-        console.log('Emitted add_cell event');
+  }
+  addCell(cellType = "code", index = -1) {
+    const insertIndex =
+      index !== undefined && index >= 0 ? index : this.cells.length;
+    this.socket.emit("add_cell", {
+      index: insertIndex,
+      cell_type: cellType,
+      source: "",
+    });
+  }
+  deleteCell(index) {
+    if (this.cells.length <= 1) {
+      return;
     }
-    deleteCell(index) {
-        if (this.cells.length <= 1) {
-            return;
-        }
-        this.socket.emit('delete_cell', {
-            cell_index: index
-        });
-        this.editors.delete(index);
+    this.socket.emit("delete_cell", {
+      cell_index: index,
+    });
+    this.editors.delete(index);
+  }
+  executeCell(index) {
+    const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
+    const editor = this.editors.get(index);
+    if (!editor) {
+      console.error("No editor found for cell", index);
+      return;
     }
-    executeCell(index) {
-        const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
-        const editor = this.editors.get(index);
-        if (!editor) {
-            console.error('No editor found for cell', index);
-            return;
-        }
-        const source = editor.getValue();
-        if (cell) {
-            cell.classList.add('executing');
-        }
-        const timeEl = cell === null || cell === void 0 ? void 0 : cell.querySelector('.execution-time');
-        if (timeEl) {
-            timeEl.style.display = 'none';
-        }
-        this.socket.emit('execute_cell', {
-            cell_index: index,
-            source: source
-        });
+    const source = editor.getValue();
+    if (cell) {
+      cell.classList.add("executing");
     }
-    executeCurrentCell() {
-        if (this.currentCellIndex !== null) {
-            this.executeCell(this.currentCellIndex);
-        }
+    const timeEl =
+      cell === null || cell === void 0
+        ? void 0
+        : cell.querySelector(".execution-time");
+    if (timeEl) {
+      timeEl.style.display = "none";
     }
-    updateCellSource(index, source) {
-        this.socket.emit('update_cell', {
-            cell_index: index,
-            source: source
-        });
+    this.socket.emit("execute_cell", {
+      cell_index: index,
+      source: source,
+    });
+  }
+  executeCurrentCell() {
+    if (this.currentCellIndex !== null) {
+      this.executeCell(this.currentCellIndex);
     }
-    changeCellType(index, newType) {
-        const editor = this.editors.get(index);
-        if (editor) {
-            const mode = newType === 'code' ? 'python' : 'text/plain';
-            editor.setOption('mode', mode);
-        }
-        if (this.cells[index]) {
-            this.cells[index].cell_type = newType;
-        }
+  }
+  updateCellSource(index, source) {
+    this.socket.emit("update_cell", {
+      cell_index: index,
+      source: source,
+    });
+  }
+  changeCellType(index, newType) {
+    const editor = this.editors.get(index);
+    if (editor) {
+      const mode = newType === "code" ? "python" : "text/plain";
+      editor.setOption("mode", mode);
     }
-    setActiveCell(index) {
-        document.querySelectorAll('.cell').forEach(cell => {
-            cell.classList.remove('active');
-        });
-        const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
-        if (cell) {
-            cell.classList.add('active');
-            const editor = this.editors.get(index);
-            if (editor) {
-                setTimeout(() => editor.focus(), 100);
-            }
-        }
-        this.currentCellIndex = index;
+    if (this.cells[index]) {
+      this.cells[index].cell_type = newType;
     }
-    handleExecutionResult(data) {
-        const { cell_index, result } = data;
-        const cell = document.querySelector(`.cell[data-cell-index="${cell_index}"]`);
-        if (!cell)
-            return;
-        cell.classList.remove('executing');
-        const executionCountEl = cell.querySelector('.execution-count');
-        if (result.execution_count && executionCountEl) {
-            executionCountEl.textContent = `[${result.execution_count}]`;
-        }
-        const timeEl = cell.querySelector('.execution-time');
-        if (timeEl && result.execution_time) {
-            timeEl.textContent = result.execution_time;
-            timeEl.style.display = 'block';
-        }
-        this.renderCellOutputs(cell, result.outputs);
+  }
+  setActiveCell(index) {
+    document.querySelectorAll(".cell").forEach((cell) => {
+      cell.classList.remove("active");
+    });
+    const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
+    if (cell) {
+      cell.classList.add("active");
+      const editor = this.editors.get(index);
+      if (editor) {
+        setTimeout(() => editor.focus(), 100);
+      }
     }
-    renderCellOutputs(cell, outputs) {
-        const outputContainer = cell.querySelector('.cell-output');
-        const outputContent = cell.querySelector('.output-content');
-        if (!outputContainer || !outputContent)
-            return;
-        if (!outputs || outputs.length === 0) {
-            outputContainer.style.display = 'none';
-            return;
-        }
-        outputContent.innerHTML = '';
-        outputContainer.style.display = 'block';
-        outputs.forEach(output => {
-            const outputElement = this.createOutputElement(output);
-            outputContent.appendChild(outputElement);
-        });
+    this.currentCellIndex = index;
+  }
+  handleExecutionResult(data) {
+    const { cell_index, result } = data;
+    const cell = document.querySelector(`.cell[data-cell-index="${cell_index}"]`);
+    if (!cell) return;
+    cell.classList.remove("executing");
+    const executionCountEl = cell.querySelector(".execution-count");
+    if (result.execution_count && executionCountEl) {
+      executionCountEl.textContent = `[${result.execution_count}]`;
     }
-    createOutputElement(output) {
-        const div = document.createElement('div');
-        switch (output.output_type) {
-            case 'stream':
-                div.className = `output-stream ${output.name}`;
-                div.textContent = output.text;
-                break;
-            case 'execute_result':
-                div.className = 'output-result';
-                div.textContent = output.data['text/plain'] || '';
-                break;
-            case 'error':
-                div.className = 'output-error';
-                div.textContent = output.traceback.join('\n');
-                break;
-            default:
-                div.className = 'output-stream';
-                div.textContent = JSON.stringify(output);
-        }
-        return div;
+    const timeEl = cell.querySelector(".execution-time");
+    if (timeEl && result.execution_time) {
+      timeEl.textContent = result.execution_time;
+      timeEl.style.display = "block";
     }
-    clearAllOutputs() {
-        document.querySelectorAll('.cell-output').forEach(output => {
-            output.style.display = 'none';
-            const content = output.querySelector('.output-content');
-            if (content)
-                content.innerHTML = '';
-        });
-        document.querySelectorAll('.execution-count').forEach(count => {
-            count.textContent = '[ ]';
-        });
+    
+    // Show execution status icon
+    const statusEl = cell.querySelector(".execution-status");
+    const statusIcon = cell.querySelector(".status-icon");
+    if (statusEl && statusIcon) {
+      if (result.status === "ok") {
+        statusIcon.src = "/assets/icons/check.svg";
+        statusIcon.alt = "Success";
+      } else {
+        statusIcon.src = "/assets/icons/x.svg";
+        statusIcon.alt = "Error";
+      }
+      statusEl.style.display = "block";
+      
+      // Hide the status icon after 3 seconds
+      setTimeout(() => {
+        statusEl.style.display = "none";
+      }, 3000);
     }
-    saveNotebook() {
-        this.socket.emit('save_notebook', {
-            file_path: 'notebook.py'
-        });
+    
+    this.renderCellOutputs(cell, result.outputs);
+  }
+  renderCellOutputs(cell, outputs) {
+    const outputContainer = cell.querySelector(".cell-output");
+    const outputContent = cell.querySelector(".output-content");
+    if (!outputContainer || !outputContent) return;
+    if (!outputs || outputs.length === 0) {
+      outputContainer.style.display = "none";
+      return;
     }
-    resetKernel() {
-        if (confirm('Are you sure you want to reset the kernel? This will clear all variables and outputs.')) {
-            this.socket.emit('reset_kernel');
-        }
+    outputContent.innerHTML = "";
+    outputContainer.style.display = "block";
+    outputs.forEach((output) => {
+      const outputElement = this.createOutputElement(output);
+      outputContent.appendChild(outputElement);
+    });
+  }
+  createOutputElement(output) {
+    const div = document.createElement("div");
+    switch (output.output_type) {
+      case "stream":
+        div.className = `output-stream ${output.name}`;
+        div.textContent = output.text;
+        break;
+      case "execute_result":
+        div.className = "output-result";
+        div.textContent = output.data["text/plain"] || "";
+        break;
+      case "error":
+        div.className = "output-error";
+        div.textContent = output.traceback.join("\n");
+        break;
+      default:
+        div.className = "output-stream";
+        div.textContent = JSON.stringify(output);
     }
-    showError(message) {
-        console.error('Error:', message);
-        alert('Error: ' + message);
+    return div;
+  }
+  clearAllOutputs() {
+    document.querySelectorAll(".cell-output").forEach((output) => {
+      output.style.display = "none";
+      const content = output.querySelector(".output-content");
+      if (content) content.innerHTML = "";
+    });
+    document.querySelectorAll(".execution-count").forEach((count) => {
+      count.textContent = "[ ]";
+    });
+  }
+  saveNotebook() {
+    this.socket.emit("save_notebook", {
+      file_path: "notebook.py",
+    });
+  }
+  resetKernel() {
+    if (
+      confirm(
+        "Are you sure you want to reset the kernel? This will clear all variables and outputs.",
+      )
+    ) {
+      this.socket.emit("reset_kernel");
     }
-    showSaveSuccess(filePath) {
-        const saveBtn = document.getElementById('save-btn');
-        if (saveBtn) {
-            const originalText = saveBtn.textContent;
-            saveBtn.textContent = '✅ Saved';
-            setTimeout(() => {
-                saveBtn.textContent = originalText;
-            }, 2000);
-        }
+  }
+  showError(message) {
+    console.error("Error:", message);
+    alert("Error: " + message);
+  }
+  showSaveSuccess(filePath) {
+    const saveBtn = document.getElementById("save-btn");
+    if (saveBtn) {
+      const originalText = saveBtn.textContent;
+      saveBtn.textContent = "✅ Saved";
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+      }, 2000);
     }
+  }
 }
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('DOM loaded, creating NotebookApp...');
-    window.notebookApp = new NotebookApp();
-    console.log('NotebookApp created and assigned to window!');
+document.addEventListener("DOMContentLoaded", () => {
+  window.notebookApp = new NotebookApp();
 });
