@@ -26,11 +26,12 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "flask>=2.0.0",
-        "flask-socketio>=5.0.0",
+        "fastapi>=0.104.0",
+        "uvicorn[standard]>=0.24.0",
+        "jinja2>=3.0.0",
+        "python-multipart>=0.0.5",
         "jupyter>=1.0.0",
         "nbformat>=5.0.0",
-        "websocket-client>=1.0.0",
         "click>=8.0.0",
     ],
     entry_points={

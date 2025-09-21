@@ -4,10 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MoreCompute</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <link rel="stylesheet" href="/static/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/default.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.0/socket.io.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js"></script>
@@ -16,6 +15,22 @@
 </head>
 <body>
     <div id="app">
+        <!-- Kernel status banner -->
+        <div id="kernel-banner" class="kernel-banner" style="display: none;">
+            <div class="kernel-message">
+                <span class="kernel-status-text">🔴 Kernel Disconnected</span>
+                <span class="kernel-subtitle">The notebook kernel has stopped running. Restart to continue.</span>
+            </div>
+        </div>
+        
+        <!-- Kernel status indicator -->
+        <div class="kernel-status-bar">
+            <div class="kernel-status-indicator">
+                <span id="kernel-status-dot" class="status-dot connecting"></span>
+                <span id="kernel-status-text" class="status-text">Connecting...</span>
+            </div>
+        </div>
+        
         <!-- Main notebook area -->
         <div class="notebook-wrapper">
             <div id="notebook" class="notebook">
@@ -78,6 +93,8 @@
                         <div class="cell-editor-container">
                             <textarea class="cell-editor"></textarea>
                         </div>
+                        <!-- Markdown rendered content -->
+                        <div class="markdown-rendered" style="display: none;"></div>
                     </div>
                     <div class="cell-output" style="display: none;">
                         <div class="output-content"></div>
@@ -109,6 +126,6 @@
         </div>
     </template>
 
-    <script src="{{ url_for('static', filename='notebook.js') }}"></script>
+    <script src="/static/notebook.js"></script>
 </body>
 </html>

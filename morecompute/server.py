@@ -1,16 +1,19 @@
-from flask import Flask, render_template, request, jsonify
-from flask_socketio import SocketIO, emit
-import os
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 import json
-import threading
-from typing import Optional
+import os
+import asyncio
+from typing import Optional, List
+from pathlib import Path
 
 from .notebook import NotebookHandler
 from .executor import CellExecutor
 
 
 class NotebookServer:
-    """Flask server for the interactive notebook interface"""
+    """FastAPI server for the interactive notebook interface"""
     
     def __init__(self, host='localhost', port=8888, debug=False):
         self.host = host
@@ -18,42 +21,49 @@ class NotebookServer:
         self.debug = debug
         self.notebook_handler: Optional[NotebookHandler] = None
         self.executor = CellExecutor()
+        self.active_connections: List[WebSocket] = []
         
-        # Create Flask app
-        self.app = Flask(__name__, 
-                        template_folder=os.path.join(os.path.dirname(__file__), 'templates'),
-                        static_folder=os.path.join(os.path.dirname(__file__), 'static'))
-        self.app.config['SECRET_KEY'] = 'morecompute-secret-key'
+        # Create FastAPI app
+        self.app = FastAPI(title="MoreCompute", description="Interactive Notebook")
         
-        # Initialize SocketIO
-        self.socketio = SocketIO(self.app, cors_allowed_origins="*")
-        
-        # Setup routes
+        # Setup static files and templates
+        self._setup_static_files()
         self._setup_routes()
-        self._setup_socket_handlers()
+        self._setup_websocket()
+    
+    def _setup_static_files(self):
+        """Setup static files and templates"""
+        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        static_dir = os.path.join(os.path.dirname(__file__), 'static')
+        assets_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets')
+        
+        self.templates = Jinja2Templates(directory=template_dir)
+        
+        # Mount static directories
+        self.app.mount("/static", StaticFiles(directory=static_dir), name="static")
+        self.app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
     
     def _setup_routes(self):
-        """Setup Flask routes"""
+        """Setup FastAPI routes"""
         
-        @self.app.route('/')
-        def index():
-            return render_template('notebook.html')
+        @self.app.get("/", response_class=HTMLResponse)
+        async def index(request: Request):
+            return self.templates.TemplateResponse("notebook.html", {"request": request})
         
-        @self.app.route('/api/notebook')
-        def get_notebook():
+        @self.app.get("/api/notebook")
+        async def get_notebook():
             """Get current notebook data"""
             if self.notebook_handler:
-                return jsonify(self.notebook_handler.to_dict())
+                return self.notebook_handler.to_dict()
             else:
                 # Return empty notebook
                 empty_notebook = NotebookHandler()
-                return jsonify(empty_notebook.to_dict())
+                return empty_notebook.to_dict()
         
-        @self.app.route('/api/save', methods=['POST'])
-        def save_notebook():
+        @self.app.post("/api/save")
+        async def save_notebook(data: dict):
             """Save current notebook"""
             try:
-                data = request.json
                 file_path = data.get('file_path')
                 
                 if not file_path:
@@ -62,163 +72,233 @@ class NotebookServer:
                 
                 if self.notebook_handler:
                     self.notebook_handler.save_file(file_path)
-                    return jsonify({'status': 'success', 'file_path': file_path})
+                    return {'status': 'success', 'file_path': file_path}
                 else:
-                    return jsonify({'status': 'error', 'message': 'No notebook loaded'})
+                    return {'status': 'error', 'message': 'No notebook loaded'}
                     
             except Exception as e:
-                return jsonify({'status': 'error', 'message': str(e)})
+                return {'status': 'error', 'message': str(e)}
         
-        @self.app.route('/api/variables')
-        def get_variables():
+        @self.app.get("/api/variables")
+        async def get_variables():
             """Get current kernel variables"""
-            return jsonify(self.executor.get_variables())
-        
-        @self.app.route('/assets/<path:filename>')
-        def serve_assets(filename):
-            """Serve assets from the assets directory"""
-            import os
-            from flask import send_from_directory
-            assets_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'assets')
-            return send_from_directory(assets_dir, filename)
+            return self.executor.get_variables()
     
-    def _setup_socket_handlers(self):
-        """Setup SocketIO event handlers"""
+    def _setup_websocket(self):
+        """Setup WebSocket endpoint"""
         
-        @self.socketio.on('connect')
-        def handle_connect():
+        @self.app.websocket("/ws")
+        async def websocket_endpoint(websocket: WebSocket):
+            await websocket.accept()
+            self.active_connections.append(websocket)
+            
             if self.debug:
-                print('Client connected')
-            # Send current notebook data
-            if self.notebook_handler:
-                emit('notebook_data', self.notebook_handler.to_dict())
+                print('Client connected via WebSocket')
+            
+            # Send initial notebook data
+            try:
+                if self.notebook_handler:
+                    await websocket.send_json({
+                        "type": "notebook_data",
+                        "data": self.notebook_handler.to_dict()
+                    })
+                else:
+                    # Send empty notebook data to initialize the frontend
+                    empty_notebook = NotebookHandler()
+                    await websocket.send_json({
+                        "type": "notebook_data", 
+                        "data": empty_notebook.to_dict()
+                    })
+            except Exception as e:
+                if self.debug:
+                    print(f"Error sending initial data: {e}")
+            
+            try:
+                while True:
+                    # Receive message from client
+                    message = await websocket.receive_json()
+                    await self._handle_websocket_message(websocket, message)
+                    
+            except WebSocketDisconnect:
+                if self.debug:
+                    print('Client disconnected')
+                self.active_connections.remove(websocket)
+            except Exception as e:
+                if self.debug:
+                    print(f"WebSocket error: {e}")
+                if websocket in self.active_connections:
+                    self.active_connections.remove(websocket)
+    
+    async def _handle_websocket_message(self, websocket: WebSocket, message: dict):
+        """Handle incoming WebSocket messages"""
+        message_type = message.get('type')
+        data = message.get('data', {})
+        
+        try:
+            if message_type == 'execute_cell':
+                await self._handle_execute_cell(websocket, data)
+            elif message_type == 'add_cell':
+                await self._handle_add_cell(websocket, data)
+            elif message_type == 'delete_cell':
+                await self._handle_delete_cell(websocket, data)
+            elif message_type == 'update_cell':
+                await self._handle_update_cell(websocket, data)
+            elif message_type == 'reset_kernel':
+                await self._handle_reset_kernel(websocket)
+            elif message_type == 'save_notebook':
+                await self._handle_save_notebook(websocket, data)
             else:
-                # Send empty notebook data to initialize the frontend
-                empty_notebook = NotebookHandler()
-                emit('notebook_data', empty_notebook.to_dict())
-        
-        @self.socketio.on('disconnect')
-        def handle_disconnect():
-            if self.debug:
-                print('Client disconnected')
-        
-        @self.socketio.on('execute_cell')
-        def handle_execute_cell(data):
-            """Execute a cell and return results"""
-            try:
-                cell_index = data.get('cell_index')
-                source_code = data.get('source')
-                
-                if source_code is None:
-                    emit('execution_error', {'error': 'No source code provided'})
-                    return
-                
-                # Execute the cell
-                result = self.executor.execute_cell(source_code)
-                
-                # Update cell in notebook if we have one
-                if self.notebook_handler and cell_index is not None:
-                    if 0 <= cell_index < len(self.notebook_handler.cells):
-                        cell = self.notebook_handler.cells[cell_index]
-                        cell.outputs = result['outputs']
-                        cell.execution_count = result['execution_count']
-                
-                # Send result back
-                emit('execution_result', {
-                    'cell_index': cell_index,
-                    'result': result
+                await websocket.send_json({
+                    "type": "error",
+                    "data": {"error": f"Unknown message type: {message_type}"}
                 })
-                
-            except Exception as e:
-                emit('execution_error', {'error': str(e)})
+        except Exception as e:
+            await websocket.send_json({
+                "type": "error",
+                "data": {"error": str(e)}
+            })
+    
+    async def _handle_execute_cell(self, websocket: WebSocket, data: dict):
+        """Execute a cell and return results"""
+        cell_index = data.get('cell_index')
+        source_code = data.get('source')
         
-        @self.socketio.on('update_cell')
-        def handle_update_cell(data):
-            """Update cell source code"""
+        if source_code is None:
+            await websocket.send_json({
+                "type": "execution_error",
+                "data": {"error": "No source code provided"}
+            })
+            return
+        
+        # Execute the cell
+        result = self.executor.execute_cell(source_code)
+        
+        # Update cell in notebook if we have one
+        if self.notebook_handler and cell_index is not None:
+            if 0 <= cell_index < len(self.notebook_handler.cells):
+                cell = self.notebook_handler.cells[cell_index]
+                cell.outputs = result['outputs']
+                cell.execution_count = result['execution_count']
+        
+        # Send result back
+        await websocket.send_json({
+            "type": "execution_result",
+            "data": {
+                "cell_index": cell_index,
+                "result": result
+            }
+        })
+    
+    async def _handle_add_cell(self, websocket: WebSocket, data: dict):
+        """Add a new cell"""
+        index = data.get('index', -1)
+        cell_type = data.get('cell_type', 'code')
+        source = data.get('source', '')
+        
+        if self.notebook_handler:
+            new_index = self.notebook_handler.add_cell(index, cell_type, source)
+        else:
+            # Create new notebook if none exists
+            self.notebook_handler = NotebookHandler()
+            new_index = self.notebook_handler.add_cell(index, cell_type, source)
+        
+        # Broadcast updated notebook to all connections
+        notebook_data = self.notebook_handler.to_dict()
+        for connection in self.active_connections:
             try:
-                cell_index = data.get('cell_index')
-                source = data.get('source', '')
-                
-                if self.notebook_handler and cell_index is not None:
-                    self.notebook_handler.update_cell(cell_index, source)
-                    
-                emit('cell_updated', {
-                    'cell_index': cell_index,
-                    'source': source
+                await connection.send_json({
+                    "type": "notebook_updated",
+                    "data": notebook_data
                 })
-                
-            except Exception as e:
-                emit('update_error', {'error': str(e)})
+            except:
+                # Remove failed connections
+                if connection in self.active_connections:
+                    self.active_connections.remove(connection)
+    
+    async def _handle_delete_cell(self, websocket: WebSocket, data: dict):
+        """Delete a cell"""
+        cell_index = data.get('cell_index')
         
-        @self.socketio.on('add_cell')
-        def handle_add_cell(data):
-            """Add a new cell"""
-            try:
-                index = data.get('index', -1)
-                cell_type = data.get('cell_type', 'code')
-                source = data.get('source', '')
-                
-                if self.notebook_handler:
-                    new_index = self.notebook_handler.add_cell(index, cell_type, source)
-                else:
-                    # Create new notebook if none exists
-                    self.notebook_handler = NotebookHandler()
-                    new_index = self.notebook_handler.add_cell(index, cell_type, source)
-                
-                # Broadcast updated notebook
-                emit('notebook_updated', self.notebook_handler.to_dict(), broadcast=True)
-                
-            except Exception as e:
-                emit('add_cell_error', {'error': str(e)})
+        if self.notebook_handler and cell_index is not None:
+            success = self.notebook_handler.delete_cell(cell_index)
+            if success:
+                # Broadcast updated notebook to all connections
+                notebook_data = self.notebook_handler.to_dict()
+                for connection in self.active_connections:
+                    try:
+                        await connection.send_json({
+                            "type": "notebook_updated",
+                            "data": notebook_data
+                        })
+                    except:
+                        # Remove failed connections
+                        if connection in self.active_connections:
+                            self.active_connections.remove(connection)
+            else:
+                await websocket.send_json({
+                    "type": "delete_error",
+                    "data": {"error": "Cell index out of range"}
+                })
+    
+    async def _handle_update_cell(self, websocket: WebSocket, data: dict):
+        """Update cell source code"""
+        cell_index = data.get('cell_index')
+        source = data.get('source', '')
         
-        @self.socketio.on('delete_cell')
-        def handle_delete_cell(data):
-            """Delete a cell"""
-            try:
-                cell_index = data.get('cell_index')
-                
-                if self.notebook_handler and cell_index is not None:
-                    success = self.notebook_handler.delete_cell(cell_index)
-                    if success:
-                        # Broadcast updated notebook
-                        emit('notebook_updated', self.notebook_handler.to_dict(), broadcast=True)
-                    else:
-                        emit('delete_error', {'error': 'Cell index out of range'})
-                        
-            except Exception as e:
-                emit('delete_error', {'error': str(e)})
+        if self.notebook_handler and cell_index is not None:
+            self.notebook_handler.update_cell(cell_index, source)
+            
+        await websocket.send_json({
+            "type": "cell_updated",
+            "data": {
+                "cell_index": cell_index,
+                "source": source
+            }
+        })
+    
+    async def _handle_reset_kernel(self, websocket: WebSocket):
+        """Reset the execution kernel"""
+        self.executor.reset_kernel()
         
-        @self.socketio.on('reset_kernel')
-        def handle_reset_kernel():
-            """Reset the execution kernel"""
-            try:
-                self.executor.reset_kernel()
-                
-                # Clear all cell outputs
-                if self.notebook_handler:
-                    for cell in self.notebook_handler.cells:
-                        cell.outputs = []
-                        cell.execution_count = None
-                
-                emit('kernel_reset', broadcast=True)
-                
-            except Exception as e:
-                emit('reset_error', {'error': str(e)})
+        # Clear all cell outputs
+        if self.notebook_handler:
+            for cell in self.notebook_handler.cells:
+                cell.outputs = []
+                cell.execution_count = None
         
-        @self.socketio.on('save_notebook')
-        def handle_save_notebook(data):
-            """Save the current notebook"""
+        # Broadcast kernel reset to all connections
+        for connection in self.active_connections:
             try:
-                file_path = data.get('file_path', 'untitled.py')
-                
-                if self.notebook_handler:
-                    self.notebook_handler.save_file(file_path)
-                    emit('save_success', {'file_path': file_path})
-                else:
-                    emit('save_error', {'error': 'No notebook loaded'})
-                    
-            except Exception as e:
-                emit('save_error', {'error': str(e)})
+                await connection.send_json({
+                    "type": "kernel_reset",
+                    "data": {}
+                })
+            except:
+                # Remove failed connections
+                if connection in self.active_connections:
+                    self.active_connections.remove(connection)
+    
+    async def _handle_save_notebook(self, websocket: WebSocket, data: dict):
+        """Save the current notebook"""
+        file_path = data.get('file_path', 'untitled.py')
+        
+        try:
+            if self.notebook_handler:
+                self.notebook_handler.save_file(file_path)
+                await websocket.send_json({
+                    "type": "save_success",
+                    "data": {"file_path": file_path}
+                })
+            else:
+                await websocket.send_json({
+                    "type": "save_error",
+                    "data": {"error": "No notebook loaded"}
+                })
+        except Exception as e:
+            await websocket.send_json({
+                "type": "save_error",
+                "data": {"error": str(e)}
+            })
     
     def set_notebook_file(self, file_path: str):
         """Set the current notebook file"""
@@ -230,20 +310,20 @@ class NotebookServer:
             self.notebook_handler = NotebookHandler()
     
     def run(self, debug=False):
-        """Run the Flask server"""
+        """Run the FastAPI server"""
+        import uvicorn
+        
         if debug:
-            print(f"Starting MoreCompute server on {self.host}:{self.port}")
+            print(f"Starting MoreCompute FastAPI server on {self.host}:{self.port}")
         
-        # Configure logging based on debug mode
-        import logging
-        if not debug:
-            # Suppress Flask and Werkzeug logs
-            logging.getLogger('werkzeug').setLevel(logging.ERROR)
-            self.app.logger.disabled = True
-        
-        self.socketio.run(self.app, host=self.host, port=self.port, debug=debug)
+        uvicorn.run(
+            self.app, 
+            host=self.host, 
+            port=self.port, 
+            log_level="info" if debug else "error",
+            access_log=debug
+        )
     
     def shutdown(self):
         """Shutdown the server"""
-        # This is a placeholder - Flask dev server doesn't have a clean shutdown method
         print("Server shutdown requested...")

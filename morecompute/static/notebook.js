@@ -4,10 +4,84 @@ class NotebookApp {
     this.currentCellIndex = null;
     this.editors = new Map();
     this.sortable = null;
-    this.socket = io();
     this.initializeEventListeners();
+    this.initializeWebSocket();
     this.initializeSocketListeners();
+    
+    // Fallback: Update status after a short delay to ensure everything is initialized
+    setTimeout(() => {
+      if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+        console.log('Fallback: Forcing kernel status update to connected');
+        this.updateKernelStatus('connected');
+      }
+    }, 1000);
   }
+  
+  initializeWebSocket() {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${location.host}/ws`;
+    
+    // Initialize event handlers storage
+    this.eventHandlers = {};
+    this.onConnect = null;
+    this.onDisconnect = null;
+    
+    this.socket = new WebSocket(wsUrl);
+    
+    this.socket.onopen = () => {
+      console.log('WebSocket connected!');
+      if (this.onConnect) {
+        this.onConnect();
+      }
+    };
+    
+    this.socket.onclose = (event) => {
+      console.log('WebSocket disconnected:', event);
+      if (this.onDisconnect) {
+        this.onDisconnect();
+      }
+    };
+    
+    this.socket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+    
+    this.socket.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      const { type, data } = message;
+      console.log('Received:', type, data);
+      if (this.eventHandlers && this.eventHandlers[type]) {
+        this.eventHandlers[type](data);
+      }
+    };
+    
+    // Socket.IO compatibility layer
+    this.socket.on = (event, callback) => {
+      console.log('Registering event handler for:', event);
+      if (event === 'connect') {
+        this.onConnect = callback;
+        // If already connected, call immediately
+        if (this.socket.readyState === WebSocket.OPEN) {
+          console.log('Socket already connected, calling connect handler immediately');
+          setTimeout(() => callback(), 0);
+        }
+      } else if (event === 'disconnect') {
+        this.onDisconnect = callback;
+      } else {
+        this.eventHandlers[event] = callback;
+      }
+    };
+    
+    this.socket.emit = (event, data) => {
+      console.log('Emitting:', event, data);
+      if (this.socket.readyState === WebSocket.OPEN) {
+        this.socket.send(JSON.stringify({ type: event, data }));
+      } else {
+        console.error('WebSocket not connected, cannot emit:', event);
+      }
+    };
+  }
+  
   initializeEventListeners() {
     document.addEventListener("keydown", (e) => {
       if (e.shiftKey && e.key === "Enter") {
@@ -24,14 +98,44 @@ class NotebookApp {
     });
     this.initializeSortable();
   }
+  updateKernelStatus(status) {
+    const dot = document.getElementById('kernel-status-dot');
+    const text = document.getElementById('kernel-status-text');
+    
+    if (dot && text) {
+      dot.classList.remove('connecting', 'connected', 'disconnected');
+      
+      switch (status) {
+        case 'connecting':
+          dot.classList.add('connecting');
+          text.textContent = 'Connecting...';
+          break;
+        case 'connected':
+          dot.classList.add('connected');
+          text.textContent = 'Kernel Ready';
+          break;
+        case 'disconnected':
+          dot.classList.add('disconnected');
+          text.textContent = 'Kernel Disconnected';
+          break;
+      }
+    }
+    
+    // Also update the old connection-status element if it exists
+    const statusEl = document.getElementById("connection-status");
+    if (statusEl) {
+      statusEl.textContent = status === 'connected' ? "🔌 Connected" : "🔌 Disconnected";
+    }
+  }
+  
   initializeSocketListeners() {
     this.socket.on("connect", () => {
-      const statusEl = document.getElementById("connection-status");
-      if (statusEl) statusEl.textContent = "🔌 Connected";
+      console.log('Connect event handler called!');
+      this.updateKernelStatus('connected');
     });
     this.socket.on("disconnect", () => {
-      const statusEl = document.getElementById("connection-status");
-      if (statusEl) statusEl.textContent = "🔌 Disconnected";
+      console.log('Disconnect event handler called!');
+      this.updateKernelStatus('disconnected');
     });
     this.socket.on("notebook_data", (data) => {
       this.loadNotebook(data);
@@ -306,6 +410,19 @@ class NotebookApp {
       console.error("No editor found for cell", index);
       return;
     }
+    
+    // Check if this is a text/markdown cell
+    const cellData = this.cells[index];
+    const cellType = cellData ? cellData.cell_type : 'code';
+    
+    if (cellType === 'markdown' || cellType === 'text') {
+      // For text/markdown cells, render the content instead of executing
+      console.log('Rendering text/markdown cell:', index);
+      this.renderMarkdownCell(index);
+      return;
+    }
+    
+    // For code cells, execute normally
     const source = editor.getValue();
     if (cell) {
       cell.classList.add("executing");
@@ -359,7 +476,9 @@ class NotebookApp {
   }
   handleExecutionResult(data) {
     const { cell_index, result } = data;
-    const cell = document.querySelector(`.cell[data-cell-index="${cell_index}"]`);
+    const cell = document.querySelector(
+      `.cell[data-cell-index="${cell_index}"]`,
+    );
     if (!cell) return;
     cell.classList.remove("executing");
     const executionCountEl = cell.querySelector(".execution-count");
@@ -371,7 +490,7 @@ class NotebookApp {
       timeEl.textContent = result.execution_time;
       timeEl.style.display = "block";
     }
-    
+
     // Show execution status icon
     const statusEl = cell.querySelector(".execution-status");
     const statusIcon = cell.querySelector(".status-icon");
@@ -384,13 +503,13 @@ class NotebookApp {
         statusIcon.alt = "Error";
       }
       statusEl.style.display = "block";
-      
+
       // Hide the status icon after 3 seconds
       setTimeout(() => {
         statusEl.style.display = "none";
       }, 3000);
     }
-    
+
     this.renderCellOutputs(cell, result.outputs);
   }
   renderCellOutputs(cell, outputs) {
@@ -439,6 +558,67 @@ class NotebookApp {
       count.textContent = "[ ]";
     });
   }
+  
+  renderMarkdownCell(index) {
+    const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
+    const editor = this.editors.get(index);
+    if (!editor || !cell) return;
+    
+    const source = editor.getValue().trim();
+    const outputContainer = cell.querySelector(".cell-output");
+    const outputContent = cell.querySelector(".output-content");
+    
+    if (!outputContainer || !outputContent) return;
+    
+    // Clear previous output
+    outputContent.innerHTML = "";
+    
+    if (!source) {
+      // Empty text cell
+      outputContainer.style.display = "none";
+      return;
+    }
+    
+    // Create rendered text output
+    const div = document.createElement("div");
+    div.className = "text-cell-output";
+    div.style.cssText = `
+      padding: 12px 16px;
+      line-height: 1.6;
+      color: #1f2937;
+      background: #ffffff;
+      border-radius: 6px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    `;
+    
+    // Simple markdown-like rendering
+    let htmlContent = source
+      // Headers
+      .replace(/^# (.*$)/gm, '<h1 style="font-size: 1.5em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">$1</h1>')
+      .replace(/^## (.*$)/gm, '<h2 style="font-size: 1.3em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">$1</h2>')
+      .replace(/^### (.*$)/gm, '<h3 style="font-size: 1.1em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">$1</h3>')
+      // Bold
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      // Italic
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      // Code
+      .replace(/`(.*?)`/g, '<code style="background: #f3f4f6; padding: 2px 4px; border-radius: 3px; font-family: monospace;">$1</code>')
+      // Line breaks
+      .replace(/\n\n/g, '</p><p style="margin: 8px 0;">')
+      .replace(/\n/g, '<br>');
+    
+    // Wrap in paragraphs if not already wrapped
+    if (!htmlContent.startsWith('<h') && !htmlContent.startsWith('<p')) {
+      htmlContent = '<p style="margin: 8px 0;">' + htmlContent + '</p>';
+    }
+    
+    div.innerHTML = htmlContent;
+    outputContent.appendChild(div);
+    outputContainer.style.display = "block";
+    
+    console.log('Text cell rendered for index:', index);
+  }
+  
   saveNotebook() {
     this.socket.emit("save_notebook", {
       file_path: "notebook.py",
