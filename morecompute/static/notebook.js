@@ -395,9 +395,6 @@ class NotebookApp {
     });
   }
   deleteCell(index) {
-    if (this.cells.length <= 1) {
-      return;
-    }
     this.socket.emit("delete_cell", {
       cell_index: index,
     });
