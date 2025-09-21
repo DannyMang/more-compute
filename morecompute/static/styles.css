@@ -17,6 +17,7 @@ body {
 #app {
     min-height: 100vh;
     padding: 0;
+    display: flex;
 }
 
 /* Kernel Status Banner */
@@ -652,4 +653,262 @@ body {
         border-bottom: 1px solid #e5e7eb;
         justify-content: flex-end;
     }
+}
+
+/* Sidebar Styles */
+.sidebar {
+    width: 60px;
+    background: #f8fafc;
+    border-right: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 0;
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+}
+
+.sidebar-item {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    margin: 4px auto;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.sidebar-item:hover {
+    background: #e2e8f0;
+}
+
+.sidebar-item.active {
+    background: #3b82f6;
+}
+
+.sidebar-item.active .sidebar-icon {
+    filter: brightness(0) invert(1);
+}
+
+.sidebar-icon {
+    width: 20px;
+    height: 20px;
+    opacity: 0.7;
+    transition: opacity 0.2s ease;
+}
+
+.sidebar-item:hover .sidebar-icon {
+    opacity: 1;
+}
+
+.sidebar-tooltip {
+    position: absolute;
+    left: 60px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #1f2937;
+    color: white;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+    z-index: 1000;
+}
+
+.sidebar-item:hover .sidebar-tooltip {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Main content adjustment */
+.main-content {
+    flex: 1;
+    margin-left: 60px;
+}
+
+/* Popup Overlay */
+.popup-overlay {
+    position: fixed;
+    left: 60px;
+    top: 0;
+    width: 400px;
+    height: 100vh;
+    background: white;
+    border-right: 1px solid #e2e8f0;
+    box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
+    z-index: 40;
+    overflow-y: auto;
+}
+
+/* Popup Content */
+.popup-content {
+    padding: 20px;
+}
+
+.popup-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.popup-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.popup-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.popup-close:hover {
+    background: #f3f4f6;
+    color: #374151;
+}
+
+/* File Browser Styles */
+.file-tree {
+    font-size: 14px;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    margin: 2px 0;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.file-item:hover {
+    background: #f3f4f6;
+}
+
+.file-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    opacity: 0.7;
+}
+
+.file-name {
+    color: #374151;
+}
+
+/* Python Environment Styles */
+.python-env-list {
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.env-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    margin: 8px 0;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.env-item:hover {
+    border-color: #3b82f6;
+    background: #f8fafc;
+}
+
+.env-item.active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+}
+
+.env-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.env-name {
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.env-path {
+    font-size: 12px;
+    color: #6b7280;
+    margin-top: 2px;
+}
+
+.env-version {
+    font-size: 12px;
+    color: #3b82f6;
+    font-weight: 500;
+}
+
+/* Settings Editor Styles */
+.settings-editor {
+    width: 100%;
+    height: 400px;
+    font-family: 'SF Mono', Monaco, monospace;
+    font-size: 13px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 12px;
+    resize: vertical;
+    background: #f9fafb;
+}
+
+.settings-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #2563eb;
+}
+
+.btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover {
+    background: #e5e7eb;
 }

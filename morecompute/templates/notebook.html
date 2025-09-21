@@ -15,6 +15,29 @@
 </head>
 <body>
     <div id="app">
+        <!-- Sidebar -->
+        <div id="sidebar" class="sidebar">
+            <div class="sidebar-item" data-popup="folder">
+                <img src="/assets/icons/folder.svg" alt="Folder" class="sidebar-icon" />
+                <div class="sidebar-tooltip">Files</div>
+            </div>
+            <div class="sidebar-item" data-popup="packages">
+                <img src="/assets/icons/packages.svg" alt="Packages" class="sidebar-icon" />
+                <div class="sidebar-tooltip">Packages</div>
+            </div>
+            <div class="sidebar-item" data-popup="python">
+                <img src="/assets/icons/python.svg" alt="Python" class="sidebar-icon" />
+                <div class="sidebar-tooltip">Python</div>
+            </div>
+            <div class="sidebar-item" data-popup="settings">
+                <img src="/assets/icons/setting.svg" alt="Settings" class="sidebar-icon" />
+                <div class="sidebar-tooltip">Settings</div>
+            </div>
+        </div>
+        
+        <!-- Popup overlay -->
+        <div id="popup-overlay" class="popup-overlay" style="display: none;"></div>
+        
         <!-- Kernel status banner -->
         <div id="kernel-banner" class="kernel-banner" style="display: none;">
             <div class="kernel-message">
@@ -32,6 +55,7 @@
         </div>
         
         <!-- Main notebook area -->
+        <div class="main-content">
         <div class="notebook-wrapper">
             <div id="notebook" class="notebook">
                 <!-- Empty state -->
@@ -47,6 +71,7 @@
                     </div>
                 </div>
             </div>
+        </div>
         </div>
         
         <!-- Hidden elements -->
@@ -127,5 +152,10 @@
     </template>
 
     <script src="/static/notebook.js"></script>
+    <script src="/static/popups/sidebar.js"></script>
+    <script src="/static/popups/folder-popup.js"></script>
+    <script src="/static/popups/packages-popup.js"></script>
+    <script src="/static/popups/python-popup.js"></script>
+    <script src="/static/popups/settings-popup.js"></script>
 </body>
 </html>
