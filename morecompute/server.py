@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .notebook import NotebookHandler
 from .executor import CellExecutor
+from .utils.pyEnv import PythonEnvironmentDetector
 
 
 class NotebookServer:
@@ -22,6 +23,7 @@ class NotebookServer:
         self.notebook_handler: Optional[NotebookHandler] = None
         self.executor = CellExecutor()
         self.active_connections: List[WebSocket] = []
+        self.python_detector = PythonEnvironmentDetector()
         
         # Create FastAPI app
         self.app = FastAPI(title="MoreCompute", description="Interactive Notebook")
@@ -83,6 +85,29 @@ class NotebookServer:
         async def get_variables():
             """Get current kernel variables"""
             return self.executor.get_variables()
+        
+        @self.app.get("/api/python-environments")
+        async def get_python_environments():
+            """Get detected Python environments (fast version)"""
+            try:
+                # Use fast detection to avoid hanging
+                environments = self.python_detector.detect_fast_environments()
+                #environments = self.python_detector.detect_all_environments()
+                #fix later
+                current_env = self.python_detector.get_current_environment()
+                
+                return {
+                    'status': 'success',
+                    'environments': environments,
+                    'current': current_env
+                }
+            except Exception as e:
+                return {
+                    'status': 'error',
+                    'message': str(e),
+                    'environments': [],
+                    'current': None
+                }
     
     def _setup_websocket(self):
         """Setup WebSocket endpoint"""

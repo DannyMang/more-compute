@@ -43,7 +43,8 @@ class FolderPopup {
       { name: 'requirements.txt', type: 'file', path: './requirements.txt' },
       { name: 'setup.py', type: 'file', path: './setup.py' },
       { name: '.gitignore', type: 'file', path: './.gitignore' },
-    ];\n  }
+    ];
+  }
   
   render() {
     this.container.innerHTML = '';
