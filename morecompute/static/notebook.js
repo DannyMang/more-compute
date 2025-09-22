@@ -580,33 +580,8 @@ class NotebookApp {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     `;
 
-    // Simple markdown-like rendering
-    let htmlContent = source
-      // Headers
-      .replace(
-        /^# (.*$)/gm,
-        '<h1 style="font-size: 1.5em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">$1</h1>',
-      )
-      .replace(
-        /^## (.*$)/gm,
-        '<h2 style="font-size: 1.3em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">$1</h2>',
-      )
-      .replace(
-        /^### (.*$)/gm,
-        '<h3 style="font-size: 1.1em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">$1</h3>',
-      )
-      // Bold
-      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
-      // Italic
-      .replace(/\*(.*?)\*/g, "<em>$1</em>")
-      // Code
-      .replace(
-        /`(.*?)`/g,
-        '<code style="background: #f3f4f6; padding: 2px 4px; border-radius: 3px; font-family: monospace;">$1</code>',
-      )
-      // Line breaks
-      .replace(/\n\n/g, '</p><p style="margin: 8px 0;">')
-      .replace(/\n/g, "<br>");
+    // Enhanced markdown rendering
+    let htmlContent = this.renderMarkdown(source);
 
     // Wrap in paragraphs if not already wrapped
     if (!htmlContent.startsWith("<h") && !htmlContent.startsWith("<p")) {
@@ -618,6 +593,117 @@ class NotebookApp {
     outputContainer.style.display = "block";
 
     console.log("Text cell rendered for index:", index);
+  }
+  
+  renderMarkdown(source) {
+    let html = source;
+    
+    // Store existing HTML elements to preserve them
+    const htmlElements = [];
+    html = html.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, (match) => {
+      const placeholder = `__HTML_${htmlElements.length}__`;
+      htmlElements.push(match);
+      return placeholder;
+    });
+    
+    // Store self-closing HTML tags
+    html = html.replace(/<[^>]+\/>/g, (match) => {
+      const placeholder = `__HTML_${htmlElements.length}__`;
+      htmlElements.push(match);
+      return placeholder;
+    });
+    
+    // Code blocks (must be processed first)
+    html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
+      return `<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 12px 0; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; border-left: 3px solid #3b82f6;">${this.escapeHtml(code.trim())}</pre>`;
+    });
+    
+    // Language-specific code blocks
+    html = html.replace(/```(\w+)\n([\s\S]*?)```/g, (match, lang, code) => {
+      return `<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 12px 0; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; border-left: 3px solid #3b82f6;"><code class="language-${lang}">${this.escapeHtml(code.trim())}</code></pre>`;
+    });
+    
+    // Images ![alt](src "title")
+    html = html.replace(/!\[([^\]]*)\]\(([^\)]+)(?:\s+"([^"]+)")?\)/g, (match, alt, src, title) => {
+      const titleAttr = title ? `title="${title}"` : '';
+      return `<img src="${src}" alt="${alt}" ${titleAttr} style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px;" />`;
+    });
+    
+    // Links [text](url "title")
+    html = html.replace(/\[([^\]]+)\]\(([^\)]+)(?:\s+"([^"]+)")?\)/g, (match, text, url, title) => {
+      const titleAttr = title ? `title="${title}"` : '';
+      const isInternal = url.startsWith('#');
+      const target = isInternal ? '' : 'target="_blank" rel="noopener noreferrer"';
+      return `<a href="${url}" ${titleAttr} ${target} style="color: #3b82f6; text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s;" onmouseover="this.style.borderBottomColor='#3b82f6'" onmouseout="this.style.borderBottomColor='transparent'">${text}</a>`;
+    });
+    
+    // Headers (with anchor links)
+    html = html.replace(/^### (.*$)/gm, (match, text) => {
+      const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+      return `<h3 id="${id}" style="font-size: 1.1em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">${text}</h3>`;
+    });
+    html = html.replace(/^## (.*$)/gm, (match, text) => {
+      const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+      return `<h2 id="${id}" style="font-size: 1.3em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">${text}</h2>`;
+    });
+    html = html.replace(/^# (.*$)/gm, (match, text) => {
+      const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+      return `<h1 id="${id}" style="font-size: 1.5em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">${text}</h1>`;
+    });
+    
+    // Unordered lists
+    html = html.replace(/^(\s*)[-*+] (.+)$/gm, (match, indent, text) => {
+      const depth = Math.floor(indent.length / 2);
+      return `<ul-item data-depth="${depth}">${text}</ul-item>`;
+    });
+    html = html.replace(/<ul-item data-depth="0">([\s\S]*?)<\/ul-item>/g, '<li style="margin: 4px 0;">$1</li>');
+    html = html.replace(/(<li[^>]*>[\s\S]*?<\/li>\s*)+/g, '<ul style="margin: 8px 0; padding-left: 20px;">$&</ul>');
+    
+    // Ordered lists
+    html = html.replace(/^(\s*)\d+\. (.+)$/gm, (match, indent, text) => {
+      return `<ol-item>${text}</ol-item>`;
+    });
+    html = html.replace(/<ol-item>([\s\S]*?)<\/ol-item>/g, '<li style="margin: 4px 0;">$1</li>');
+    html = html.replace(/(<li[^>]*>[\s\S]*?<\/li>\s*){2,}/g, '<ol style="margin: 8px 0; padding-left: 20px;">$&</ol>');
+    
+    // Bold and italic (after links to avoid conflicts)
+    html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    
+    // Inline code (after code blocks)
+    html = html.replace(/`([^`]+)`/g, '<code style="background: #f3f4f6; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.9em;">$1</code>');
+    
+    // Strikethrough
+    html = html.replace(/~~([^~]+)~~/g, '<del style="text-decoration: line-through; opacity: 0.7;">$1</del>');
+    
+    // Horizontal rules
+    html = html.replace(/^---$/gm, '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;" />');
+    
+    // Blockquotes
+    html = html.replace(/^> (.+)$/gm, '<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 12px; margin: 12px 0; color: #6b7280; font-style: italic;">$1</blockquote>');
+    
+    // Line breaks and paragraphs
+    html = html.replace(/\n\n+/g, '</p><p style="margin: 8px 0;">');
+    html = html.replace(/\n/g, '<br>');
+    
+    // Wrap in paragraphs if not already wrapped
+    if (!html.match(/^<(h[1-6]|ul|ol|pre|blockquote|hr)/)) {
+      html = '<p style="margin: 8px 0;">' + html + '</p>';
+    }
+    
+    // Restore HTML elements
+    htmlElements.forEach((element, index) => {
+      html = html.replace(`__HTML_${index}__`, element);
+    });
+    
+    return html;
+  }
+  
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   saveNotebook() {
