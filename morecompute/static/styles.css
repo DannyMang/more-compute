@@ -912,3 +912,59 @@ body {
 .btn-secondary:hover {
     background: #e5e7eb;
 }
+
+/* Metrics Popup Styles */
+.metrics-container {
+    font-size: 14px;
+}
+
+.metrics-placeholder {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6b7280;
+}
+
+.metrics-placeholder h3 {
+    font-size: 24px;
+    margin-bottom: 16px;
+    color: #1f2937;
+}
+
+.metrics-placeholder p {
+    margin-bottom: 24px;
+    font-size: 16px;
+}
+
+.coming-soon {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 24px;
+    margin: 20px 0;
+}
+
+.coming-soon ul {
+    list-style: none;
+    padding: 0;
+    margin: 16px 0;
+}
+
+.coming-soon li {
+    padding: 8px 0;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    font-size: 14px;
+    color: #374151;
+}
+
+.coming-soon li:last-child {
+    border-bottom: none;
+}
+
+.coming-soon p:last-child {
+    margin-top: 20px;
+    font-style: italic;
+    color: #9ca3af;
+    font-size: 14px;
+}

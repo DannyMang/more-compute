@@ -3,36 +3,37 @@ class SidebarManager {
   constructor() {
     this.activePopup = null;
     this.popupInstances = new Map();
-    this.overlay = document.getElementById('popup-overlay');
-    
+    this.overlay = document.getElementById("popup-overlay");
+    this.templateCache = new Map();
+
     this.initializeEventListeners();
   }
-  
+
   initializeEventListeners() {
     // Handle sidebar item clicks
-    document.querySelectorAll('.sidebar-item').forEach(item => {
-      item.addEventListener('click', (e) => {
+    document.querySelectorAll(".sidebar-item").forEach((item) => {
+      item.addEventListener("click", (e) => {
         e.preventDefault();
-        const popupType = item.getAttribute('data-popup');
+        const popupType = item.getAttribute("data-popup");
         this.togglePopup(popupType);
       });
     });
-    
+
     // Handle overlay clicks to close popup
-    this.overlay.addEventListener('click', (e) => {
+    this.overlay.addEventListener("click", (e) => {
       if (e.target === this.overlay) {
         this.closePopup();
       }
     });
-    
+
     // Handle escape key to close popup
-    document.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape' && this.activePopup) {
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && this.activePopup) {
         this.closePopup();
       }
     });
   }
-  
+
   togglePopup(popupType) {
     if (this.activePopup === popupType) {
       this.closePopup();
@@ -40,138 +41,229 @@ class SidebarManager {
       this.openPopup(popupType);
     }
   }
-  
+
   openPopup(popupType) {
-    // Close any existing popup
     this.closePopup();
-    
-    // Set active popup
     this.activePopup = popupType;
-    
+
     // Update sidebar item states
-    document.querySelectorAll('.sidebar-item').forEach(item => {
-      item.classList.remove('active');
-      if (item.getAttribute('data-popup') === popupType) {
-        item.classList.add('active');
+    document.querySelectorAll(".sidebar-item").forEach((item) => {
+      item.classList.remove("active");
+      if (item.getAttribute("data-popup") === popupType) {
+        item.classList.add("active");
       }
     });
-    
-    // Show overlay
-    this.overlay.style.display = 'block';
-    
-    // Load popup content
+
+    this.overlay.style.display = "block";
     this.loadPopupContent(popupType);
   }
-  
+
   closePopup() {
     if (!this.activePopup) return;
-    
+
     // Clear active popup instance
     const instance = this.popupInstances.get(this.activePopup);
     if (instance && instance.destroy) {
       instance.destroy();
     }
-    
+
     this.activePopup = null;
-    
-    // Update sidebar item states
-    document.querySelectorAll('.sidebar-item').forEach(item => {
-      item.classList.remove('active');
+    document.querySelectorAll(".sidebar-item").forEach((item) => {
+      item.classList.remove("active");
     });
-    
-    // Hide overlay
-    this.overlay.style.display = 'none';
-    this.overlay.innerHTML = '';
-    
-    // Clear popup instance
+    this.overlay.style.display = "none";
+    this.overlay.innerHTML = "";
     this.popupInstances.clear();
   }
-  
-  loadPopupContent(popupType) {
-    const content = this.createPopupContent(popupType);
-    this.overlay.appendChild(content);
-    
-    // Initialize popup-specific functionality
-    this.initializePopup(popupType);
+
+  async loadPopupContent(popupType) {
+    try {
+      const content = await this.createPopupContent(popupType);
+      this.overlay.appendChild(content);
+
+      // Initialize popup-specific functionality
+      this.initializePopup(popupType);
+    } catch (error) {
+      console.error("Failed to load popup content:", error);
+      this.showError(popupType, error.message);
+    }
   }
-  
-  createPopupContent(popupType) {
-    const container = document.createElement('div');
-    container.className = 'popup-content';
-    
-    const header = document.createElement('div');
-    header.className = 'popup-header';
-    
-    const title = document.createElement('h2');
-    title.className = 'popup-title';
-    
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'popup-close';
-    closeBtn.innerHTML = '×';
-    closeBtn.addEventListener('click', () => this.closePopup());
-    
+
+  async createPopupContent(popupType) {
+    const config = this.getPopupConfig(popupType);
+    const templateHtml = await this.loadTemplate(config.template);
+
+    const container = document.createElement("div");
+    container.className = "popup-content";
+
+    const header = document.createElement("div");
+    header.className = "popup-header";
+
+    const title = document.createElement("h2");
+    title.className = "popup-title";
+    title.textContent = config.title;
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "popup-close";
+    closeBtn.innerHTML = "×";
+    closeBtn.addEventListener("click", () => this.closePopup());
+
     header.appendChild(title);
     header.appendChild(closeBtn);
     container.appendChild(header);
-    
-    const body = document.createElement('div');
-    body.className = 'popup-body';
+
+    const body = document.createElement("div");
+    body.className = "popup-body";
+    body.innerHTML = templateHtml;
     container.appendChild(body);
-    
-    // Set popup-specific content
-    switch (popupType) {
-      case 'folder':
-        title.textContent = 'Files';
-        body.innerHTML = '<div class="file-tree">Loading...</div>';
-        break;
-      case 'packages':
-        title.textContent = 'Packages';
-        body.innerHTML = '<div class="package-list">Loading...</div>';
-        break;
-      case 'python':
-        title.textContent = 'Python Environment';
-        body.innerHTML = '<div class="python-env-list">Loading...</div>';
-        break;
-      case 'settings':
-        title.textContent = 'Settings';
-        body.innerHTML = `
-          <div class="settings-container">
-            <textarea class="settings-editor" placeholder="Loading settings..."></textarea>
-            <div class="settings-actions">
-              <button class="btn btn-secondary" id="reset-settings">Reset</button>
-              <button class="btn btn-primary" id="save-settings">Save</button>
-            </div>
-          </div>
-        `;
-        break;
-    }
-    
+
     return container;
   }
-  
+
+  async loadTemplate(templateName) {
+    if (this.templateCache.has(templateName)) {
+      return this.templateCache.get(templateName);
+    }
+
+    try {
+      const response = await fetch(`/static/popups/templates/${templateName}`);
+      if (!response.ok) {
+        throw new Error(`Template not found: ${templateName}`);
+      }
+
+      const html = await response.text();
+      this.templateCache.set(templateName, html);
+      return html;
+    } catch (error) {
+      console.error("Failed to load template:", error);
+      return '<div class="error">Failed to load template</div>';
+    }
+  }
+
+  getPopupConfig(popupType) {
+    const configs = {
+      folder: { title: "Files", template: "folder-popup.html" },
+      packages: { title: "Packages", template: "packages-popup.html" },
+      python: { title: "Python Environment", template: "python-popup.html" },
+      metrics: { title: "System Metrics", template: "metrics-popup.html" },
+      settings: { title: "Settings", template: "settings-popup.html" },
+    };
+
+    return configs[popupType] || { title: "Unknown", template: null };
+  }
+
+  async showError(popupType, message) {
+    this.lastFailedPopupType = popupType; // Store for retry
+
+    try {
+      const errorTemplate = await this.loadTemplate("error-popup.html");
+      const errorHtml = this.substituteVariables(errorTemplate, {
+        message: `Failed to load ${popupType} popup`,
+        details: message,
+      });
+
+      const container = document.createElement("div");
+      container.className = "popup-content";
+
+      const header = document.createElement("div");
+      header.className = "popup-header";
+
+      const title = document.createElement("h2");
+      title.className = "popup-title";
+      title.textContent = "Error";
+
+      const closeBtn = document.createElement("button");
+      closeBtn.className = "popup-close";
+      closeBtn.innerHTML = "×";
+      closeBtn.addEventListener("click", () => this.closePopup());
+
+      header.appendChild(title);
+      header.appendChild(closeBtn);
+      container.appendChild(header);
+
+      const body = document.createElement("div");
+      body.className = "popup-body";
+      body.innerHTML = errorHtml;
+      container.appendChild(body);
+
+      this.overlay.appendChild(container);
+    } catch (error) {
+      // Fallback if even the error template fails
+      console.error("Failed to load error template:", error);
+      this.overlay.innerHTML = `
+        <div class="popup-content">
+          <div class="popup-header">
+            <h2 class="popup-title">Critical Error</h2>
+            <button class="popup-close" onclick="window.sidebarManager.closePopup()">×</button>
+          </div>
+          <div class="popup-body">
+            <p>Multiple errors occurred. Please refresh the page.</p>
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  substituteVariables(template, variables) {
+    let result = template;
+    for (const [key, value] of Object.entries(variables)) {
+      const regex = new RegExp(`{{${key}}}`, "g");
+      result = result.replace(regex, value || "");
+    }
+    return result;
+  }
+
+  retryPopup() {
+    if (this.lastFailedPopupType) {
+      // Clear template cache for failed popup
+      const config = this.getPopupConfig(this.lastFailedPopupType);
+      this.templateCache.delete(config.template);
+
+      // Retry opening the popup
+      this.closePopup();
+      this.openPopup(this.lastFailedPopupType);
+    }
+  }
+
   initializePopup(popupType) {
     switch (popupType) {
-      case 'folder':
+      case "folder":
         if (window.FolderPopup) {
-          const instance = new window.FolderPopup(this.overlay.querySelector('.file-tree'));
+          const instance = new window.FolderPopup(
+            this.overlay.querySelector(".file-tree"),
+          );
           this.popupInstances.set(popupType, instance);
         }
         break;
-      case 'packages':
+      case "packages":
         if (window.PackagesPopup) {
-          const instance = new window.PackagesPopup(this.overlay.querySelector('.package-list'));
+          const instance = new window.PackagesPopup(
+            this.overlay.querySelector(".package-list"),
+          );
           this.popupInstances.set(popupType, instance);
         }
         break;
-      case 'python':
+      case "python":
         if (window.PythonPopup) {
-          const instance = new window.PythonPopup(this.overlay.querySelector('.python-env-list'));
+          const instance = new window.PythonPopup(
+            this.overlay.querySelector(".python-env-list"),
+          );
           this.popupInstances.set(popupType, instance);
         }
         break;
-      case 'settings':
+      case "metrics":
+        if (window.MetricsPopup) {
+          const instance = new window.MetricsPopup(
+            this.overlay.querySelector(".metrics-container"),
+          );
+          this.popupInstances.set(popupType, instance);
+        }
+        break;
+      case "settings":
         if (window.SettingsPopup) {
-          const instance = new window.SettingsPopup(this.overlay.querySelector('.settings-container'));
+          const instance = new window.SettingsPopup(
+            this.overlay.querySelector(".settings-container"),
+          );
           this.popupInstances.set(popupType, instance);
         }
         break;
@@ -180,6 +272,6 @@ class SidebarManager {
 }
 
 // Initialize sidebar when DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener("DOMContentLoaded", () => {
   window.sidebarManager = new SidebarManager();
 });
