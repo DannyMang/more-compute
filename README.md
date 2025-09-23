@@ -1,10 +1,17 @@
 # MoreCompute
-
 An interactive notebook environment similar to Marimo and Google Colab that runs locally.
+
+
+FOR LOCAL DEVELOPMENT:
+
+```bash
+pip install -e .
+```
 
 ## Installation
 
 ```bash
+(NOT IMPLEMENTED YET, TO-DO SET UP ON PyPi)
 pip install morecompute
 ```
 
