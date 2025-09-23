@@ -391,8 +391,34 @@ body {
 }
 
 .CodeMirror-scroll {
-    min-height: 100px;
-    padding: 16px 20px;
+    /* Content-based sizing - start small and grow with content */
+    min-height: 32px;  /* Single line minimum */
+    padding: 8px 16px;
+    transition: min-height 0.2s ease;
+}
+
+/* Auto-sizing based on content */
+.CodeMirror {
+    /* Let CodeMirror size itself based on content */
+    height: auto !important;
+    min-height: 32px;
+}
+
+.CodeMirror-sizer {
+    min-height: auto !important;
+}
+
+/* Smart sizing classes applied dynamically */
+.cell.cell-empty .CodeMirror-scroll {
+    min-height: 32px;  /* Very compact for empty cells */
+}
+
+.cell.cell-single-line .CodeMirror-scroll {
+    min-height: 40px;  /* Slightly more space for single line */
+}
+
+.cell.cell-focused .CodeMirror-scroll {
+    min-height: 48px;  /* More space when focused for editing */
 }
 
 .CodeMirror-cursor {
@@ -412,13 +438,26 @@ body {
     font-style: italic;
 }
 
-/* Markdown Rendered Content */
+/* Markdown Rendered Content - Auto-sizing */
 .markdown-rendered {
-    padding: 16px 20px;
+    padding: 8px 16px;
     line-height: 1.7;
     color: #1f2937;
     cursor: pointer;
-    min-height: 40px;
+    min-height: auto;  /* Let content determine height */
+}
+
+/* Smart sizing for markdown content */
+.cell.cell-empty .markdown-rendered,
+.cell.cell-empty .text-cell-output {
+    min-height: 24px;  /* Very compact for empty markdown */
+    padding: 4px 12px;
+}
+
+.cell.cell-single-line .markdown-rendered,
+.cell.cell-single-line .text-cell-output {
+    min-height: 32px;  /* Single line markdown */
+    padding: 6px 14px;
 }
 
 .markdown-rendered:hover {

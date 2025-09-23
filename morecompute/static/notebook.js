@@ -5,10 +5,10 @@ class NotebookApp {
     this.editors = new Map();
     this.sortable = null;
     this.executionTimers = new Map(); // Track execution timers
+    this.cellResizeObservers = new Map(); // Track ResizeObserver instances for each cell
     this.initializeEventListeners();
     this.initializeWebSocket();
     this.initializeSocketListeners();
-
     // Fallback: Update status after a short delay to ensure everything is initialized
     setTimeout(() => {
       if (this.socket && this.socket.readyState === WebSocket.OPEN) {
@@ -220,6 +220,9 @@ class NotebookApp {
     if (cellData.outputs && cellData.outputs.length > 0) {
       this.renderCellOutputs(cell, cellData.outputs);
     }
+    
+    // Set up content-aware sizing
+    this.setupContentAwareSizing(cell, index);
   }
   initializeSortable() {
     const notebook = document.getElementById("notebook");
@@ -332,6 +335,7 @@ class NotebookApp {
       matchBrackets: cellType === "code",
       indentUnit: 4,
       lineWrapping: true,
+      viewportMargin: 10, // Small margin instead of infinity
       placeholder:
         cellType === "code"
           ? "Enter your code here..."
@@ -355,9 +359,19 @@ class NotebookApp {
     editor.on("change", () => {
       const source = editor.getValue();
       this.updateCellSource(index, source);
+      // Update cell sizing based on content
+      this.updateCellSizing(index, source);
     });
     editor.on("focus", () => {
       this.setActiveCell(index);
+      // Add focused class for enhanced sizing when editing
+      const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
+      if (cell) cell.classList.add('cell-focused');
+    });
+    editor.on("blur", () => {
+      // Remove focused class
+      const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
+      if (cell) cell.classList.remove('cell-focused');
     });
   }
   setupCellEventListeners(wrapper, index) {
@@ -401,6 +415,7 @@ class NotebookApp {
       cell_index: index,
     });
     this.editors.delete(index);
+    this.cleanupCellObserver(index);
   }
   executeCell(index) {
     const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
@@ -801,6 +816,69 @@ class NotebookApp {
 
       // Remove from our tracking
       this.executionTimers.delete(cellIndex);
+    }
+  }
+  
+  setupContentAwareSizing(cell, index) {
+    // Set up ResizeObserver to watch for content changes
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const cell = entry.target;
+        const cellHeight = entry.contentRect.height;
+        
+        // Apply smart sizing classes based on actual height
+        this.updateCellClassBasedOnHeight(cell, cellHeight);
+      }
+    });
+    
+    // Observe the cell content area
+    resizeObserver.observe(cell);
+    
+    // Store observer for cleanup
+    this.cellResizeObservers.set(index, resizeObserver);
+    
+    // Initial sizing based on content
+    const editor = this.editors.get(index);
+    if (editor) {
+      const source = editor.getValue();
+      this.updateCellSizing(index, source);
+    }
+  }
+  
+  updateCellSizing(index, source) {
+    const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
+    if (!cell) return;
+    
+    // Remove all sizing classes first
+    cell.classList.remove('cell-empty', 'cell-single-line', 'cell-multi-line');
+    
+    const lines = source.split('\n');
+    const nonEmptyLines = lines.filter(line => line.trim().length > 0);
+    
+    if (nonEmptyLines.length === 0) {
+      cell.classList.add('cell-empty');
+    } else if (nonEmptyLines.length === 1) {
+      cell.classList.add('cell-single-line');
+    } else {
+      cell.classList.add('cell-multi-line');
+    }
+  }
+  
+  updateCellClassBasedOnHeight(cell, height) {
+    // Additional height-based adjustments if needed
+    if (height < 40) {
+      cell.classList.add('cell-compact');
+    } else {
+      cell.classList.remove('cell-compact');
+    }
+  }
+  
+  cleanupCellObserver(index) {
+    // Clean up ResizeObserver when cell is deleted
+    const observer = this.cellResizeObservers.get(index);
+    if (observer) {
+      observer.disconnect();
+      this.cellResizeObservers.delete(index);
     }
   }
 }
