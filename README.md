@@ -1,6 +1,11 @@
 # MoreCompute
 An interactive notebook environment similar to Marimo and Google Colab that runs locally.
 
+For references: 
+
+https://marimo.io/
+https://colab.google/
+
 
 FOR LOCAL DEVELOPMENT:
 
