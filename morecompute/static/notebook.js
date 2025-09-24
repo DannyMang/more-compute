@@ -472,6 +472,10 @@ class NotebookApp {
 
     // else cellType == code
     const source = editor.getValue();
+    
+    // Clear old output before starting new execution
+    this.clearCellOutput(index);
+    
     if (cell) {
       cell.classList.add("executing");
     }
@@ -558,7 +562,34 @@ class NotebookApp {
       statusEl.style.display = "block";
     }
 
+    // Render regular outputs
     this.renderCellOutputs(cell, result.outputs);
+    
+    // If there's an error and it's not already displayed, add it as an error output
+    if (result.error) {
+      // Check if there's already an error output in the outputs array OR in the DOM
+      const hasErrorOutput = result.outputs && result.outputs.some(output => output.output_type === "error");
+      const outputContent = cell.querySelector(".output-content");
+      const hasErrorInDOM = outputContent && outputContent.querySelector(".error-output-container");
+      
+      if (!hasErrorOutput && !hasErrorInDOM) {
+        const outputContainer = cell.querySelector(".cell-output");
+        if (outputContainer && outputContent) {
+          outputContainer.style.display = "block";
+          
+          // Create error output
+          const errorOutput = {
+            output_type: "error",
+            ename: result.error.ename || "Error",
+            evalue: result.error.evalue || "Unknown error",
+            traceback: result.error.traceback || [result.error.evalue || "Unknown error"]
+          };
+          
+          const errorElement = this.createErrorOutput(errorOutput);
+          outputContent.appendChild(errorElement);
+        }
+      }
+    }
   }
   renderCellOutputs(cell, outputs) {
     const outputContainer = cell.querySelector(".cell-output");
@@ -587,15 +618,158 @@ class NotebookApp {
         div.textContent = output.data["text/plain"] || "";
         break;
       case "error":
-        div.className = "output-error";
-        div.textContent = output.traceback.join("\n");
-        break;
+        return this.createErrorOutput(output);
       default:
         div.className = "output-stream";
         div.textContent = JSON.stringify(output);
     }
     return div;
   }
+  
+  createErrorOutput(output) {
+    const container = document.createElement("div");
+    container.className = "error-output-container";
+    container.style.position = "relative";
+    container.style.margin = "8px 0";
+    
+    // Create error content div
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "output-error";
+    
+    // Get full traceback
+    const fullTraceback = output.traceback.join("\n");
+    const tracebackLines = output.traceback;
+    
+    // Limit to last 20 lines if traceback is longer
+    let displayContent;
+    let isLimited = false;
+    if (tracebackLines.length > 20) {
+      const limitedLines = tracebackLines.slice(-20);
+      displayContent = limitedLines.join("\n");
+      isLimited = true;
+    } else {
+      displayContent = fullTraceback;
+    }
+    
+    errorDiv.textContent = displayContent;
+    
+    // Add truncation indicator if needed
+    if (isLimited) {
+      const truncatedIndicator = document.createElement("div");
+      truncatedIndicator.style.cssText = `
+        color: #6b7280;
+        font-style: italic;
+        font-size: 12px;
+        margin-bottom: 8px;
+        padding: 4px 8px;
+        background: #f9fafb;
+        border-radius: 4px;
+        border-left: 3px solid #d1d5db;
+      `;
+      truncatedIndicator.textContent = `... (showing last 20 lines of ${tracebackLines.length} total lines - scroll up to see more)`;
+      container.appendChild(truncatedIndicator);
+    }
+    
+    // Create copy button
+    const copyButton = this.createCopyButton(fullTraceback);
+    
+    container.appendChild(errorDiv);
+    container.appendChild(copyButton);
+    
+    return container;
+  }
+  
+  createCopyButton(textToCopy) {
+    const copyButton = document.createElement("button");
+    copyButton.className = "error-copy-btn";
+    copyButton.title = "Copy error to clipboard";
+    copyButton.style.cssText = `
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: rgba(255, 255, 255, 0.9);
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.7;
+      transition: all 0.2s ease;
+      z-index: 10;
+    `;
+    
+    // Clone the copy icon from template
+    const copyIconTemplate = document.getElementById("copy-icon-template");
+    if (!copyIconTemplate) {
+      console.error("Copy icon template not found! Creating fallback.");
+      const copyIcon = document.createElement("div");
+      copyIcon.textContent = "📋";
+      copyIcon.style.fontSize = "14px";
+      copyButton.appendChild(copyIcon);
+      return copyButton;
+    }
+    const copyIcon = copyIconTemplate.cloneNode(true);
+    copyIcon.removeAttribute("id");
+    copyIcon.style.cssText = "width: 14px; height: 14px; opacity: 0.8;";
+    
+    copyButton.appendChild(copyIcon);
+    
+    // Add hover effects
+    copyButton.addEventListener("mouseenter", () => {
+      copyButton.style.opacity = "1";
+      copyButton.style.background = "rgba(255, 255, 255, 1)";
+      copyButton.style.transform = "scale(1.05)";
+    });
+    
+    copyButton.addEventListener("mouseleave", () => {
+      copyButton.style.opacity = "0.7";
+      copyButton.style.background = "rgba(255, 255, 255, 0.9)";
+      copyButton.style.transform = "scale(1)";
+    });
+    
+    // Add copy functionality
+    copyButton.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        this.showCopyFeedback(copyButton, copyIcon);
+      } catch (err) {
+        console.error('Failed to copy error:', err);
+        this.fallbackCopy(textToCopy);
+        this.showCopyFeedback(copyButton, copyIcon);
+      }
+    });
+    
+    return copyButton;
+  }
+  
+  showCopyFeedback(button, icon) {
+    const checkIconTemplate = document.getElementById("check-icon-template");
+    const originalSrc = icon.src;
+    
+    icon.src = checkIconTemplate.src;
+    button.style.background = "#dcfdf4";
+    button.title = "Copied!";
+    
+    setTimeout(() => {
+      icon.src = originalSrc;
+      button.style.background = "rgba(255, 255, 255, 0.9)";
+      button.title = "Copy error to clipboard";
+    }, 1500);
+  }
+  
+  fallbackCopy(text) {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    document.body.appendChild(textArea);
+    textArea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textArea);
+  }
+  
   clearAllOutputs() {
     document.querySelectorAll(".cell-output").forEach((output) => {
       output.style.display = "none";
@@ -786,7 +960,7 @@ class NotebookApp {
   }
   showError(message) {
     console.error("Error:", message);
-    alert("Error: " + message);
+    // Removed alert popup - errors are now handled in-line in cells
   }
   showSaveSuccess(filePath) {
     const saveBtn = document.getElementById("save-btn");
@@ -959,6 +1133,21 @@ class NotebookApp {
       runImg.alt = "Run";
       runBtn.title = "Run cell (Shift+Enter)";
       runBtn.classList.remove("stop-mode");
+    }
+  }
+  
+  clearCellOutput(cellIndex) {
+    const cell = document.querySelector(`.cell[data-cell-index="${cellIndex}"]`);
+    if (!cell) return;
+    
+    const outputContainer = cell.querySelector(".cell-output");
+    const outputContent = cell.querySelector(".output-content");
+    
+    if (outputContainer && outputContent) {
+      // Clear all output content
+      outputContent.innerHTML = "";
+      // Hide output container
+      outputContainer.style.display = "none";
     }
   }
   
@@ -1178,18 +1367,18 @@ class NotebookApp {
         if (outputContainer && outputContent) {
           outputContainer.style.display = "block";
           
-          const interruptElement = document.createElement("div");
-          interruptElement.className = "output-error";
-          interruptElement.textContent = "KeyboardInterrupt: Execution interrupted by user";
-          interruptElement.style.color = "#dc2626";
-          interruptElement.style.fontFamily = "monospace";
-          interruptElement.style.fontSize = "13px";
-          interruptElement.style.marginTop = "8px";
-          interruptElement.style.padding = "8px";
-          interruptElement.style.backgroundColor = "#fef2f2";
-          interruptElement.style.border = "1px solid #fecaca";
-          interruptElement.style.borderRadius = "4px";
+          // Create a fake error output for the interrupt message
+          const interruptOutput = {
+            output_type: "error",
+            ename: "KeyboardInterrupt", 
+            evalue: "Execution interrupted by user",
+            traceback: [
+              "KeyboardInterrupt: Execution interrupted by user",
+              "\nThe kernel was interrupted during execution."
+            ]
+          };
           
+          const interruptElement = this.createErrorOutput(interruptOutput);
           outputContent.appendChild(interruptElement);
         }
       }
