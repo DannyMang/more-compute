@@ -147,20 +147,35 @@ body {
     opacity: 0;
     transition: opacity 0.2s ease;
     z-index: 10;
+    pointer-events: none; /* Don't block interactions by default */
 }
 
 .add-cell-line:hover {
     opacity: 1;
+    pointer-events: auto; /* Re-enable interactions on hover */
 }
 
 .add-cell-line::before {
     content: '';
     position: absolute;
-    top: -15px;
+    top: -10px;
     left: 0;
     right: 0;
-    height: 30px;
+    height: 20px;
     background: transparent;
+    pointer-events: auto; /* Allow hover detection */
+}
+
+/* Extended hover area for add-line-below to capture hover below cells */
+.add-line-below::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: 0;
+    right: 0;
+    height: 16px; /* Smaller hover area to avoid blocking cell clicks */
+    background: transparent;
+    pointer-events: auto; /* Allow hover detection */
 }
 
 .add-cell-line::after {
@@ -195,6 +210,7 @@ body {
     opacity: 0;
     transition: all 0.2s ease;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    pointer-events: auto; /* Always allow button interactions */
 }
 
 .add-cell-line:hover .add-cell-button {
