@@ -8,6 +8,7 @@ from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
 from fastapi import WebSocket
 from .utils.special_commands import AsyncSpecialCommandHandler
+from .utils.error_utils import create_enhanced_error_info
 
 
 class AsyncCellExecutor:
@@ -153,11 +154,10 @@ class AsyncCellExecutor:
 
         except Exception as e:
             result["status"] = "error"
-            error_info = {
-                "ename": type(e).__name__,
-                "evalue": str(e),
-                "traceback": traceback.format_exc().split('\n')
-            }
+            
+            # Get enhanced error information with suggestions
+            traceback_lines = traceback.format_exc().split('\n')
+            error_info = create_enhanced_error_info(e, traceback_lines)
             result["error"] = error_info
 
             # Also add error as output
@@ -165,6 +165,7 @@ class AsyncCellExecutor:
                 "output_type": "error",
                 **error_info
             })
+            
             # Stream error if websocket available
             if websocket:
                 await websocket.send_json({

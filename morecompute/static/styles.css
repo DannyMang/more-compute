@@ -464,6 +464,27 @@ body {
     font-style: italic;
 }
 
+/* Line numbers styling */
+.CodeMirror-linenumbers {
+    background: #f9fafb;
+    border-right: 1px solid #e5e7eb;
+    padding-right: 8px;
+    min-width: 30px;
+}
+
+.CodeMirror-linenumber {
+    color: #9ca3af;
+    font-size: 11px;
+    text-align: right;
+    padding: 0 5px 0 0;
+    min-width: 20px;
+}
+
+.CodeMirror-gutters {
+    background: #f9fafb;
+    border-right: 1px solid #e5e7eb;
+}
+
 /* Markdown Rendered Content - Auto-sizing */
 .markdown-rendered {
     padding: 8px 16px;

@@ -357,7 +357,7 @@ class NotebookApp {
     const mode = cellType === "code" ? "python" : "text/plain";
     const editor = CodeMirror.fromTextArea(textarea, {
       mode: mode,
-      lineNumbers: false,
+      lineNumbers: cellType === "code", // Show line numbers only for code cells
       theme: "default",
       autoCloseBrackets: cellType === "code",
       matchBrackets: cellType === "code",
