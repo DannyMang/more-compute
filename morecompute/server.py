@@ -404,3 +404,7 @@ class NotebookServer:
     def shutdown(self):
         """Shutdown the server"""
         print("Server shutdown requested...")
+
+# Create a default server instance for uvicorn
+_default_server = NotebookServer()
+app = _default_server.app
