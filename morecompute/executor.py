@@ -7,11 +7,7 @@ import os
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
 from fastapi import WebSocket
-
-try:
-    from .utils.special_commands import AsyncSpecialCommandHandler
-except ImportError:
-    from utils.special_commands import AsyncSpecialCommandHandler
+from .utils.special_commands import AsyncSpecialCommandHandler
 
 
 class AsyncCellExecutor:
@@ -39,7 +35,6 @@ class AsyncCellExecutor:
         async with self._execution_lock:
             self.execution_count += 1
             start_time = time.time()
-            
             # Store current task for interruption
             self.current_task = asyncio.current_task()
 
@@ -64,10 +59,9 @@ class AsyncCellExecutor:
             # Execute regular Python code
             return await self._execute_python_code(source_code, result, start_time, websocket)
 
-    async def _execute_python_code(self, source_code: str, result: Dict[str, Any], 
+    async def _execute_python_code(self, source_code: str, result: Dict[str, Any],
                                   start_time: float, websocket: Optional[WebSocket] = None) -> Dict[str, Any]:
         """Execute Python code with optional streaming output"""
-        
         stdout_capture = io.StringIO()
         stderr_capture = io.StringIO()
 
@@ -91,11 +85,11 @@ class AsyncCellExecutor:
             if stdout_content:
                 output_data = {
                     "output_type": "stream",
-                    "name": "stdout", 
+                    "name": "stdout",
                     "text": stdout_content
                 }
                 result["outputs"].append(output_data)
-                
+
                 # Stream output if websocket available
                 if websocket:
                     await websocket.send_json({
@@ -115,7 +109,7 @@ class AsyncCellExecutor:
                     "text": stderr_content
                 }
                 result["outputs"].append(output_data)
-                
+
                 # Stream output if websocket available
                 if websocket:
                     await websocket.send_json({
@@ -145,8 +139,6 @@ class AsyncCellExecutor:
                                     }
                                 }
                                 result["outputs"].append(output_data)
-                                
-                                # Stream result if websocket available
                                 if websocket:
                                     await websocket.send_json({
                                         "type": "execute_result",
@@ -173,7 +165,6 @@ class AsyncCellExecutor:
                 "output_type": "error",
                 **error_info
             })
-            
             # Stream error if websocket available
             if websocket:
                 await websocket.send_json({
@@ -182,11 +173,7 @@ class AsyncCellExecutor:
                         "error": error_info
                     }
                 })
-
-        # Calculate execution time
         result["execution_time"] = f"{(time.time() - start_time) * 1000:.1f}ms"
-        
-        # Send completion if websocket available
         if websocket:
             await websocket.send_json({
                 "type": "execution_complete",
@@ -196,10 +183,8 @@ class AsyncCellExecutor:
                     "status": result["status"]
                 }
             })
-        
         # Clear current task
         self.current_task = None
-        
         return result
 
     def _is_statement(self, line: str) -> bool:
@@ -252,7 +237,7 @@ class AsyncCellExecutor:
                 self.current_process.kill()
             finally:
                 self.current_process = None
-        
+
         # Interrupt Python code execution by cancelling the current task
         if self.current_task and not self.current_task.done():
             try:
