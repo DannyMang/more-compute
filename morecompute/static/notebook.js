@@ -172,7 +172,7 @@ class NotebookApp {
       console.error("Save error:", data.error);
       this.showError("Save failed: " + data.error);
     });
-    
+
     // Add streaming message handlers
     this.socket.on("execution_start", (data) => {
       this.handleExecutionStart(data);
@@ -248,7 +248,7 @@ class NotebookApp {
     if (cellData.outputs && cellData.outputs.length > 0) {
       this.renderCellOutputs(cell, cellData.outputs);
     }
-    
+
     // Set up content-aware sizing
     this.setupContentAwareSizing(cell, index);
   }
@@ -394,12 +394,12 @@ class NotebookApp {
       this.setActiveCell(index);
       // Add focused class for enhanced sizing when editing
       const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
-      if (cell) cell.classList.add('cell-focused');
+      if (cell) cell.classList.add("cell-focused");
     });
     editor.on("blur", () => {
       // Remove focused class
       const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
-      if (cell) cell.classList.remove('cell-focused');
+      if (cell) cell.classList.remove("cell-focused");
     });
   }
   setupCellEventListeners(wrapper, index) {
@@ -409,7 +409,7 @@ class NotebookApp {
     if (runBtn) {
       runBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        
+
         // Check if this cell is currently executing
         if (this.executingCells.has(index)) {
           // If executing, interrupt the kernel
@@ -472,14 +472,14 @@ class NotebookApp {
 
     // else cellType == code
     const source = editor.getValue();
-    
+
     // Clear old output before starting new execution
     this.clearCellOutput(index);
-    
+
     if (cell) {
       cell.classList.add("executing");
     }
-    
+
     // Track execution state and update button
     this.executingCells.add(index);
     this.updateRunButtonToStop(index);
@@ -534,7 +534,7 @@ class NotebookApp {
     if (!cell) return;
     cell.classList.remove("executing");
     this.stopExecutionTimer(cell_index);
-    
+
     // Clear execution state and reset button
     this.executingCells.delete(cell_index);
     this.updateRunButtonToPlay(cell_index);
@@ -564,28 +564,33 @@ class NotebookApp {
 
     // Render regular outputs
     this.renderCellOutputs(cell, result.outputs);
-    
+
     // If there's an error and it's not already displayed, add it as an error output
     if (result.error) {
       // Check if there's already an error output in the outputs array OR in the DOM
-      const hasErrorOutput = result.outputs && result.outputs.some(output => output.output_type === "error");
+      const hasErrorOutput =
+        result.outputs &&
+        result.outputs.some((output) => output.output_type === "error");
       const outputContent = cell.querySelector(".output-content");
-      const hasErrorInDOM = outputContent && outputContent.querySelector(".error-output-container");
-      
+      const hasErrorInDOM =
+        outputContent && outputContent.querySelector(".error-output-container");
+
       if (!hasErrorOutput && !hasErrorInDOM) {
         const outputContainer = cell.querySelector(".cell-output");
         if (outputContainer && outputContent) {
           outputContainer.style.display = "block";
-          
+
           // Create error output
           const errorOutput = {
             output_type: "error",
             ename: result.error.ename || "Error",
             evalue: result.error.evalue || "Unknown error",
-            traceback: result.error.traceback || [result.error.evalue || "Unknown error"]
+            traceback: result.error.traceback || [
+              result.error.evalue || "Unknown error",
+            ],
           };
-          
-          const errorElement = this.createErrorOutput(errorOutput);
+
+          const errorElement = ErrorUtils.createErrorOutput(errorOutput);
           outputContent.appendChild(errorElement);
         }
       }
@@ -618,158 +623,14 @@ class NotebookApp {
         div.textContent = output.data["text/plain"] || "";
         break;
       case "error":
-        return this.createErrorOutput(output);
+        return ErrorUtils.createErrorOutput(output);
       default:
         div.className = "output-stream";
         div.textContent = JSON.stringify(output);
     }
     return div;
   }
-  
-  createErrorOutput(output) {
-    const container = document.createElement("div");
-    container.className = "error-output-container";
-    container.style.position = "relative";
-    container.style.margin = "8px 0";
-    
-    // Create error content div
-    const errorDiv = document.createElement("div");
-    errorDiv.className = "output-error";
-    
-    // Get full traceback
-    const fullTraceback = output.traceback.join("\n");
-    const tracebackLines = output.traceback;
-    
-    // Limit to last 20 lines if traceback is longer
-    let displayContent;
-    let isLimited = false;
-    if (tracebackLines.length > 20) {
-      const limitedLines = tracebackLines.slice(-20);
-      displayContent = limitedLines.join("\n");
-      isLimited = true;
-    } else {
-      displayContent = fullTraceback;
-    }
-    
-    errorDiv.textContent = displayContent;
-    
-    // Add truncation indicator if needed
-    if (isLimited) {
-      const truncatedIndicator = document.createElement("div");
-      truncatedIndicator.style.cssText = `
-        color: #6b7280;
-        font-style: italic;
-        font-size: 12px;
-        margin-bottom: 8px;
-        padding: 4px 8px;
-        background: #f9fafb;
-        border-radius: 4px;
-        border-left: 3px solid #d1d5db;
-      `;
-      truncatedIndicator.textContent = `... (showing last 20 lines of ${tracebackLines.length} total lines - scroll up to see more)`;
-      container.appendChild(truncatedIndicator);
-    }
-    
-    // Create copy button
-    const copyButton = this.createCopyButton(fullTraceback);
-    
-    container.appendChild(errorDiv);
-    container.appendChild(copyButton);
-    
-    return container;
-  }
-  
-  createCopyButton(textToCopy) {
-    const copyButton = document.createElement("button");
-    copyButton.className = "error-copy-btn";
-    copyButton.title = "Copy error to clipboard";
-    copyButton.style.cssText = `
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      width: 24px;
-      height: 24px;
-      border: none;
-      background: rgba(255, 255, 255, 0.9);
-      border-radius: 4px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      opacity: 0.7;
-      transition: all 0.2s ease;
-      z-index: 10;
-    `;
-    
-    // Clone the copy icon from template
-    const copyIconTemplate = document.getElementById("copy-icon-template");
-    if (!copyIconTemplate) {
-      console.error("Copy icon template not found! Creating fallback.");
-      const copyIcon = document.createElement("div");
-      copyIcon.textContent = "📋";
-      copyIcon.style.fontSize = "14px";
-      copyButton.appendChild(copyIcon);
-      return copyButton;
-    }
-    const copyIcon = copyIconTemplate.cloneNode(true);
-    copyIcon.removeAttribute("id");
-    copyIcon.style.cssText = "width: 14px; height: 14px; opacity: 0.8;";
-    
-    copyButton.appendChild(copyIcon);
-    
-    // Add hover effects
-    copyButton.addEventListener("mouseenter", () => {
-      copyButton.style.opacity = "1";
-      copyButton.style.background = "rgba(255, 255, 255, 1)";
-      copyButton.style.transform = "scale(1.05)";
-    });
-    
-    copyButton.addEventListener("mouseleave", () => {
-      copyButton.style.opacity = "0.7";
-      copyButton.style.background = "rgba(255, 255, 255, 0.9)";
-      copyButton.style.transform = "scale(1)";
-    });
-    
-    // Add copy functionality
-    copyButton.addEventListener("click", async (e) => {
-      e.stopPropagation();
-      try {
-        await navigator.clipboard.writeText(textToCopy);
-        this.showCopyFeedback(copyButton, copyIcon);
-      } catch (err) {
-        console.error('Failed to copy error:', err);
-        this.fallbackCopy(textToCopy);
-        this.showCopyFeedback(copyButton, copyIcon);
-      }
-    });
-    
-    return copyButton;
-  }
-  
-  showCopyFeedback(button, icon) {
-    const checkIconTemplate = document.getElementById("check-icon-template");
-    const originalSrc = icon.src;
-    
-    icon.src = checkIconTemplate.src;
-    button.style.background = "#dcfdf4";
-    button.title = "Copied!";
-    
-    setTimeout(() => {
-      icon.src = originalSrc;
-      button.style.background = "rgba(255, 255, 255, 0.9)";
-      button.title = "Copy error to clipboard";
-    }, 1500);
-  }
-  
-  fallbackCopy(text) {
-    const textArea = document.createElement('textarea');
-    textArea.value = text;
-    document.body.appendChild(textArea);
-    textArea.select();
-    document.execCommand('copy');
-    document.body.removeChild(textArea);
-  }
-  
+
   clearAllOutputs() {
     document.querySelectorAll(".cell-output").forEach((output) => {
       output.style.display = "none";
@@ -824,13 +685,11 @@ class NotebookApp {
     div.innerHTML = htmlContent;
     outputContent.appendChild(div);
     outputContainer.style.display = "block";
-
-    console.log("Text cell rendered for index:", index);
   }
-  
+
   renderMarkdown(source) {
     let html = source;
-    
+
     // Store existing HTML elements to preserve them
     const htmlElements = [];
     html = html.replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, (match) => {
@@ -838,103 +697,144 @@ class NotebookApp {
       htmlElements.push(match);
       return placeholder;
     });
-    
+
     // Store self-closing HTML tags
     html = html.replace(/<[^>]+\/>/g, (match) => {
       const placeholder = `__HTML_${htmlElements.length}__`;
       htmlElements.push(match);
       return placeholder;
     });
-    
+
     // Code blocks (must be processed first)
     html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
       return `<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 12px 0; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; border-left: 3px solid #3b82f6;">${this.escapeHtml(code.trim())}</pre>`;
     });
-    
+
     // Language-specific code blocks
     html = html.replace(/```(\w+)\n([\s\S]*?)```/g, (match, lang, code) => {
       return `<pre style="background: #f8f9fa; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 12px 0; font-family: 'SF Mono', Monaco, monospace; font-size: 13px; border-left: 3px solid #3b82f6;"><code class="language-${lang}">${this.escapeHtml(code.trim())}</code></pre>`;
     });
-    
+
     // Images ![alt](src "title")
-    html = html.replace(/!\[([^\]]*)\]\(([^\)]+)(?:\s+"([^"]+)")?\)/g, (match, alt, src, title) => {
-      const titleAttr = title ? `title="${title}"` : '';
-      return `<img src="${src}" alt="${alt}" ${titleAttr} style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px;" />`;
-    });
-    
+    html = html.replace(
+      /!\[([^\]]*)\]\(([^\)]+)(?:\s+"([^"]+)")?\)/g,
+      (match, alt, src, title) => {
+        const titleAttr = title ? `title="${title}"` : "";
+        return `<img src="${src}" alt="${alt}" ${titleAttr} style="max-width: 100%; height: auto; margin: 8px 0; border-radius: 4px;" />`;
+      },
+    );
+
     // Links [text](url "title")
-    html = html.replace(/\[([^\]]+)\]\(([^\)]+)(?:\s+"([^"]+)")?\)/g, (match, text, url, title) => {
-      const titleAttr = title ? `title="${title}"` : '';
-      const isInternal = url.startsWith('#');
-      const target = isInternal ? '' : 'target="_blank" rel="noopener noreferrer"';
-      return `<a href="${url}" ${titleAttr} ${target} style="color: #3b82f6; text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s;" onmouseover="this.style.borderBottomColor='#3b82f6'" onmouseout="this.style.borderBottomColor='transparent'">${text}</a>`;
-    });
-    
+    html = html.replace(
+      /\[([^\]]+)\]\(([^\)]+)(?:\s+"([^"]+)")?\)/g,
+      (match, text, url, title) => {
+        const titleAttr = title ? `title="${title}"` : "";
+        const isInternal = url.startsWith("#");
+        const target = isInternal
+          ? ""
+          : 'target="_blank" rel="noopener noreferrer"';
+        return `<a href="${url}" ${titleAttr} ${target} style="color: #3b82f6; text-decoration: none; border-bottom: 1px solid transparent; transition: border-color 0.2s;" onmouseover="this.style.borderBottomColor='#3b82f6'" onmouseout="this.style.borderBottomColor='transparent'">${text}</a>`;
+      },
+    );
+
     // Headers (with anchor links)
     html = html.replace(/^### (.*$)/gm, (match, text) => {
-      const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+      const id = text
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "-");
       return `<h3 id="${id}" style="font-size: 1.1em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">${text}</h3>`;
     });
     html = html.replace(/^## (.*$)/gm, (match, text) => {
-      const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+      const id = text
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "-");
       return `<h2 id="${id}" style="font-size: 1.3em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">${text}</h2>`;
     });
     html = html.replace(/^# (.*$)/gm, (match, text) => {
-      const id = text.toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '-');
+      const id = text
+        .toLowerCase()
+        .replace(/[^\w\s-]/g, "")
+        .replace(/\s+/g, "-");
       return `<h1 id="${id}" style="font-size: 1.5em; font-weight: 600; margin: 16px 0 8px 0; color: #111827;">${text}</h1>`;
     });
-    
+
     // Unordered lists
     html = html.replace(/^(\s*)[-*+] (.+)$/gm, (match, indent, text) => {
       const depth = Math.floor(indent.length / 2);
       return `<ul-item data-depth="${depth}">${text}</ul-item>`;
     });
-    html = html.replace(/<ul-item data-depth="0">([\s\S]*?)<\/ul-item>/g, '<li style="margin: 4px 0;">$1</li>');
-    html = html.replace(/(<li[^>]*>[\s\S]*?<\/li>\s*)+/g, '<ul style="margin: 8px 0; padding-left: 20px;">$&</ul>');
-    
+    html = html.replace(
+      /<ul-item data-depth="0">([\s\S]*?)<\/ul-item>/g,
+      '<li style="margin: 4px 0;">$1</li>',
+    );
+    html = html.replace(
+      /(<li[^>]*>[\s\S]*?<\/li>\s*)+/g,
+      '<ul style="margin: 8px 0; padding-left: 20px;">$&</ul>',
+    );
+
     // Ordered lists
     html = html.replace(/^(\s*)\d+\. (.+)$/gm, (match, indent, text) => {
       return `<ol-item>${text}</ol-item>`;
     });
-    html = html.replace(/<ol-item>([\s\S]*?)<\/ol-item>/g, '<li style="margin: 4px 0;">$1</li>');
-    html = html.replace(/(<li[^>]*>[\s\S]*?<\/li>\s*){2,}/g, '<ol style="margin: 8px 0; padding-left: 20px;">$&</ol>');
-    
+    html = html.replace(
+      /<ol-item>([\s\S]*?)<\/ol-item>/g,
+      '<li style="margin: 4px 0;">$1</li>',
+    );
+    html = html.replace(
+      /(<li[^>]*>[\s\S]*?<\/li>\s*){2,}/g,
+      '<ol style="margin: 8px 0; padding-left: 20px;">$&</ol>',
+    );
+
     // Bold and italic (after links to avoid conflicts)
-    html = html.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
-    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    html = html.replace(/\*([^*]+)\*/g, '<em>$1</em>');
-    
+    html = html.replace(/\*\*\*([^*]+)\*\*\*/g, "<strong><em>$1</em></strong>");
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/\*([^*]+)\*/g, "<em>$1</em>");
+
     // Inline code (after code blocks)
-    html = html.replace(/`([^`]+)`/g, '<code style="background: #f3f4f6; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.9em;">$1</code>');
-    
+    html = html.replace(
+      /`([^`]+)`/g,
+      '<code style="background: #f3f4f6; padding: 2px 4px; border-radius: 3px; font-family: monospace; font-size: 0.9em;">$1</code>',
+    );
+
     // Strikethrough
-    html = html.replace(/~~([^~]+)~~/g, '<del style="text-decoration: line-through; opacity: 0.7;">$1</del>');
-    
+    html = html.replace(
+      /~~([^~]+)~~/g,
+      '<del style="text-decoration: line-through; opacity: 0.7;">$1</del>',
+    );
+
     // Horizontal rules
-    html = html.replace(/^---$/gm, '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;" />');
-    
+    html = html.replace(
+      /^---$/gm,
+      '<hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;" />',
+    );
+
     // Blockquotes
-    html = html.replace(/^> (.+)$/gm, '<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 12px; margin: 12px 0; color: #6b7280; font-style: italic;">$1</blockquote>');
-    
+    html = html.replace(
+      /^> (.+)$/gm,
+      '<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 12px; margin: 12px 0; color: #6b7280; font-style: italic;">$1</blockquote>',
+    );
+
     // Line breaks and paragraphs
     html = html.replace(/\n\n+/g, '</p><p style="margin: 8px 0;">');
-    html = html.replace(/\n/g, '<br>');
-    
+    html = html.replace(/\n/g, "<br>");
+
     // Wrap in paragraphs if not already wrapped
     if (!html.match(/^<(h[1-6]|ul|ol|pre|blockquote|hr)/)) {
-      html = '<p style="margin: 8px 0;">' + html + '</p>';
+      html = '<p style="margin: 8px 0;">' + html + "</p>";
     }
-    
+
     // Restore HTML elements
     htmlElements.forEach((element, index) => {
       html = html.replace(`__HTML_${index}__`, element);
     });
-    
+
     return html;
   }
-  
+
   escapeHtml(text) {
-    const div = document.createElement('div');
+    const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   }
@@ -953,9 +853,8 @@ class NotebookApp {
       this.socket.emit("reset_kernel");
     }
   }
-  
+
   interruptKernel() {
-    console.log("Interrupting kernel execution...");
     this.socket.emit("interrupt_kernel", {});
   }
   showError(message) {
@@ -1041,25 +940,25 @@ class NotebookApp {
       this.executionTimers.delete(cellIndex);
     }
   }
-  
+
   setupContentAwareSizing(cell, index) {
     // Set up ResizeObserver to watch for content changes
     const resizeObserver = new ResizeObserver((entries) => {
       for (const entry of entries) {
         const cell = entry.target;
         const cellHeight = entry.contentRect.height;
-        
+
         // Apply smart sizing classes based on actual height
         this.updateCellClassBasedOnHeight(cell, cellHeight);
       }
     });
-    
+
     // Observe the cell content area
     resizeObserver.observe(cell);
-    
+
     // Store observer for cleanup
     this.cellResizeObservers.set(index, resizeObserver);
-    
+
     // Initial sizing based on content
     const editor = this.editors.get(index);
     if (editor) {
@@ -1067,35 +966,35 @@ class NotebookApp {
       this.updateCellSizing(index, source);
     }
   }
-  
+
   updateCellSizing(index, source) {
     const cell = document.querySelector(`.cell[data-cell-index="${index}"]`);
     if (!cell) return;
-    
+
     // Remove all sizing classes first
-    cell.classList.remove('cell-empty', 'cell-single-line', 'cell-multi-line');
-    
-    const lines = source.split('\n');
-    const nonEmptyLines = lines.filter(line => line.trim().length > 0);
-    
+    cell.classList.remove("cell-empty", "cell-single-line", "cell-multi-line");
+
+    const lines = source.split("\n");
+    const nonEmptyLines = lines.filter((line) => line.trim().length > 0);
+
     if (nonEmptyLines.length === 0) {
-      cell.classList.add('cell-empty');
+      cell.classList.add("cell-empty");
     } else if (nonEmptyLines.length === 1) {
-      cell.classList.add('cell-single-line');
+      cell.classList.add("cell-single-line");
     } else {
-      cell.classList.add('cell-multi-line');
+      cell.classList.add("cell-multi-line");
     }
   }
-  
+
   updateCellClassBasedOnHeight(cell, height) {
     // Additional height-based adjustments if needed
     if (height < 40) {
-      cell.classList.add('cell-compact');
+      cell.classList.add("cell-compact");
     } else {
-      cell.classList.remove('cell-compact');
+      cell.classList.remove("cell-compact");
     }
   }
-  
+
   cleanupCellObserver(index) {
     // Clean up ResizeObserver when cell is deleted
     const observer = this.cellResizeObservers.get(index);
@@ -1104,15 +1003,17 @@ class NotebookApp {
       this.cellResizeObservers.delete(index);
     }
   }
-  
+
   // Button state management methods
   updateRunButtonToStop(cellIndex) {
-    const cell = document.querySelector(`.cell[data-cell-index="${cellIndex}"]`);
+    const cell = document.querySelector(
+      `.cell[data-cell-index="${cellIndex}"]`,
+    );
     if (!cell) return;
-    
+
     const runBtn = cell.querySelector(".run-cell-btn");
     const runImg = runBtn?.querySelector("img");
-    
+
     if (runBtn && runImg) {
       runImg.src = "/assets/icons/stop.svg";
       runImg.alt = "Stop";
@@ -1120,14 +1021,16 @@ class NotebookApp {
       runBtn.classList.add("stop-mode");
     }
   }
-  
+
   updateRunButtonToPlay(cellIndex) {
-    const cell = document.querySelector(`.cell[data-cell-index="${cellIndex}"]`);
+    const cell = document.querySelector(
+      `.cell[data-cell-index="${cellIndex}"]`,
+    );
     if (!cell) return;
-    
+
     const runBtn = cell.querySelector(".run-cell-btn");
     const runImg = runBtn?.querySelector("img");
-    
+
     if (runBtn && runImg) {
       runImg.src = "/assets/icons/play.svg";
       runImg.alt = "Run";
@@ -1135,14 +1038,16 @@ class NotebookApp {
       runBtn.classList.remove("stop-mode");
     }
   }
-  
+
   clearCellOutput(cellIndex) {
-    const cell = document.querySelector(`.cell[data-cell-index="${cellIndex}"]`);
+    const cell = document.querySelector(
+      `.cell[data-cell-index="${cellIndex}"]`,
+    );
     if (!cell) return;
-    
+
     const outputContainer = cell.querySelector(".cell-output");
     const outputContent = cell.querySelector(".output-content");
-    
+
     if (outputContainer && outputContent) {
       // Clear all output content
       outputContent.innerHTML = "";
@@ -1150,17 +1055,14 @@ class NotebookApp {
       outputContainer.style.display = "none";
     }
   }
-  
+
   // Streaming execution handlers
   handleExecutionStart(data) {
-    console.log("Execution started:", data);
-    
-    // Validate data
     if (!data) {
       console.warn("Invalid execution start data:", data);
       return;
     }
-    
+
     // Show execution start indicator if needed
     if (data.execution_count) {
       const cell = document.querySelector(`.cell.executing`);
@@ -1172,30 +1074,30 @@ class NotebookApp {
       }
     }
   }
-  
+
   handleStreamOutput(data) {
-    console.log("Stream output:", data);
-    
     // Validate data
     if (!data || !data.stream || !data.text) {
       console.warn("Invalid stream output data:", data);
       return;
     }
-    
+
     // Find the currently executing cell
     const cell = document.querySelector(`.cell.executing`);
     if (!cell) return;
-    
+
     // Get or create output container
     const outputContainer = cell.querySelector(".cell-output");
     const outputContent = cell.querySelector(".output-content");
     if (!outputContainer || !outputContent) return;
-    
+
     // Show output container
     outputContainer.style.display = "block";
-    
+
     // Find or create stream output element
-    let streamElement = outputContent.querySelector(`.output-stream.${data.stream}.streaming`);
+    let streamElement = outputContent.querySelector(
+      `.output-stream.${data.stream}.streaming`,
+    );
     if (!streamElement) {
       streamElement = document.createElement("div");
       streamElement.className = `output-stream ${data.stream} streaming`;
@@ -1208,28 +1110,27 @@ class NotebookApp {
       }
       outputContent.appendChild(streamElement);
     }
-    
+
     // Append the new text
-    streamElement.textContent += data.text + '\n';
-    
+    streamElement.textContent += data.text + "\n";
+
     // Auto-scroll to bottom of output
     outputContainer.scrollTop = outputContainer.scrollHeight;
   }
-  
+
   handleExecuteResult(data) {
-    console.log("Execute result:", data);
     // Find the currently executing cell
     const cell = document.querySelector(`.cell.executing`);
     if (!cell) return;
-    
+
     // Get or create output container
     const outputContainer = cell.querySelector(".cell-output");
     const outputContent = cell.querySelector(".output-content");
     if (!outputContainer || !outputContent) return;
-    
+
     // Show output container
     outputContainer.style.display = "block";
-    
+
     // Create result element
     const resultElement = document.createElement("div");
     resultElement.className = "output-result";
@@ -1239,30 +1140,30 @@ class NotebookApp {
     resultElement.style.marginTop = "8px";
     resultElement.style.padding = "4px 0";
     resultElement.style.borderTop = "1px solid #e5e7eb";
-    
+
     outputContent.appendChild(resultElement);
-    
+
     // Auto-scroll to bottom
     outputContainer.scrollTop = outputContainer.scrollHeight;
   }
-  
+
   handleExecutionComplete(data) {
     console.log("Execution completed:", data);
     // Find the currently executing cell
     const cell = document.querySelector(`.cell.executing`);
     if (!cell) return;
-    
+
     // Remove executing class
     cell.classList.remove("executing");
-    
+
     // Stop execution timer
     const cellIndex = parseInt(cell.getAttribute("data-cell-index"));
     this.stopExecutionTimer(cellIndex);
-    
+
     // Clear execution state and reset button
     this.executingCells.delete(cellIndex);
     this.updateRunButtonToPlay(cellIndex);
-    
+
     // Update execution count
     if (data.execution_count) {
       const executionCountEl = cell.querySelector(".execution-count");
@@ -1270,7 +1171,7 @@ class NotebookApp {
         executionCountEl.textContent = `[${data.execution_count}]`;
       }
     }
-    
+
     // Update execution time
     if (data.execution_time) {
       const timeEl = cell.querySelector(".execution-time");
@@ -1279,7 +1180,7 @@ class NotebookApp {
         timeEl.style.display = "block";
       }
     }
-    
+
     // Update status
     const statusEl = cell.querySelector(".execution-status");
     const statusIcon = cell.querySelector(".status-icon");
@@ -1294,18 +1195,18 @@ class NotebookApp {
       }
       statusEl.style.display = "block";
     }
-    
+
     // Remove streaming class from all stream elements
     const streamElements = cell.querySelectorAll(".output-stream.streaming");
-    streamElements.forEach(el => el.classList.remove("streaming"));
+    streamElements.forEach((el) => el.classList.remove("streaming"));
   }
-  
+
   handleStreamError(data) {
     console.error("Stream error:", data);
     // Find the currently executing cell
     const cell = document.querySelector(`.cell.executing`);
     if (!cell) return;
-    
+
     // Clean up execution state on error
     const cellIndex = parseInt(cell.getAttribute("data-cell-index"));
     if (!isNaN(cellIndex)) {
@@ -1314,76 +1215,63 @@ class NotebookApp {
       cell.classList.remove("executing");
       this.stopExecutionTimer(cellIndex);
     }
-    
+
     // Get or create output container
     const outputContainer = cell.querySelector(".cell-output");
     const outputContent = cell.querySelector(".output-content");
     if (!outputContainer || !outputContent) return;
-    
+
     // Show output container
     outputContainer.style.display = "block";
-    
-    // Create error element
-    const errorElement = document.createElement("div");
-    errorElement.className = "output-error";
-    errorElement.textContent = `Stream ${data.stream} error: ${data.error}`;
-    errorElement.style.color = "#dc2626";
-    errorElement.style.fontFamily = "monospace";
-    errorElement.style.fontSize = "13px";
-    errorElement.style.marginTop = "8px";
-    errorElement.style.padding = "8px";
-    errorElement.style.backgroundColor = "#fef2f2";
-    errorElement.style.border = "1px solid #fecaca";
-    errorElement.style.borderRadius = "4px";
-    
+
+    // Create stream error using utility
+    const streamErrorOutput = ErrorUtils.createStreamError(
+      data.stream,
+      data.error,
+    );
+    const errorElement = ErrorUtils.createErrorOutput(streamErrorOutput);
     outputContent.appendChild(errorElement);
-    
+
     // Auto-scroll to bottom
     outputContainer.scrollTop = outputContainer.scrollHeight;
   }
-  
+
   handleExecutionInterrupted(data) {
     console.log("Execution interrupted:", data);
-    
+
     // Find all currently executing cells and clean them up
     const executingCells = Array.from(this.executingCells);
-    
-    executingCells.forEach(cellIndex => {
-      const cell = document.querySelector(`.cell[data-cell-index="${cellIndex}"]`);
+
+    executingCells.forEach((cellIndex) => {
+      const cell = document.querySelector(
+        `.cell[data-cell-index="${cellIndex}"]`,
+      );
       if (cell) {
         // Remove executing class
         cell.classList.remove("executing");
-        
+
         // Stop execution timer
         this.stopExecutionTimer(cellIndex);
-        
+
         // Clear execution state and reset button
         this.executingCells.delete(cellIndex);
         this.updateRunButtonToPlay(cellIndex);
-        
+
         // Add interrupted message to output
         const outputContainer = cell.querySelector(".cell-output");
         const outputContent = cell.querySelector(".output-content");
         if (outputContainer && outputContent) {
           outputContainer.style.display = "block";
-          
-          // Create a fake error output for the interrupt message
-          const interruptOutput = {
-            output_type: "error",
-            ename: "KeyboardInterrupt", 
-            evalue: "Execution interrupted by user",
-            traceback: [
-              "KeyboardInterrupt: Execution interrupted by user",
-              "\nThe kernel was interrupted during execution."
-            ]
-          };
-          
-          const interruptElement = this.createErrorOutput(interruptOutput);
+
+          // Create interrupt error using utility
+          const interruptOutput = ErrorUtils.createInterruptError();
+          const interruptElement =
+            ErrorUtils.createErrorOutput(interruptOutput);
           outputContent.appendChild(interruptElement);
         }
       }
     });
-    
+
     // Clear all executing cells
     this.executingCells.clear();
   }
