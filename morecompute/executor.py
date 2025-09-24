@@ -1,34 +1,47 @@
 import sys
 import io
 import traceback
-import threading
+import asyncio
 import time
-import subprocess
+import os
 from contextlib import redirect_stdout, redirect_stderr
 from typing import Dict, Any, Optional
+from fastapi import WebSocket
+
+try:
+    from .utils.special_commands import AsyncSpecialCommandHandler
+except ImportError:
+    from utils.special_commands import AsyncSpecialCommandHandler
 
 
-class CellExecutor:
-    """Handles execution of notebook cells with proper isolation and output capture"""
+class AsyncCellExecutor:
+    """Handles async execution of notebook cells with streaming output support"""
 
     def __init__(self):
         self.globals_dict = {"__name__": "__main__"}
         self.execution_count = 0
-        self._execution_lock = threading.Lock()
+        self._execution_lock = asyncio.Lock()
+        self.special_handler = AsyncSpecialCommandHandler(self.globals_dict)
+        self.current_process = None
+        self.current_task = None
 
-    def execute_cell(self, source_code: str) -> Dict[str, Any]:
+    async def execute_cell(self, source_code: str, websocket: Optional[WebSocket] = None) -> Dict[str, Any]:
         """
-        Execute a cell and return the result with outputs
+        Execute a cell asynchronously with streaming output support
 
         Args:
             source_code: Python code to execute (or shell command with !)
+            websocket: Optional WebSocket for streaming output
 
         Returns:
             Dict containing execution result, outputs, error information, and timing
         """
-        with self._execution_lock:
+        async with self._execution_lock:
             self.execution_count += 1
             start_time = time.time()
+            
+            # Store current task for interruption
+            self.current_task = asyncio.current_task()
 
             result = {
                 "execution_count": self.execution_count,
@@ -42,134 +55,151 @@ class CellExecutor:
                 result["execution_time"] = f"{(time.time() - start_time) * 1000:.1f}ms"
                 return result
 
-            # Check if this is a shell command
-            if source_code.strip().startswith('!'):
-                return self._execute_shell_command(source_code.strip()[1:], result, start_time)
+            # Check if this is a special command (shell, line magic, or cell magic)
+            if self.special_handler.is_special_command(source_code):
+                return await self.special_handler.execute_special_command(
+                    source_code, result, start_time, self.execution_count, websocket
+                )
 
-            # Capture stdout and stderr
-            stdout_capture = io.StringIO()
-            stderr_capture = io.StringIO()
+            # Execute regular Python code
+            return await self._execute_python_code(source_code, result, start_time, websocket)
 
-            try:
-                with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                    # Compile and execute the code
-                    compiled_code = compile(source_code, '<cell>', 'exec')
-                    exec(compiled_code, self.globals_dict)
+    async def _execute_python_code(self, source_code: str, result: Dict[str, Any], 
+                                  start_time: float, websocket: Optional[WebSocket] = None) -> Dict[str, Any]:
+        """Execute Python code with optional streaming output"""
+        
+        stdout_capture = io.StringIO()
+        stderr_capture = io.StringIO()
 
-                # Capture stdout output
-                stdout_content = stdout_capture.getvalue()
-                if stdout_content:
-                    result["outputs"].append({
-                        "output_type": "stream",
-                        "name": "stdout",
-                        "text": stdout_content
-                    })
-
-                # Capture stderr output
-                stderr_content = stderr_capture.getvalue()
-                if stderr_content:
-                    result["outputs"].append({
-                        "output_type": "stream",
-                        "name": "stderr",
-                        "text": stderr_content
-                    })
-
-                # Try to capture the result of the last expression
-                try:
-                    # Split code into lines and check if last line is an expression
-                    lines = source_code.strip().split('\n')
-                    if lines:
-                        last_line = lines[-1].strip()
-                        if last_line and not self._is_statement(last_line):
-                            # Try to evaluate the last line as an expression
-                            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
-                                expr_result = eval(last_line, self.globals_dict)
-                                if expr_result is not None:
-                                    result["outputs"].append({
-                                        "output_type": "execute_result",
-                                        "execution_count": self.execution_count,
-                                        "data": {
-                                            "text/plain": repr(expr_result)
-                                        }
-                                    })
-                except:
-                    # If evaluation fails, ignore it
-                    pass
-
-            except Exception as e:
-                result["status"] = "error"
-                result["error"] = {
-                    "ename": type(e).__name__,
-                    "evalue": str(e),
-                    "traceback": traceback.format_exc().split('\n')
-                }
-
-                # Also add error as output
-                result["outputs"].append({
-                    "output_type": "error",
-                    "ename": type(e).__name__,
-                    "evalue": str(e),
-                    "traceback": traceback.format_exc().split('\n')
-                })
-
-            # Calculate execution time
-            result["execution_time"] = f"{(time.time() - start_time) * 1000:.1f}ms"
-            return result
-
-    def _execute_shell_command(self, command: str, result: Dict[str, Any], start_time: float) -> Dict[str, Any]:
-        """Execute a shell command (like !pip install pandas)"""
         try:
-            # Execute the shell command
-            process = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=300
-            )
-
-            # Add stdout output
-            if process.stdout:
-                result["outputs"].append({
-                    "output_type": "stream",
-                    "name": "stdout",
-                    "text": process.stdout
+            # Send execution start notification if websocket available
+            if websocket:
+                await websocket.send_json({
+                    "type": "execution_start",
+                    "data": {
+                        "execution_count": self.execution_count
+                    }
                 })
 
-            # Add stderr output
-            if process.stderr:
-                result["outputs"].append({
+            with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                # Compile and execute the code
+                compiled_code = compile(source_code, '<cell>', 'exec')
+                exec(compiled_code, self.globals_dict)
+
+            # Capture stdout output
+            stdout_content = stdout_capture.getvalue()
+            if stdout_content:
+                output_data = {
+                    "output_type": "stream",
+                    "name": "stdout", 
+                    "text": stdout_content
+                }
+                result["outputs"].append(output_data)
+                
+                # Stream output if websocket available
+                if websocket:
+                    await websocket.send_json({
+                        "type": "stream_output",
+                        "data": {
+                            "stream": "stdout",
+                            "text": stdout_content
+                        }
+                    })
+
+            # Capture stderr output
+            stderr_content = stderr_capture.getvalue()
+            if stderr_content:
+                output_data = {
                     "output_type": "stream",
                     "name": "stderr",
-                    "text": process.stderr
-                })
-
-            # Check if command failed
-            if process.returncode != 0:
-                result["status"] = "error"
-                result["error"] = {
-                    "ename": "ShellCommandError",
-                    "evalue": f"Command failed with return code {process.returncode}",
-                    "traceback": [f"Shell command failed: {command}"]
+                    "text": stderr_content
                 }
+                result["outputs"].append(output_data)
+                
+                # Stream output if websocket available
+                if websocket:
+                    await websocket.send_json({
+                        "type": "stream_output",
+                        "data": {
+                            "stream": "stderr",
+                            "text": stderr_content
+                        }
+                    })
 
-        except subprocess.TimeoutExpired:
-            result["status"] = "error"
-            result["error"] = {
-                "ename": "TimeoutError",
-                "evalue": "Command timed out after 5 minutes",
-                "traceback": [f"Shell command timed out: {command}"]
-            }
+            # Try to capture the result of the last expression
+            try:
+                # Split code into lines and check if last line is an expression
+                lines = source_code.strip().split('\n')
+                if lines:
+                    last_line = lines[-1].strip()
+                    if last_line and not self._is_statement(last_line):
+                        # Try to evaluate the last line as an expression
+                        with redirect_stdout(stdout_capture), redirect_stderr(stderr_capture):
+                            expr_result = eval(last_line, self.globals_dict)
+                            if expr_result is not None:
+                                output_data = {
+                                    "output_type": "execute_result",
+                                    "execution_count": self.execution_count,
+                                    "data": {
+                                        "text/plain": repr(expr_result)
+                                    }
+                                }
+                                result["outputs"].append(output_data)
+                                
+                                # Stream result if websocket available
+                                if websocket:
+                                    await websocket.send_json({
+                                        "type": "execute_result",
+                                        "data": {
+                                            "execution_count": self.execution_count,
+                                            "data": output_data["data"]
+                                        }
+                                    })
+            except:
+                # If evaluation fails, ignore it
+                pass
+
         except Exception as e:
             result["status"] = "error"
-            result["error"] = {
+            error_info = {
                 "ename": type(e).__name__,
                 "evalue": str(e),
                 "traceback": traceback.format_exc().split('\n')
             }
+            result["error"] = error_info
+
+            # Also add error as output
+            result["outputs"].append({
+                "output_type": "error",
+                **error_info
+            })
+            
+            # Stream error if websocket available
+            if websocket:
+                await websocket.send_json({
+                    "type": "execution_error",
+                    "data": {
+                        "error": error_info
+                    }
+                })
 
         # Calculate execution time
         result["execution_time"] = f"{(time.time() - start_time) * 1000:.1f}ms"
+        
+        # Send completion if websocket available
+        if websocket:
+            await websocket.send_json({
+                "type": "execution_complete",
+                "data": {
+                    "execution_count": self.execution_count,
+                    "execution_time": result["execution_time"],
+                    "status": result["status"]
+                }
+            })
+        
+        # Clear current task
+        self.current_task = None
+        
         return result
 
     def _is_statement(self, line: str) -> bool:
@@ -193,11 +223,12 @@ class CellExecutor:
         first_word = line.split()[0]
         return first_word in statement_keywords
 
-    def reset_kernel(self):
+    async def reset_kernel(self):
         """Reset the execution environment"""
-        with self._execution_lock:
+        async with self._execution_lock:
             self.globals_dict = {"__name__": "__main__"}
             self.execution_count = 0
+            self.special_handler = AsyncSpecialCommandHandler(self.globals_dict)
 
     def get_variables(self) -> Dict[str, str]:
         """Get current variables in the execution environment"""
@@ -210,8 +241,25 @@ class CellExecutor:
                     variables[name] = "<unprintable>"
         return variables
 
-    def interrupt_execution(self):
-        """Interrupt current execution (placeholder for future implementation)"""
-        # This would require more sophisticated thread management
-        # For now, we'll just pass
-        pass
+    async def interrupt_execution(self):
+        """Interrupt current execution"""
+        # Interrupt external processes
+        if self.current_process and self.current_process.returncode is None:
+            try:
+                self.current_process.terminate()
+                await asyncio.wait_for(self.current_process.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                self.current_process.kill()
+            finally:
+                self.current_process = None
+        
+        # Interrupt Python code execution by cancelling the current task
+        if self.current_task and not self.current_task.done():
+            try:
+                self.current_task.cancel()
+                # Give the task a moment to handle the cancellation
+                await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                self.current_task = None

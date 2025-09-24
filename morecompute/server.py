@@ -10,7 +10,7 @@ from typing import Optional, List
 from pathlib import Path
 
 from .notebook import NotebookHandler
-from .executor import CellExecutor
+from .executor import AsyncCellExecutor
 from .utils.pyEnv import PythonEnvironmentDetector
 from .utils.systemEnv import DeviceMetrics
 
@@ -23,7 +23,7 @@ class NotebookServer:
         self.port = port
         self.debug = debug
         self.notebook_handler: Optional[NotebookHandler] = None
-        self.executor = CellExecutor()
+        self.executor = AsyncCellExecutor()
         self.active_connections: List[WebSocket] = []
         self.python_detector = PythonEnvironmentDetector()
 
@@ -192,6 +192,8 @@ class NotebookServer:
                 await self._handle_reset_kernel(websocket)
             elif message_type == 'save_notebook':
                 await self._handle_save_notebook(websocket, data)
+            elif message_type == 'interrupt_kernel':
+                await self._handle_interrupt_kernel(websocket, data)
             else:
                 await websocket.send_json({
                     "type": "error",
@@ -204,7 +206,7 @@ class NotebookServer:
             })
 
     async def _handle_execute_cell(self, websocket: WebSocket, data: dict):
-        """Execute a cell and return results"""
+        """Execute a cell with streaming support"""
         cell_index = data.get('cell_index')
         source_code = data.get('source')
 
@@ -215,24 +217,31 @@ class NotebookServer:
             })
             return
 
-        # Execute the cell
-        result = self.executor.execute_cell(source_code)
+        try:
+            # Execute the cell with streaming support
+            result = await self.executor.execute_cell(source_code, websocket)
 
-        # Update cell in notebook if we have one
-        if self.notebook_handler and cell_index is not None:
-            if 0 <= cell_index < len(self.notebook_handler.cells):
-                cell = self.notebook_handler.cells[cell_index]
-                cell.outputs = result['outputs']
-                cell.execution_count = result['execution_count']
+            # Update cell in notebook if we have one
+            if self.notebook_handler and cell_index is not None:
+                if 0 <= cell_index < len(self.notebook_handler.cells):
+                    cell = self.notebook_handler.cells[cell_index]
+                    cell.outputs = result['outputs']
+                    cell.execution_count = result['execution_count']
 
-        # Send result back
-        await websocket.send_json({
-            "type": "execution_result",
-            "data": {
-                "cell_index": cell_index,
-                "result": result
-            }
-        })
+            # Send final result back (streaming already sent real-time updates)
+            await websocket.send_json({
+                "type": "execution_result",
+                "data": {
+                    "cell_index": cell_index,
+                    "result": result
+                }
+            })
+            
+        except Exception as e:
+            await websocket.send_json({
+                "type": "execution_error",
+                "data": {"error": str(e)}
+            })
 
     async def _handle_add_cell(self, websocket: WebSocket, data: dict):
         """Add a new cell"""
@@ -303,7 +312,7 @@ class NotebookServer:
 
     async def _handle_reset_kernel(self, websocket: WebSocket):
         """Reset the execution kernel"""
-        self.executor.reset_kernel()
+        await self.executor.reset_kernel()
 
         # Clear all cell outputs
         if self.notebook_handler:
@@ -342,6 +351,29 @@ class NotebookServer:
         except Exception as e:
             await websocket.send_json({
                 "type": "save_error",
+                "data": {"error": str(e)}
+            })
+    
+    async def _handle_interrupt_kernel(self, websocket: WebSocket, data: dict):
+        """Interrupt current kernel execution"""
+        try:
+            await self.executor.interrupt_execution()
+            
+            # Broadcast interrupt to all connections
+            for connection in self.active_connections:
+                try:
+                    await connection.send_json({
+                        "type": "execution_interrupted",
+                        "data": {"message": "Kernel execution interrupted"}
+                    })
+                except:
+                    # Remove failed connections
+                    if connection in self.active_connections:
+                        self.active_connections.remove(connection)
+                        
+        except Exception as e:
+            await websocket.send_json({
+                "type": "interrupt_error", 
                 "data": {"error": str(e)}
             })
 

@@ -6,6 +6,7 @@ class NotebookApp {
     this.sortable = null;
     this.executionTimers = new Map(); // Track execution timers
     this.cellResizeObservers = new Map(); // Track ResizeObserver instances for each cell
+    this.executingCells = new Set(); // Track currently executing cells
     this.initializeEventListeners();
     this.initializeWebSocket();
     this.initializeSocketListeners();
@@ -98,6 +99,13 @@ class NotebookApp {
       if (e.key === "Escape") {
         this.clearActiveCells();
       }
+      if (e.ctrlKey && e.key === "c") {
+        // Only interrupt if there are executing cells
+        if (this.executingCells.size > 0) {
+          e.preventDefault();
+          this.interruptKernel();
+        }
+      }
     });
     this.initializeSortable();
   }
@@ -163,6 +171,26 @@ class NotebookApp {
     this.socket.on("save_error", (data) => {
       console.error("Save error:", data.error);
       this.showError("Save failed: " + data.error);
+    });
+    
+    // Add streaming message handlers
+    this.socket.on("execution_start", (data) => {
+      this.handleExecutionStart(data);
+    });
+    this.socket.on("stream_output", (data) => {
+      this.handleStreamOutput(data);
+    });
+    this.socket.on("execute_result", (data) => {
+      this.handleExecuteResult(data);
+    });
+    this.socket.on("execution_complete", (data) => {
+      this.handleExecutionComplete(data);
+    });
+    this.socket.on("stream_error", (data) => {
+      this.handleStreamError(data);
+    });
+    this.socket.on("execution_interrupted", (data) => {
+      this.handleExecutionInterrupted(data);
     });
   }
   loadNotebook(data) {
@@ -381,7 +409,15 @@ class NotebookApp {
     if (runBtn) {
       runBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        this.executeCell(index);
+        
+        // Check if this cell is currently executing
+        if (this.executingCells.has(index)) {
+          // If executing, interrupt the kernel
+          this.interruptKernel();
+        } else {
+          // If not executing, run the cell
+          this.executeCell(index);
+        }
       });
     }
     const deleteBtn = cell.querySelector(".delete-cell-btn");
@@ -439,6 +475,10 @@ class NotebookApp {
     if (cell) {
       cell.classList.add("executing");
     }
+    
+    // Track execution state and update button
+    this.executingCells.add(index);
+    this.updateRunButtonToStop(index);
 
     this.startExecutionTimer(index);
 
@@ -490,6 +530,10 @@ class NotebookApp {
     if (!cell) return;
     cell.classList.remove("executing");
     this.stopExecutionTimer(cell_index);
+    
+    // Clear execution state and reset button
+    this.executingCells.delete(cell_index);
+    this.updateRunButtonToPlay(cell_index);
 
     const executionCountEl = cell.querySelector(".execution-count");
     if (result.execution_count && executionCountEl) {
@@ -735,6 +779,11 @@ class NotebookApp {
       this.socket.emit("reset_kernel");
     }
   }
+  
+  interruptKernel() {
+    console.log("Interrupting kernel execution...");
+    this.socket.emit("interrupt_kernel", {});
+  }
   showError(message) {
     console.error("Error:", message);
     alert("Error: " + message);
@@ -880,6 +929,274 @@ class NotebookApp {
       observer.disconnect();
       this.cellResizeObservers.delete(index);
     }
+  }
+  
+  // Button state management methods
+  updateRunButtonToStop(cellIndex) {
+    const cell = document.querySelector(`.cell[data-cell-index="${cellIndex}"]`);
+    if (!cell) return;
+    
+    const runBtn = cell.querySelector(".run-cell-btn");
+    const runImg = runBtn?.querySelector("img");
+    
+    if (runBtn && runImg) {
+      runImg.src = "/assets/icons/stop.svg";
+      runImg.alt = "Stop";
+      runBtn.title = "Stop execution (Ctrl+C)";
+      runBtn.classList.add("stop-mode");
+    }
+  }
+  
+  updateRunButtonToPlay(cellIndex) {
+    const cell = document.querySelector(`.cell[data-cell-index="${cellIndex}"]`);
+    if (!cell) return;
+    
+    const runBtn = cell.querySelector(".run-cell-btn");
+    const runImg = runBtn?.querySelector("img");
+    
+    if (runBtn && runImg) {
+      runImg.src = "/assets/icons/play.svg";
+      runImg.alt = "Run";
+      runBtn.title = "Run cell (Shift+Enter)";
+      runBtn.classList.remove("stop-mode");
+    }
+  }
+  
+  // Streaming execution handlers
+  handleExecutionStart(data) {
+    console.log("Execution started:", data);
+    
+    // Validate data
+    if (!data) {
+      console.warn("Invalid execution start data:", data);
+      return;
+    }
+    
+    // Show execution start indicator if needed
+    if (data.execution_count) {
+      const cell = document.querySelector(`.cell.executing`);
+      if (cell) {
+        const statusEl = cell.querySelector(".execution-status");
+        if (statusEl) {
+          statusEl.classList.add("streaming");
+        }
+      }
+    }
+  }
+  
+  handleStreamOutput(data) {
+    console.log("Stream output:", data);
+    
+    // Validate data
+    if (!data || !data.stream || !data.text) {
+      console.warn("Invalid stream output data:", data);
+      return;
+    }
+    
+    // Find the currently executing cell
+    const cell = document.querySelector(`.cell.executing`);
+    if (!cell) return;
+    
+    // Get or create output container
+    const outputContainer = cell.querySelector(".cell-output");
+    const outputContent = cell.querySelector(".output-content");
+    if (!outputContainer || !outputContent) return;
+    
+    // Show output container
+    outputContainer.style.display = "block";
+    
+    // Find or create stream output element
+    let streamElement = outputContent.querySelector(`.output-stream.${data.stream}.streaming`);
+    if (!streamElement) {
+      streamElement = document.createElement("div");
+      streamElement.className = `output-stream ${data.stream} streaming`;
+      streamElement.style.whiteSpace = "pre-wrap";
+      streamElement.style.fontFamily = "monospace";
+      streamElement.style.fontSize = "13px";
+      streamElement.style.lineHeight = "1.4";
+      if (data.stream === "stderr") {
+        streamElement.style.color = "#dc2626";
+      }
+      outputContent.appendChild(streamElement);
+    }
+    
+    // Append the new text
+    streamElement.textContent += data.text + '\n';
+    
+    // Auto-scroll to bottom of output
+    outputContainer.scrollTop = outputContainer.scrollHeight;
+  }
+  
+  handleExecuteResult(data) {
+    console.log("Execute result:", data);
+    // Find the currently executing cell
+    const cell = document.querySelector(`.cell.executing`);
+    if (!cell) return;
+    
+    // Get or create output container
+    const outputContainer = cell.querySelector(".cell-output");
+    const outputContent = cell.querySelector(".output-content");
+    if (!outputContainer || !outputContent) return;
+    
+    // Show output container
+    outputContainer.style.display = "block";
+    
+    // Create result element
+    const resultElement = document.createElement("div");
+    resultElement.className = "output-result";
+    resultElement.textContent = data.data["text/plain"] || "";
+    resultElement.style.fontFamily = "monospace";
+    resultElement.style.fontSize = "13px";
+    resultElement.style.marginTop = "8px";
+    resultElement.style.padding = "4px 0";
+    resultElement.style.borderTop = "1px solid #e5e7eb";
+    
+    outputContent.appendChild(resultElement);
+    
+    // Auto-scroll to bottom
+    outputContainer.scrollTop = outputContainer.scrollHeight;
+  }
+  
+  handleExecutionComplete(data) {
+    console.log("Execution completed:", data);
+    // Find the currently executing cell
+    const cell = document.querySelector(`.cell.executing`);
+    if (!cell) return;
+    
+    // Remove executing class
+    cell.classList.remove("executing");
+    
+    // Stop execution timer
+    const cellIndex = parseInt(cell.getAttribute("data-cell-index"));
+    this.stopExecutionTimer(cellIndex);
+    
+    // Clear execution state and reset button
+    this.executingCells.delete(cellIndex);
+    this.updateRunButtonToPlay(cellIndex);
+    
+    // Update execution count
+    if (data.execution_count) {
+      const executionCountEl = cell.querySelector(".execution-count");
+      if (executionCountEl) {
+        executionCountEl.textContent = `[${data.execution_count}]`;
+      }
+    }
+    
+    // Update execution time
+    if (data.execution_time) {
+      const timeEl = cell.querySelector(".execution-time");
+      if (timeEl) {
+        timeEl.textContent = data.execution_time;
+        timeEl.style.display = "block";
+      }
+    }
+    
+    // Update status
+    const statusEl = cell.querySelector(".execution-status");
+    const statusIcon = cell.querySelector(".status-icon");
+    if (statusEl && statusIcon) {
+      statusEl.classList.remove("streaming");
+      if (data.status === "ok") {
+        statusIcon.src = "/assets/icons/check.svg";
+        statusIcon.alt = "Success";
+      } else {
+        statusIcon.src = "/assets/icons/x.svg";
+        statusIcon.alt = "Error";
+      }
+      statusEl.style.display = "block";
+    }
+    
+    // Remove streaming class from all stream elements
+    const streamElements = cell.querySelectorAll(".output-stream.streaming");
+    streamElements.forEach(el => el.classList.remove("streaming"));
+  }
+  
+  handleStreamError(data) {
+    console.error("Stream error:", data);
+    // Find the currently executing cell
+    const cell = document.querySelector(`.cell.executing`);
+    if (!cell) return;
+    
+    // Clean up execution state on error
+    const cellIndex = parseInt(cell.getAttribute("data-cell-index"));
+    if (!isNaN(cellIndex)) {
+      this.executingCells.delete(cellIndex);
+      this.updateRunButtonToPlay(cellIndex);
+      cell.classList.remove("executing");
+      this.stopExecutionTimer(cellIndex);
+    }
+    
+    // Get or create output container
+    const outputContainer = cell.querySelector(".cell-output");
+    const outputContent = cell.querySelector(".output-content");
+    if (!outputContainer || !outputContent) return;
+    
+    // Show output container
+    outputContainer.style.display = "block";
+    
+    // Create error element
+    const errorElement = document.createElement("div");
+    errorElement.className = "output-error";
+    errorElement.textContent = `Stream ${data.stream} error: ${data.error}`;
+    errorElement.style.color = "#dc2626";
+    errorElement.style.fontFamily = "monospace";
+    errorElement.style.fontSize = "13px";
+    errorElement.style.marginTop = "8px";
+    errorElement.style.padding = "8px";
+    errorElement.style.backgroundColor = "#fef2f2";
+    errorElement.style.border = "1px solid #fecaca";
+    errorElement.style.borderRadius = "4px";
+    
+    outputContent.appendChild(errorElement);
+    
+    // Auto-scroll to bottom
+    outputContainer.scrollTop = outputContainer.scrollHeight;
+  }
+  
+  handleExecutionInterrupted(data) {
+    console.log("Execution interrupted:", data);
+    
+    // Find all currently executing cells and clean them up
+    const executingCells = Array.from(this.executingCells);
+    
+    executingCells.forEach(cellIndex => {
+      const cell = document.querySelector(`.cell[data-cell-index="${cellIndex}"]`);
+      if (cell) {
+        // Remove executing class
+        cell.classList.remove("executing");
+        
+        // Stop execution timer
+        this.stopExecutionTimer(cellIndex);
+        
+        // Clear execution state and reset button
+        this.executingCells.delete(cellIndex);
+        this.updateRunButtonToPlay(cellIndex);
+        
+        // Add interrupted message to output
+        const outputContainer = cell.querySelector(".cell-output");
+        const outputContent = cell.querySelector(".output-content");
+        if (outputContainer && outputContent) {
+          outputContainer.style.display = "block";
+          
+          const interruptElement = document.createElement("div");
+          interruptElement.className = "output-error";
+          interruptElement.textContent = "KeyboardInterrupt: Execution interrupted by user";
+          interruptElement.style.color = "#dc2626";
+          interruptElement.style.fontFamily = "monospace";
+          interruptElement.style.fontSize = "13px";
+          interruptElement.style.marginTop = "8px";
+          interruptElement.style.padding = "8px";
+          interruptElement.style.backgroundColor = "#fef2f2";
+          interruptElement.style.border = "1px solid #fecaca";
+          interruptElement.style.borderRadius = "4px";
+          
+          outputContent.appendChild(interruptElement);
+        }
+      }
+    });
+    
+    // Clear all executing cells
+    this.executingCells.clear();
   }
 }
 document.addEventListener("DOMContentLoaded", () => {

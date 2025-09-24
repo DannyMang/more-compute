@@ -334,6 +334,16 @@ body {
     background: #fef2f2;
 }
 
+.cell-action.run-cell-btn.stop-mode {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.cell-action.run-cell-btn.stop-mode:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
 .cell-action img {
     width: 14px;
     height: 14px;
