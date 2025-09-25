@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import subprocess
 import sys
 import os
@@ -20,13 +21,30 @@ class NotebookLauncher:
     def start_backend(self):
         """Start the FastAPI backend server"""
         try:
+            cmd = [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "morecompute.server:app",
+                "--host",
+                "localhost",
+                "--port",
+                "8000",
+                "--reload",
+            ]
+
+            if not self.debug:
+                cmd.extend(["--log-level", "error", "--no-access-log"])
+
+            stdout_dest = None if self.debug else subprocess.DEVNULL
+            stderr_dest = None if self.debug else subprocess.DEVNULL
+
             # Start the FastAPI server using uvicorn
             self.backend_process = subprocess.Popen(
-                [sys.executable, "-m", "uvicorn", "morecompute.server:app", 
-                 "--host", "localhost", "--port", "8000"],
+                cmd,
                 cwd=self.root_dir,
-                stdout=subprocess.DEVNULL if not self.debug else None,
-                stderr=subprocess.DEVNULL if not self.debug else None
+                stdout=stdout_dest,
+                stderr=stderr_dest,
             )
             
         except Exception as e:
@@ -50,11 +68,14 @@ class NotebookLauncher:
                         stderr=subprocess.DEVNULL
                     )
                 
+                fe_stdout = None if self.debug else subprocess.DEVNULL
+                fe_stderr = None if self.debug else subprocess.DEVNULL
+
                 self.frontend_process = subprocess.Popen(
                     ["npm", "run", "dev"],
                     cwd=frontend_dir,
-                    stdout=subprocess.DEVNULL if not self.debug else None,
-                    stderr=subprocess.DEVNULL if not self.debug else None
+                    stdout=fe_stdout,
+                    stderr=fe_stderr
                 )
                 
                 # Wait a bit then open browser
@@ -89,11 +110,11 @@ class NotebookLauncher:
     def run(self):
         """Main run method"""
         if self.use_new_frontend:
-            print("\n        Edit notebook in your browser!")
-            print("\n        ➜  URL: http://localhost:3000\n")
+            print("\n        Edit notebook in your browser!\n")
+            print("        ➜  URL: http://localhost:3000\n")
         else:
-            print("\n        Edit notebook in your browser!")
-            print("\n        ➜  URL: http://localhost:8000\n")
+            print("\n        Edit notebook in your browser!\n")
+            print("        ➜  URL: http://localhost:8000\n")
         
         # Set up signal handlers
         def signal_handler(signum, frame):
@@ -128,15 +149,22 @@ class NotebookLauncher:
             self.cleanup()
 
 if __name__ == "__main__":
-    # Check command line arguments
-    use_new = len(sys.argv) > 1 and sys.argv[1].lower() == 'new'
+    parser = argparse.ArgumentParser(description="Launch the MoreCompute notebook")
+    parser.add_argument(
+        "mode",
+        nargs="?",
+        choices=["new", "legacy"],
+        default="legacy",
+        help="Choose the frontend: 'new' (Next.js) or 'legacy' (served by FastAPI)",
+    )
+    parser.add_argument(
+        "-debug",
+        "--debug",
+        action="store_true",
+        help="Show backend/frontend logs (hidden by default)",
+    )
 
-    if len(sys.argv) > 1 and sys.argv[1] not in ['new', 'legacy']:
-        print("Usage:")
-        print("  python kernel_run.py         # Use legacy frontend (default)")
-        print("  python kernel_run.py new      # Use new Next.js frontend")
-        print("  python kernel_run.py legacy   # Explicitly use legacy frontend")
-        sys.exit(1)
+    args = parser.parse_args()
 
-    launcher = NotebookLauncher(use_new_frontend=use_new)
+    launcher = NotebookLauncher(use_new_frontend=(args.mode == "new"), debug=args.debug)
     launcher.run()

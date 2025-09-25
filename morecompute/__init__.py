@@ -1,11 +1,8 @@
 """
-MoreCompute - Interactive Notebook Environment
+MoreCompute: An interactive, real-time Python notebook
 """
 
 __version__ = "0.1.0"
-__author__ = "Your Name"
 
-from .server import NotebookServer
-from .notebook import NotebookHandler
-
-__all__ = ["NotebookServer", "NotebookHandler"]
+# Expose key components for uvicorn and other integrations
+from .server import app

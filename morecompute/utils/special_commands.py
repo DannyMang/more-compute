@@ -159,49 +159,54 @@ class AsyncSpecialCommandHandler:
 
     async def _stream_output(self, stream, stream_type: str, result: Dict[str, Any],
                            websocket: Optional[WebSocket] = None):
-        """Stream subprocess output line by line"""
-        output_lines = []
-
-        try:
-            while True:
+        """Read from a stream and send to websocket, while capturing the output."""
+        
+        output_text = ""
+        while True:
+            try:
                 line = await stream.readline()
                 if not line:
                     break
-
-                # Decode and clean the line
-                text = line.decode('utf-8', errors='replace').rstrip()
-
-                if text:  # Only process non-empty lines
-                    output_lines.append(text + '\n')
-
-                    # Send real-time streaming if websocket available
-                    if websocket:
-                        await websocket.send_json({
-                            "type": "stream_output",
-                            "data": {
-                                "stream": stream_type,
-                                "text": text
-                            }
-                        })
-
-        except Exception as e:
-            # Send error but don't crash the stream
-            if websocket:
-                await websocket.send_json({
-                    "type": "stream_error",
-                    "data": {
-                        "stream": stream_type,
-                        "error": str(e)
-                    }
+                
+                decoded_line = line.decode('utf-8')
+                output_text += decoded_line
+                
+                if websocket:
+                    await websocket.send_json({
+                        "type": "stream_output",
+                        "data": {
+                            "stream": stream_type,
+                            "text": decoded_line
+                        }
+                    })
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                # Handle potential errors during streaming
+                error_message = f"Error reading stream: {e}\n"
+                output_text += error_message
+                if websocket:
+                    await websocket.send_json({
+                        "type": "stream_output",
+                        "data": {
+                            "stream": "stderr",
+                            "text": error_message
+                        }
+                    })
+                break
+        
+        # Add the captured text to the final result object
+        if output_text:
+            # Look for an existing stream output of the same type to append to
+            existing_output = next((o for o in result["outputs"] if o.get("name") == stream_type), None)
+            if existing_output:
+                existing_output["text"] += output_text
+            else:
+                result["outputs"].append({
+                    "output_type": "stream",
+                    "name": stream_type,
+                    "text": output_text
                 })
-
-        # Add collected output to result
-        if output_lines:
-            result["outputs"].append({
-                "output_type": "stream",
-                "name": stream_type,
-                "text": ''.join(output_lines)
-            })
 
     async def _execute_cell_magic(self, source_code: str, result: Dict[str, Any],
                                  start_time: float, execution_count: int,

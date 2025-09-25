@@ -309,3 +309,14 @@ def _format_traceback(traceback_lines: List[str]) -> List[str]:
         formatted_lines = ["... (traceback truncated) ..."] + formatted_lines[-15:]
 
     return formatted_lines
+
+
+class ErrorUtils:
+    """Helper class to generate enhanced error payloads for the frontend."""
+
+    def format_exception(self, exception: Exception) -> Dict[str, Any]:
+        """Return enhanced error information for the given exception."""
+
+        formatted_traceback = traceback.format_exception(type(exception), exception, exception.__traceback__)
+        cleaned_traceback = [line.rstrip("\n") for line in formatted_traceback]
+        return create_enhanced_error_info(exception, cleaned_traceback)

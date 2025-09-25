@@ -3,24 +3,33 @@ export interface Cell {
   cell_type: 'code' | 'markdown';
   source: string;
   outputs: Output[];
-  execution_count?: number;
-  metadata?: Record<string, any>;
+  metadata: Record<string, unknown>;
+  execution_count: number | null;
+  error?: any;
+  isEditing?: boolean;
 }
 
-export interface Output {
-  output_type: 'stream' | 'execute_result' | 'error';
-  name?: string;
-  text?: string;
-  data?: {
-    'text/plain'?: string;
-    'text/html'?: string;
-    'image/png'?: string;
-  };
-  ename?: string;
-  evalue?: string;
-  traceback?: string[];
-  suggestions?: string[];
+export type Output = StreamOutput | ExecuteResultOutput | ErrorOutput;
+
+export interface StreamOutput {
+  output_type: 'stream';
+  name: 'stdout' | 'stderr';
+  text: string;
+}
+
+export interface ExecuteResultOutput {
+  output_type: 'execute_result';
+  data: { 'text/plain'?: string };
+  execution_count: number;
+}
+
+export interface ErrorOutput {
+  output_type: 'error';
+  ename: string;
+  evalue: string;
+  traceback: string[];
   error_type?: 'pip_error' | 'import_error' | 'file_error' | 'generic_error';
+  suggestions?: string[];
 }
 
 export interface ExecutionResult {

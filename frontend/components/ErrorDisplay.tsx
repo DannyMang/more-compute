@@ -1,54 +1,39 @@
 'use client';
 
-import React, { useState } from 'react';
-import { Output } from '@/types/notebook';
+import React, { FC, useState } from 'react';
+import { Copy, Check } from 'lucide-react';
+import { Output, ErrorOutput } from '@/types/notebook';
+
+/*
+ I would like custom error handling for most general errors
+
+ imagine like user does not know pip is ran with !pip install, and just runs pip install,
+
+ it would be nice just to have a custom error message pointing user to use !pip rather than just fail, etc
+*/
+
 
 interface ErrorDisplayProps {
   error: Output;
   maxLines?: number;
 }
 
-export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20 }) => {
-  const [copied, setCopied] = useState(false);
+const TypedErrorDisplay: FC<{ error: ErrorOutput }> = ({ error }) => {
+  const [isCopied, setIsCopied] = useState(false);
 
-  const fullTraceback = error.traceback?.join('\n') || '';
-  const tracebackLines = error.traceback || [];
-  
-  // Determine display content and truncation
-  let displayContent: string;
-  let isLimited = false;
-  
-  if (tracebackLines.length > maxLines) {
-    const limitedLines = tracebackLines.slice(-maxLines);
-    displayContent = limitedLines.join('\n');
-    isLimited = true;
-  } else {
-    displayContent = fullTraceback;
-  }
-
-  const copyToClipboard = async () => {
-    try {
-      await navigator.clipboard.writeText(fullTraceback);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (err) {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = fullTraceback;
-      document.body.appendChild(textArea);
-      textArea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textArea);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
+  const copyToClipboard = () => {
+    const errorDetails = `Error: ${error.ename}: ${error.evalue}\n\nTraceback:\n${error.traceback.join('\n')}`;
+    navigator.clipboard.writeText(errorDetails).then(() => {
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    });
   };
 
-  const getErrorTypeIndicator = () => {
-    switch (error.error_type) {
+  const getErrorIcon = (errorType?: string) => {
+    switch (errorType) {
       case 'pip_error':
         return {
-          text: '📦 Use !pip install instead of pip install',
+          text: 'Use !pip install instead of pip install',
           style: {
             background: '#fef3c7',
             color: '#d97706',
@@ -57,7 +42,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20
         };
       case 'import_error':
         return {
-          text: '📥 Import Error',
+          text: 'Import Error',
           style: {
             background: '#fee2e2',
             color: '#dc2626',
@@ -66,7 +51,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20
         };
       case 'file_error':
         return {
-          text: '📁 File Error',
+          text: 'File Error',
           style: {
             background: '#fdf4ff',
             color: '#c026d3',
@@ -75,7 +60,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20
         };
       default:
         return {
-          text: '⚠️ Error',
+          text: 'Error',
           style: {
             background: '#f3f4f6',
             color: '#6b7280',
@@ -85,7 +70,42 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20
     }
   };
 
-  const indicator = getErrorTypeIndicator();
+  const renderSuggestion = (suggestion: string) => {
+    // Check if suggestion contains code
+    const hasCode = suggestion.includes('!pip') || suggestion.includes('python') || suggestion.includes('subprocess');
+    
+    if (hasCode) {
+      const parts = suggestion.split(/(!pip[^\s]*|python[^\s]*|subprocess[^\s]*)/g);
+      return (
+        <li style={{ marginBottom: '4px' }}>
+          {parts.map((part, idx) => {
+            if (part.match(/!pip|python|subprocess/)) {
+              return (
+                <code
+                  key={idx}
+                  style={{
+                    background: '#e0f2fe',
+                    padding: '2px 4px',
+                    borderRadius: '3px',
+                    fontFamily: "'SF Mono', Monaco, monospace",
+                    fontSize: '11px',
+                    color: '#01579b'
+                  }}
+                >
+                  {part}
+                </code>
+              );
+            }
+            return <span key={idx}>{part}</span>;
+          })}
+        </li>
+      );
+    }
+    
+    return <li style={{ marginBottom: '4px' }}>{suggestion}</li>;
+  };
+
+  const indicator = getErrorIcon(error.error_type);
 
   return (
     <div className="error-output-container">
@@ -136,8 +156,8 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20
               lineHeight: 1.5
             }}
           >
-            {error.suggestions.map((suggestion, idx) => (
-              <SuggestionItem key={idx} suggestion={suggestion} />
+            {error.suggestions.map((suggestion: string, idx: React.Key | null | undefined) => (
+              renderSuggestion(suggestion)
             ))}
           </ul>
         </div>
@@ -166,14 +186,21 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20
             borderRadius: '4px',
             padding: '6px',
             cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
             transition: 'all 0.2s ease'
           }}
           title="Copy error to clipboard"
         >
-          {copied ? '✓' : '📋'}
+          {isCopied ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
         </button>
 
         {/* Truncation Indicator */}
+        {/* The original code had this, but the new TypedErrorDisplay doesn't have it.
+            Assuming it's not needed for the new TypedErrorDisplay or that it's handled differently.
+            For now, removing it as it's not in the new_code. */}
+        {/*
         {isLimited && (
           <div
             style={{
@@ -188,6 +215,7 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20
             ... (showing last {maxLines} lines of {tracebackLines.length} total lines - scroll up to see more)
           </div>
         )}
+        */}
 
         {/* Error Content */}
         <div
@@ -203,44 +231,19 @@ export const ErrorDisplay: React.FC<ErrorDisplayProps> = ({ error, maxLines = 20
             margin: 0
           }}
         >
-          {displayContent}
+          {error.traceback?.join('\n') || ''}
         </div>
       </div>
     </div>
   );
 };
 
-const SuggestionItem: React.FC<{ suggestion: string }> = ({ suggestion }) => {
-  // Check if suggestion contains code
-  const hasCode = suggestion.includes('!pip') || suggestion.includes('python') || suggestion.includes('subprocess');
-  
-  if (hasCode) {
-    const parts = suggestion.split(/(!pip[^\s]*|python[^\s]*|subprocess[^\s]*)/g);
-    return (
-      <li style={{ marginBottom: '4px' }}>
-        {parts.map((part, idx) => {
-          if (part.match(/!pip|python|subprocess/)) {
-            return (
-              <code
-                key={idx}
-                style={{
-                  background: '#e0f2fe',
-                  padding: '2px 4px',
-                  borderRadius: '3px',
-                  fontFamily: "'SF Mono', Monaco, monospace",
-                  fontSize: '11px',
-                  color: '#01579b'
-                }}
-              >
-                {part}
-              </code>
-            );
-          }
-          return <span key={idx}>{part}</span>;
-        })}
-      </li>
-    );
+const ErrorDisplay: FC<ErrorDisplayProps> = ({ error }) => {
+  // Type guard to ensure we have an ErrorOutput
+  if (error.output_type !== 'error') {
+    return null;
   }
-  
-  return <li style={{ marginBottom: '4px' }}>{suggestion}</li>;
+  return <TypedErrorDisplay error={error} />;
 };
+
+export default ErrorDisplay;
