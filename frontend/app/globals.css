@@ -840,6 +840,20 @@ body {
     visibility: visible;
 }
 
+.sidebar-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    color: #4b5563;
+}
+
+.sidebar-icon-image {
+    width: 18px;
+    height: 18px;
+}
+
 /* Main content adjustment */
 .main-content {
     flex: 1;
@@ -851,18 +865,23 @@ body {
     position: fixed;
     left: 60px;
     top: 0;
-    width: 400px;
+    width: min(480px, calc(100vw - 60px));
     height: 100vh;
     background: white;
     border-right: 1px solid #e2e8f0;
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
     z-index: 40;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
 }
 
 /* Popup Content */
 .popup-content {
-    padding: 20px;
+    flex: 1;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* Allow children to scroll within fixed-height overlay */
 }
 
 .popup-header {
@@ -901,29 +920,153 @@ body {
     font-size: 14px;
 }
 
+.file-browser {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+.file-toolbar {
+    display: flex;
+    gap: 8px;
+}
+
+.file-toolbar-btn {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #e5e7eb;
+    padding: 6px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background-color 0.2s ease, color 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.file-toolbar-btn:hover:not(:disabled) {
+    background: #e5e7eb;
+}
+
+.file-toolbar-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.file-path-header {
+    padding: 8px 0;
+    margin-bottom: 12px;
+    font-size: 12px;
+    color: #6b7280;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.file-path-label {
+    font-weight: 600;
+    color: #4b5563;
+}
+
+.popup-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0; /* Critical for inner scroll areas in flex layouts */
+}
+
+.file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
 .file-item {
     display: flex;
     align-items: center;
-    padding: 4px 8px;
-    margin: 2px 0;
-    border-radius: 4px;
+    padding: 8px 10px;
+    border-radius: 6px;
     cursor: pointer;
     transition: background-color 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.file-item.directory .file-icon {
+    filter: hue-rotate(200deg);
 }
 
 .file-item:hover {
     background: #f3f4f6;
+    border-color: #e5e7eb;
 }
 
 .file-icon {
-    width: 16px;
-    height: 16px;
-    margin-right: 8px;
-    opacity: 0.7;
+    width: 18px;
+    height: 18px;
+    margin-right: 10px;
+    color: #4b5563;
+}
+
+.file-meta {
+    display: flex;
+    flex-direction: column;
 }
 
 .file-name {
-    color: #374151;
+    font-weight: 500;
+    color: #1f2937;
+}
+
+.file-details {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+.file-preview {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.file-preview-header {
+    padding: 12px 16px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.file-preview-body {
+    padding: 16px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 0 0 8px 8px;
+}
+
+.file-preview-loading {
+    color: #94a3b8;
+    font-size: 13px;
+}
+
+.file-preview-content {
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-size: 13px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.file-tree.empty {
+    color: #6b7280;
+    font-style: italic;
+    padding: 8px;
 }
 
 /* Python Environment Styles */
@@ -976,7 +1119,6 @@ body {
     font-weight: 500;
 }
 
-/* Settings Editor Styles */
 .settings-editor {
     width: 100%;
     height: 400px;
@@ -1079,4 +1221,28 @@ body {
     font-style: italic;
     color: #9ca3af;
     font-size: 14px;
+}
+
+.file-tree-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.file-tree {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
 }

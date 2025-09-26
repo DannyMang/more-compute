@@ -1,17 +1,18 @@
 import React from 'react';
+import { Folder, Package, Gauge, Settings } from 'lucide-react';
 
 interface SidebarItemData {
   id: string;
-  icon: string;
+  icon: React.ReactNode;
   tooltip: string;
 }
 
 const sidebarItems: SidebarItemData[] = [
-  { id: 'folder', icon: 'folder.svg', tooltip: 'Files' },
-  { id: 'packages', icon: 'packages.svg', tooltip: 'Packages' },
-  { id: 'python', icon: 'python.svg', tooltip: 'Python' },
-  { id: 'metrics', icon: 'metric.svg', tooltip: 'Metrics' },
-  { id: 'settings', icon: 'setting.svg', tooltip: 'Settings' },
+  { id: 'folder', icon: <Folder size={18} />, tooltip: 'Files' },
+  { id: 'packages', icon: <Package size={18} />, tooltip: 'Packages' },
+  { id: 'python', icon: <img src="assets/icons/python.svg" width={18} height={18} />, tooltip: 'Python' },
+  { id: 'metrics', icon: <Gauge size={18} />, tooltip: 'Metrics' },
+  { id: 'settings', icon: <Settings size={18} />, tooltip: 'Settings' },
 ];
 
 interface SidebarProps {
@@ -29,7 +30,7 @@ const Sidebar: React.FC<SidebarProps> = ({ onTogglePopup, activePopup }) => {
             data-popup={item.id}
             onClick={() => onTogglePopup(item.id)}
         >
-          <img src={`/assets/icons/${item.icon}`} alt={item.tooltip} className="sidebar-icon" />
+          <span className="sidebar-icon-wrapper">{item.icon}</span>
           <div className="sidebar-tooltip">{item.tooltip}</div>
         </div>
       ))}

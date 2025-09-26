@@ -1,5 +1,5 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 import json
@@ -16,20 +16,87 @@ from .utils.systemEnv import DeviceMetrics
 from .utils.error_utils import ErrorUtils
 
 
+BASE_DIR = Path(os.getenv("MORECOMPUTE_ROOT", Path.cwd())).resolve()
+
+
+def resolve_path(requested_path: str) -> Path:
+    relative = requested_path or "."
+    target = (BASE_DIR / relative).resolve()
+    try:
+        target.relative_to(BASE_DIR)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Path outside notebook root")
+    return target
+
+
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="morecompute/static"), name="static")
 app.mount("/assets", StaticFiles(directory="assets"), name="assets")
 
 # Global instances for the application state
-notebook = Notebook()
+notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
+if notebook_path_env:
+    notebook = Notebook(file_path=notebook_path_env)
+else:
+    notebook = Notebook()
 error_utils = ErrorUtils()
 executor = NextCodeExecutor(error_utils=error_utils)
-
 templates = Jinja2Templates(directory="morecompute/templates")
 
 @app.get("/")
 async def read_root(request: Request):
     return templates.TemplateResponse("notebook.html", {"request": request})
+
+
+@app.get("/api/files")
+async def list_files(path: str = "."):
+    directory = resolve_path(path)
+    if not directory.exists() or not directory.is_dir():
+        raise HTTPException(status_code=404, detail="Directory not found")
+
+    items: List[Dict[str, Optional[str]]] = []
+    try:
+        for entry in sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
+            stat = entry.stat()
+            item_path = entry.relative_to(BASE_DIR)
+            items.append({
+                "name": entry.name,
+                "path": str(item_path).replace("\\", "/"),
+                "type": "directory" if entry.is_dir() else "file",
+                "size": stat.st_size,
+                "modified": datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(),
+            })
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {exc}")
+
+    return {
+        "root": str(BASE_DIR),
+        "path": str(directory.relative_to(BASE_DIR)) if directory != BASE_DIR else ".",
+        "items": items,
+    }
+
+
+@app.get("/api/file")
+async def read_file(path: str, max_bytes: int = 256_000):
+    file_path = resolve_path(path)
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        with file_path.open("rb") as f:
+            content = f.read(max_bytes + 1)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {exc}")
+
+    truncated = len(content) > max_bytes
+    if truncated:
+        content = content[:max_bytes]
+
+    text = content.decode("utf-8", errors="replace")
+    if truncated:
+        text += "\n\n… (truncated)"
+
+    return PlainTextResponse(text)
 
 class WebSocketManager:
     """Manages WebSocket connections and message handling."""
@@ -82,7 +149,8 @@ class WebSocketManager:
             "update_cell": self._handle_update_cell,
             "interrupt_kernel": self._handle_interrupt_kernel,
             "reset_kernel": self._handle_reset_kernel,
-            "load_notebook": self._handle_load_notebook
+            "load_notebook": self._handle_load_notebook,
+            "save_notebook": self._handle_save_notebook,
         }
 
         handler = handlers.get(message_type)
@@ -132,7 +200,8 @@ class WebSocketManager:
         source = data.get('source')
         if index is not None and source is not None:
             self.notebook.update_cell(index, source)
-            # No broadcast needed for simple source updates, handled client-side
+            self.notebook.save_to_file()
+
     
     async def _handle_load_notebook(self, websocket: WebSocket, data: dict):
         # In a real app, this would load from a file path in `data`
@@ -141,6 +210,13 @@ class WebSocketManager:
             "type": "notebook_data",
             "data": self.notebook.get_notebook_data()
         })
+
+    async def _handle_save_notebook(self, websocket: WebSocket, data: dict):
+        try:
+            self.notebook.save_to_file()
+            await websocket.send_json({"type": "notebook_saved", "data": {"file_path": self.notebook.file_path}})
+        except Exception as exc:
+            await self._send_error(websocket, f"Failed to save notebook: {exc}")
 
     async def _handle_interrupt_kernel(self, websocket: WebSocket, data: dict):
         await self.executor.interrupt_kernel()

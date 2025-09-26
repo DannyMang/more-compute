@@ -1,102 +1,169 @@
 import React, { useState, useEffect } from 'react';
-
-interface FileItem {
-  name: string;
-  type: 'file' | 'folder';
-  path: string;
-}
+import { Folder as FolderIcon, File as FileIcon, ArrowLeft, ArrowUp } from 'lucide-react';
+import { fetchFileTree, fetchFilePreview, type FileTreeItem } from '@/lib/api';
 
 interface FolderPopupProps {
   onClose?: () => void;
 }
 
-const FolderPopup: React.FC<FolderPopupProps> = ({ onClose }) => {
-  const [currentPath, setCurrentPath] = useState('.');
-  const [files, setFiles] = useState<FileItem[]>([]);
-  const [loading, setLoading] = useState(true);
+type ViewState = 'list' | 'preview';
+
+const FolderPopup: React.FC<FolderPopupProps> = () => {
+  const [currentPath, setCurrentPath] = useState<string>('.');
+  const [rootPath, setRootPath] = useState<string>('');
+  const [items, setItems] = useState<FileTreeItem[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewState, setViewState] = useState<ViewState>('list');
+  const [selectedFile, setSelectedFile] = useState<FileTreeItem | null>(null);
+  const [filePreview, setFilePreview] = useState<string>('');
+  const [previewLoading, setPreviewLoading] = useState<boolean>(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadFiles();
+    void loadDirectory(currentPath);
   }, [currentPath]);
 
-  const loadFiles = async () => {
+  const loadDirectory = async (path: string) => {
     setLoading(true);
     setError(null);
-    
+    setViewState('list');
     try {
-      const mockFiles = await getMockFileTree();
-      setFiles(mockFiles);
-    } catch (err) {
-      setError('Failed to load files');
+      const data = await fetchFileTree(path);
+      setRootPath(data.root);
+      setCurrentPath(data.path);
+      setItems(data.items);
+    } catch (err: any) {
       console.error('Failed to load files:', err);
+      setError(err.message || 'Failed to load files');
     } finally {
       setLoading(false);
     }
   };
 
-  const getMockFileTree = async (): Promise<FileItem[]> => {
-    await new Promise(resolve => setTimeout(resolve, 300));
-    return [
-      { name: 'morecompute', type: 'folder', path: './morecompute' },
-      { name: '__init__.py', type: 'file', path: './morecompute/__init__.py' },
-      { name: 'notebook.py', type: 'file', path: './morecompute/notebook.py' },
-      { name: 'server.py', type: 'file', path: './morecompute/server.py' },
-      { name: 'static', type: 'folder', path: './morecompute/static' },
-      { name: 'templates', type: 'folder', path: './morecompute/templates' },
-      { name: 'assets', type: 'folder', path: './assets' },
-      { name: 'README.md', type: 'file', path: './README.md' },
-      { name: 'requirements.txt', type: 'file', path: './requirements.txt' },
-      { name: 'setup.py', type: 'file', path: './setup.py' },
-      { name: '.gitignore', type: 'file', path: './.gitignore' },
-    ];
-  };
-
-  const handleItemClick = async (file: FileItem) => {
-    if (file.type === 'folder') {
-      navigateToFolder(file.path);
+  const handleItemClick = async (item: FileTreeItem) => {
+    if (item.type === 'directory') {
+      setSelectedFile(null);
+      setFilePreview('');
+      setPreviewError(null);
+      await loadDirectory(item.path);
     } else {
-      openFile(file.path);
+      await openFile(item);
     }
   };
 
-  const navigateToFolder = async (folderPath: string) => {
-    setCurrentPath(folderPath);
+  const openFile = async (item: FileTreeItem) => {
+    setSelectedFile(item);
+    setViewState('preview');
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const text = await fetchFilePreview(item.path);
+      setFilePreview(text);
+    } catch (err: any) {
+      console.error('Failed to load file:', err);
+      setPreviewError(err.message || 'Failed to load file');
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
-  const openFile = (filePath: string) => {
-    console.log('Opening file:', filePath);
+  const navigateUp = () => {
+    if (currentPath === '.' || currentPath === '') {
+      return;
+    }
+    const parts = currentPath.split('/');
+    parts.pop();
+    const parent = parts.join('/') || '.';
+    setCurrentPath(parent);
   };
 
-  if (loading) {
-    return <div className="file-tree">Loading...</div>;
-  }
+  const renderToolbar = () => (
+    <div className="file-toolbar">
+      {viewState === 'preview' && (
+        <button type="button" className="file-toolbar-btn" onClick={() => setViewState('list')} aria-label="Back to files">
+          <ArrowLeft size={16} />
+        </button>
+      )}
+      {!(currentPath === '.' || currentPath === '') && (
+        <button type="button" className="file-toolbar-btn" onClick={navigateUp} aria-label="Up one directory">
+          <ArrowUp size={16} />
+        </button>
+      )}
+    </div>
+  );
 
-  if (error) {
+  const renderList = () => {
+    if (loading) {
+      return <div className="file-tree">Loading…</div>;
+    }
+
+    if (error) {
+      return (
+        <div className="error">
+          <p>{error}</p>
+          <button type="button" onClick={() => void loadDirectory(currentPath)}>Retry</button>
+        </div>
+      );
+    }
+
+    if (!items.length) {
+      return <div className="file-tree empty">No files found in this directory.</div>;
+    }
+
     return (
-      <div className="error">
-        <p>{error}</p>
-        <button onClick={loadFiles}>Retry</button>
+      <div className="file-tree">
+        <div className="file-list">
+          {items.map((item) => (
+            <div
+              key={item.path}
+              className={`file-item ${item.type}`}
+              onClick={() => void handleItemClick(item)}
+            >
+              {item.type === 'directory' ? (
+                <FolderIcon className="file-icon" size={18} />
+              ) : (
+                <FileIcon className="file-icon" size={18} />
+              )}
+              <div className="file-meta">
+                <span className="file-name">{item.name}</span>
+                <span className="file-details">
+                  {item.type === 'directory' ? 'Folder' : 'File'}
+                  {item.size !== undefined ? ` · ${item.size} bytes` : ''}
+                  {item.modified ? ` · ${new Date(item.modified).toLocaleString()}` : ''}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
-    )
-  }
+    );
+  };
+
+  const renderPreview = () => {
+    if (!selectedFile) return null;
+
+    return (
+      <div className="file-preview">
+        <div className="file-preview-body">
+          {previewLoading ? (
+            <div className="file-preview-loading">Loading preview…</div>
+          ) : previewError ? (
+            <div className="error">{previewError}</div>
+          ) : (
+            <pre className="file-preview-content">{filePreview}</pre>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
-    <div className="file-tree">
-      <div className="file-path-header" style={{ padding: '8px 0', marginBottom: '12px', fontSize: '12px', color: '#6b7280', borderBottom: '1px solid #e5e7eb' }}>
-        Current: {currentPath}
+    <div className="file-browser">
+      {renderToolbar()}
+      <div className="file-tree-container">
+        {viewState === 'list' ? renderList() : renderPreview()}
       </div>
-      {files.map((file, index) => (
-        <div key={index} className="file-item" onClick={() => handleItemClick(file)}>
-          <img 
-            src={`/assets/icons/${file.type === 'folder' ? 'folder.svg' : 'folder.svg'}`} // Placeholder for file icon
-            alt={file.type}
-            className="file-icon"
-            style={file.type === 'file' ? { opacity: '0.5' } : {}}
-          />
-          <span className="file-name">{file.name}</span>
-        </div>
-      ))}
     </div>
   );
 };

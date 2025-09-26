@@ -268,6 +268,14 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
   const [kernelStatus, setKernelStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const wsRef = useRef<WebSocketService | null>(null);
 
+  useEffect(() => {
+    const body = document.body;
+    const pathAttr = body.getAttribute('data-notebook-path');
+    if (pathAttr) {
+      document.title = `MoreCompute – ${pathAttr}`;
+    }
+  }, []);
+
   // --- Event Handlers ---
 
   const handleNotebookLoaded = useCallback((data: any) => {

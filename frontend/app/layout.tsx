@@ -62,6 +62,9 @@ export default function RootLayout({
       }
   }
 
+  const notebookPath = process.env.NEXT_PUBLIC_NOTEBOOK_PATH || '';
+  const notebookRoot = process.env.NEXT_PUBLIC_NOTEBOOK_ROOT || '';
+
   return (
     <html lang="en">
       <head>
@@ -70,13 +73,13 @@ export default function RootLayout({
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css" />
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/theme/default.min.css" />
       </head>
-      <body>
+      <body data-notebook-path={notebookPath} data-notebook-root={notebookRoot}>
         <div id="app">
             <Sidebar 
               onTogglePopup={togglePopup}
               activePopup={activePopup}
             />
-            <div id="popup-overlay" className="popup-overlay" style={{display: activePopup ? 'block' : 'none'}}>
+            <div id="popup-overlay" className="popup-overlay" style={{display: activePopup ? 'flex' : 'none'}}>
                 {activePopup && 
                     <div className="popup-content">
                         <div className="popup-header">
