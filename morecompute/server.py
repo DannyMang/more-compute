@@ -8,6 +8,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
 from pathlib import Path
+import importlib.metadata as importlib_metadata
 
 from .notebook import Notebook
 from .next_executor import NextCodeExecutor
@@ -46,6 +47,22 @@ templates = Jinja2Templates(directory="morecompute/templates")
 @app.get("/")
 async def read_root(request: Request):
     return templates.TemplateResponse("notebook.html", {"request": request})
+
+@app.get("/api/packages")
+async def list_installed_packages():
+    """Return installed packages for the current Python runtime."""
+    try:
+        packages = []
+        for dist in importlib_metadata.distributions():
+            name = dist.metadata.get("Name") or dist.metadata.get("Summary") or dist.metadata.get("name")
+            version = dist.version
+            if name and version:
+                packages.append({"name": str(name), "version": str(version)})
+        packages.sort(key=lambda p: p["name"].lower())
+        return {"packages": packages}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to list packages: {exc}")
+
 
 
 @app.get("/api/files")

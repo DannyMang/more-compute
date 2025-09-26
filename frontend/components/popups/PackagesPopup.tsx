@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, CircleHelp } from 'lucide-react';
+import { fetchInstalledPackages } from '@/lib/api';
 
 interface Package {
   name: string;
@@ -19,23 +20,20 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
 
   useEffect(() => {
     loadPackages();
+    const handler = () => loadPackages();
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mc:packages-updated', handler as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('mc:packages-updated', handler as EventListener);
+      }
+    };
   }, []);
 
   const getPackages = async (): Promise<Package[]> => {
-    // Mocked dataset for UI only
-    await new Promise(resolve => setTimeout(resolve, 200));
-    return [
-      { name: 'numpy', version: '1.26.4', description: '' },
-      { name: 'pandas', version: '2.2.2', description: '' },
-      { name: 'matplotlib', version: '3.9.0', description: '' },
-      { name: 'scipy', version: '1.13.1', description: '' },
-      { name: 'jupyter', version: '1.1.1', description: '' },
-      { name: 'fastapi', version: '0.115.0', description: '' },
-      { name: 'uvicorn', version: '0.30.6', description: '' },
-      { name: 'torch', version: '2.4.0', description: '' },
-      { name: 'transformers', version: '4.44.2', description: '' },
-      { name: 'requests', version: '2.32.3', description: '' },
-    ];
+    const pkgs = await fetchInstalledPackages();
+    return pkgs.map(p => ({ name: p.name, version: p.version, description: '' }));
   };
 
   const loadPackages = async () => {

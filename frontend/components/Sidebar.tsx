@@ -1,5 +1,5 @@
 import React from 'react';
-import { Folder, Package, Gauge, Settings } from 'lucide-react';
+import { Folder, Package, Gauge, Settings, ChartBar, ChartArea } from 'lucide-react';
 
 interface SidebarItemData {
   id: string;
@@ -11,7 +11,7 @@ const sidebarItems: SidebarItemData[] = [
   { id: 'folder', icon: <Folder size={18} />, tooltip: 'Files' },
   { id: 'packages', icon: <Package size={18} />, tooltip: 'Packages' },
   { id: 'python', icon: <img src="assets/icons/python.svg" width={18} height={18} />, tooltip: 'Python' },
-  { id: 'metrics', icon: <Gauge size={18} />, tooltip: 'Metrics' },
+  { id: 'metrics', icon: <ChartArea size={18} />, tooltip: 'Metrics' },
   { id: 'settings', icon: <Settings size={18} />, tooltip: 'Settings' },
 ];
 

@@ -92,6 +92,16 @@ class AsyncSpecialCommandHandler:
                     }
                 })
 
+            # If pip install/uninstall occurred, notify clients to refresh packages
+            try:
+                if websocket and (command.startswith('pip install') or command.startswith('pip uninstall') or 'pip install' in command or 'pip uninstall' in command):
+                    await websocket.send_json({
+                        "type": "packages_updated",
+                        "data": {"action": "pip"}
+                    })
+            except Exception:
+                pass
+
             # Check if command failed
             if return_code != 0:
                 result["status"] = "error"
