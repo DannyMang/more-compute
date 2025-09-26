@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { RotateCw } from 'lucide-react';
 
 interface PythonEnvironment {
   name: string;
@@ -72,7 +73,9 @@ const PythonPopup: React.FC<PythonPopupProps> = ({ onClose, onEnvironmentSwitch 
         }
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>Available Environments</h3>
-            <button className="btn btn-secondary" onClick={loadEnvironments}>Refresh</button>
+            <button className="file-toolbar-btn" onClick={loadEnvironments} aria-label="Refresh environments">
+                <RotateCw size={16} />
+            </button>
         </div>
       {environments.map((env, index) => (
         <div key={index} className={`env-item ${env.active ? 'active' : ''}`}>

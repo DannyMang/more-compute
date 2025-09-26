@@ -43,6 +43,7 @@ else:
 error_utils = ErrorUtils()
 executor = NextCodeExecutor(error_utils=error_utils)
 templates = Jinja2Templates(directory="morecompute/templates")
+metrics = DeviceMetrics()
 
 @app.get("/")
 async def read_root(request: Request):
@@ -62,6 +63,14 @@ async def list_installed_packages():
         return {"packages": packages}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list packages: {exc}")
+
+
+@app.get("/api/metrics")
+async def get_metrics():
+    try:
+        return metrics.get_all_devices()
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {exc}")
 
 
 

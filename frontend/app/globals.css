@@ -1174,6 +1174,56 @@ body {
     font-size: 14px;
 }
 
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.metric-panel {
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    background: var(--mc-cell-background);
+}
+
+.metric-panel-header {
+    padding: 8px 12px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.metric-panel-title {
+    font-size: 12px;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+.metric-panel-body {
+    padding: 10px 12px;
+}
+
+.metric-big-value .value {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--mc-text-color);
+}
+
+.metric-big-value .subtitle {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.mini-chart {
+    margin-top: 6px;
+}
+
+.metrics-footer {
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: #6b7280;
+}
+
 .metrics-placeholder {
     text-align: center;
     padding: 40px 20px;
