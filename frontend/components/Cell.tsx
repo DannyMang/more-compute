@@ -89,6 +89,15 @@ export const Cell: React.FC<CellProps> = ({
 
   return (
     <div className="cell-wrapper">
+      <div className="cell-status-indicator">
+        {cell.error ? (
+          <X size={14} color="#dc2626" />
+        ) : cell.execution_count ? (
+          <Check size={14} color="#16a34a" />
+        ) : (
+          <div className="status-placeholder" />
+        )}
+      </div>
       <div className="add-cell-line add-line-above">
         <AddCellButton onAddCell={(type) => onAddCell(type, index)} />
       </div>

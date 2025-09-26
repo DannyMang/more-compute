@@ -5,6 +5,7 @@ import { Cell as CellComponent } from './Cell';
 import { Cell, Output, StreamOutput, ExecuteResultOutput, ErrorOutput } from '@/types/notebook';
 import { WebSocketService } from '@/lib/websocket-native';
 import AddCellButton from './AddCellButton';
+import { loadSettings, applyTheme } from '@/lib/settings';
 
 // --- State Management with useReducer ---
 
@@ -28,6 +29,9 @@ const initialState: NotebookState = {
   cells: [],
   executingCells: new Set(),
 };
+
+const initialSettings = loadSettings();
+applyTheme(initialSettings.theme);
 
 const coerceToString = (value: unknown): string => {
   if (Array.isArray(value)) {

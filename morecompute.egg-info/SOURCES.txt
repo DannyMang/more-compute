@@ -3,6 +3,7 @@ setup.py
 morecompute/__init__.py
 morecompute/cli.py
 morecompute/executor.py
+morecompute/next_executor.py
 morecompute/notebook.py
 morecompute/server.py
 morecompute.egg-info/PKG-INFO
@@ -14,3 +15,8 @@ morecompute.egg-info/top_level.txt
 morecompute/static/notebook.js
 morecompute/static/styles.css
 morecompute/templates/notebook.html
+morecompute/utils/__init__.py
+morecompute/utils/error_utils.py
+morecompute/utils/pyEnv.py
+morecompute/utils/special_commands.py
+morecompute/utils/systemEnv.py

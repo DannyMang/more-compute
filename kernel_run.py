@@ -148,14 +148,14 @@ class NotebookLauncher:
             print("\n\n        Thanks for using MoreCompute!\n")
             self.cleanup()
 
-if __name__ == "__main__":
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Launch the MoreCompute notebook")
     parser.add_argument(
         "mode",
         nargs="?",
         choices=["new", "legacy"],
-        default="legacy",
-        help="Choose the frontend: 'new' (Next.js) or 'legacy' (served by FastAPI)",
+        default="new",
+        help="Choose the frontend: 'new' (Next.js, default) or 'legacy' (served by FastAPI)",
     )
     parser.add_argument(
         "-debug",
@@ -163,8 +163,16 @@ if __name__ == "__main__":
         action="store_true",
         help="Show backend/frontend logs (hidden by default)",
     )
+    return parser
 
-    args = parser.parse_args()
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     launcher = NotebookLauncher(use_new_frontend=(args.mode == "new"), debug=args.debug)
     launcher.run()
+
+
+if __name__ == "__main__":
+    main()

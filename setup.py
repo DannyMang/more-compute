@@ -36,7 +36,7 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "kernal_run=morecompute.cli:main",
+            "kernel_run=kernel_run:main",
         ],
     },
     include_package_data=True,

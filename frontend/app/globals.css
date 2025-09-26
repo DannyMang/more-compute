@@ -6,10 +6,18 @@
     box-sizing: border-box;
 }
 
+:root {
+    --mc-background: #f8fafc;
+    --mc-cell-background: #ffffff;
+    --mc-text-color: #1f2937;
+    --mc-markdown-color: #1f2937;
+    --mc-line-number-color: #9ca3af;
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background-color: #ffffff;
-    color: #1f2937;
+    background-color: var(--mc-background);
+    color: var(--mc-text-color);
     line-height: 1.6;
     overflow-x: hidden;
 }
@@ -279,12 +287,28 @@ body {
     margin: 0;
 }
 
+.cell-status-indicator {
+    position: absolute;
+    top: 14px;
+    left: -38px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.cell-status-indicator .status-placeholder {
+    width: 14px;
+    height: 14px;
+}
+
 /* Main Cell */
 .cell {
     position: relative;
     margin: 20px 0;
     padding: 0;
-    background: #ffffff;
+    background: var(--mc-cell-background);
     border: 1px solid #e5e7eb;
     border-radius: 8px;
     transition: all 0.2s ease;
@@ -373,6 +397,7 @@ body {
 /* Cell Content */
 .cell-content {
     position: relative;
+    background: var(--mc-cell-background);
 }
 
 .cell-input {
@@ -393,7 +418,7 @@ body {
     line-height: 1.6;
     padding: 16px 20px;
     background: transparent;
-    color: #1f2937;
+    color: var(--mc-text-color);
     min-height: 100px;
 }
 
@@ -409,7 +434,7 @@ body {
     line-height: 1.6;
     border: none;
     background: transparent;
-    color: #1f2937;
+    color: var(--mc-text-color);
 }
 
 .CodeMirror-focused {
@@ -421,6 +446,7 @@ body {
     min-height: 32px;  /* Single line minimum */
     padding: 8px 16px;
     transition: min-height 0.2s ease;
+    background: var(--mc-cell-background);
 }
 
 /* Auto-sizing based on content */
@@ -466,14 +492,14 @@ body {
 
 /* Line numbers styling */
 .CodeMirror-linenumbers {
-    background: #f9fafb;
+    background: var(--mc-cell-background);
     border-right: 1px solid #e5e7eb;
     padding-right: 8px;
     min-width: 30px;
 }
 
 .CodeMirror-linenumber {
-    color: #9ca3af;
+    color: var(--mc-line-number-color);
     font-size: 11px;
     text-align: right;
     padding: 0 5px 0 0;
@@ -481,7 +507,7 @@ body {
 }
 
 .CodeMirror-gutters {
-    background: #f9fafb;
+    background: var(--mc-cell-background);
     border-right: 1px solid #e5e7eb;
 }
 
@@ -489,7 +515,7 @@ body {
 .markdown-rendered {
     padding: 8px 16px;
     line-height: 1.7;
-    color: #1f2937;
+    color: var(--mc-markdown-color);
     cursor: pointer;
     min-height: auto;  /* Let content determine height */
 }
@@ -664,7 +690,7 @@ body {
 }
 
 .output-result {
-    background: #ffffff;
+    background: var(--mc-cell-background);
     padding: 12px 16px;
     margin: 8px 0;
     border-radius: 6px;

@@ -25,12 +25,25 @@ Requires-Dist: nbformat>=5.0.0
 Requires-Dist: click>=8.0.0
 
 # MoreCompute
-
 An interactive notebook environment similar to Marimo and Google Colab that runs locally.
+
+For references: 
+
+https://marimo.io/ 
+
+https://colab.google/
+
+
+FOR LOCAL DEVELOPMENT:
+
+```bash
+pip install -e .
+```
 
 ## Installation
 
 ```bash
+(NOT IMPLEMENTED YET, TO-DO SET UP ON PyPi)
 pip install morecompute
 ```
 

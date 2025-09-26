@@ -70,41 +70,6 @@ const TypedErrorDisplay: FC<{ error: ErrorOutput }> = ({ error }) => {
     }
   };
 
-  const renderSuggestion = (suggestion: string) => {
-    // Check if suggestion contains code
-    const hasCode = suggestion.includes('!pip') || suggestion.includes('python') || suggestion.includes('subprocess');
-    
-    if (hasCode) {
-      const parts = suggestion.split(/(!pip[^\s]*|python[^\s]*|subprocess[^\s]*)/g);
-      return (
-        <li style={{ marginBottom: '4px' }}>
-          {parts.map((part, idx) => {
-            if (part.match(/!pip|python|subprocess/)) {
-              return (
-                <code
-                  key={idx}
-                  style={{
-                    background: '#e0f2fe',
-                    padding: '2px 4px',
-                    borderRadius: '3px',
-                    fontFamily: "'SF Mono', Monaco, monospace",
-                    fontSize: '11px',
-                    color: '#01579b'
-                  }}
-                >
-                  {part}
-                </code>
-              );
-            }
-            return <span key={idx}>{part}</span>;
-          })}
-        </li>
-      );
-    }
-    
-    return <li style={{ marginBottom: '4px' }}>{suggestion}</li>;
-  };
-
   const indicator = getErrorIcon(error.error_type);
 
   return (
@@ -123,43 +88,6 @@ const TypedErrorDisplay: FC<{ error: ErrorOutput }> = ({ error }) => {
           }}
         >
           {indicator.text}
-        </div>
-      )}
-
-      {/* Suggestions Panel */}
-      {error.suggestions && error.suggestions.length > 0 && (
-        <div
-          style={{
-            marginBottom: '12px',
-            padding: '12px',
-            background: '#f0f9ff',
-            border: '1px solid #bae6fd',
-            borderRadius: '6px'
-          }}
-        >
-          <div
-            style={{
-              fontWeight: 600,
-              color: '#0369a1',
-              marginBottom: '8px',
-              fontSize: '13px'
-            }}
-          >
-            💡 Suggestions:
-          </div>
-          <ul
-            style={{
-              margin: 0,
-              paddingLeft: '16px',
-              color: '#0c4a6e',
-              fontSize: '12px',
-              lineHeight: 1.5
-            }}
-          >
-            {error.suggestions.map((suggestion: string, idx: React.Key | null | undefined) => (
-              renderSuggestion(suggestion)
-            ))}
-          </ul>
         </div>
       )}
 
