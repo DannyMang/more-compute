@@ -18,6 +18,10 @@ from .utils.error_utils import ErrorUtils
 
 
 BASE_DIR = Path(os.getenv("MORECOMPUTE_ROOT", Path.cwd())).resolve()
+PACKAGE_DIR = Path(__file__).resolve().parent
+STATIC_DIR = (PACKAGE_DIR / "static").resolve()
+TEMPLATES_DIR = (PACKAGE_DIR / "templates").resolve()
+ASSETS_DIR = Path(os.getenv("MORECOMPUTE_ASSETS_DIR", BASE_DIR / "assets")).resolve()
 
 
 def resolve_path(requested_path: str) -> Path:
@@ -31,8 +35,9 @@ def resolve_path(requested_path: str) -> Path:
 
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="morecompute/static"), name="static")
-app.mount("/assets", StaticFiles(directory="assets"), name="assets")
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+if ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 # Global instances for the application state
 notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
@@ -42,7 +47,7 @@ else:
     notebook = Notebook()
 error_utils = ErrorUtils()
 executor = NextCodeExecutor(error_utils=error_utils)
-templates = Jinja2Templates(directory="morecompute/templates")
+templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 metrics = DeviceMetrics()
 
 @app.get("/")

@@ -41,6 +41,12 @@ setup(
     },
     include_package_data=True,
     package_data={
-        "morecompute": ["static/*", "templates/*"],
+        # Ensure wheel includes nested static/js/css/html assets
+        "morecompute": [
+            "static/*",
+            "static/**/*",
+            "templates/*",
+            "templates/**/*",
+        ],
     },
 )

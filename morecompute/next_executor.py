@@ -33,17 +33,20 @@ class NextCodeExecutor:
         loop = asyncio.get_running_loop()
 
         try:
-            if self.special_command_handler.is_special_command(source_code):
+            # Normalize source code in case it's provided as a list of lines (nbformat/Colab)
+            normalized_source = self._coerce_source_to_text(source_code)
+
+            if self.special_command_handler.is_special_command(normalized_source):
                 execution_count = self._get_next_execution_count()
                 result["execution_count"] = execution_count
                 result = await self.special_command_handler.execute_special_command(
-                    source_code, result, start_time, execution_count, websocket
+                    normalized_source, result, start_time, execution_count, websocket
                 )
             else:
                 execution_count = self._get_next_execution_count()
                 result["execution_count"] = execution_count
                 await self._execute_python_code(
-                    source_code,
+                    normalized_source,
                     result,
                     cell_index,
                     loop,
@@ -71,6 +74,22 @@ class NextCodeExecutor:
     def _get_next_execution_count(self) -> int:
         self.execution_count += 1
         return self.execution_count
+
+    def _coerce_source_to_text(self, source_code: Any) -> str:
+        """Convert incoming cell source to a text string.
+        nbformat may deliver cell sources as list[str] (one per line).
+        """
+        try:
+            # If already a string, return as-is
+            if isinstance(source_code, str):
+                return source_code
+            # If it's a list/tuple of strings, join into a single string
+            if isinstance(source_code, (list, tuple)):
+                return "".join(source_code)
+            # Fallback to string conversion
+            return str(source_code)
+        except Exception:
+            return ""
 
     async def _execute_python_code(self, source_code: str, result: Dict[str, Any],
                                    cell_index: int, loop: asyncio.AbstractEventLoop,

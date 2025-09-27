@@ -6,7 +6,7 @@ import subprocess
 import time
 import shlex
 from contextlib import redirect_stdout, redirect_stderr
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union
 from fastapi import WebSocket
 
 
@@ -20,27 +20,40 @@ class AsyncSpecialCommandHandler:
         self.globals_dict = globals_dict
         self.captured_outputs = {}  # Store captured outputs from %%capture
 
-    def is_special_command(self, source_code: str) -> bool:
+    def is_special_command(self, source_code: Union[str, list, tuple]) -> bool:
         """Check if the source code is a special command"""
-        stripped = source_code.strip()
+        text = self._coerce_source_to_text(source_code)
+        stripped = text.strip()
         return (stripped.startswith('!') or
                 stripped.startswith('%%') or
                 stripped.startswith('%'))
 
-    async def execute_special_command(self, source_code: str, result: Dict[str, Any],
+    async def execute_special_command(self, source_code: Union[str, list, tuple], result: Dict[str, Any],
                                     start_time: float, execution_count: int,
                                     websocket: Optional[WebSocket] = None) -> Dict[str, Any]:
         """Execute a special command and return the result"""
-        stripped = source_code.strip()
+        text = self._coerce_source_to_text(source_code)
+        stripped = text.strip()
 
         if stripped.startswith('!'):
             return await self._execute_shell_command(stripped[1:], result, start_time, websocket)
         elif stripped.startswith('%%'):
-            return await self._execute_cell_magic(source_code, result, start_time, execution_count, websocket)
+            return await self._execute_cell_magic(text, result, start_time, execution_count, websocket)
         elif stripped.startswith('%'):
             return await self._execute_line_magic(stripped[1:], result, start_time, websocket)
         else:
             raise ValueError("Not a special command")
+
+    def _coerce_source_to_text(self, source_code: Union[str, list, tuple]) -> str:
+        """Normalize incoming source to a single text string"""
+        try:
+            if isinstance(source_code, str):
+                return source_code
+            if isinstance(source_code, (list, tuple)):
+                return "".join(source_code)
+            return str(source_code)
+        except Exception:
+            return ""
 
     async def _execute_shell_command(self, command: str, result: Dict[str, Any],
                                    start_time: float, websocket: Optional[WebSocket] = None) -> Dict[str, Any]:
