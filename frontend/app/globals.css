@@ -931,6 +931,8 @@ body {
 .file-toolbar {
     display: flex;
     gap: 8px;
+    align-items: center;
+    margin: 10px 0; /* even spacing above and below */
 }
 
 .file-toolbar-btn {
@@ -945,6 +947,17 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 6px;
+}
+
+/* Icon-only variant (bordered, compact) */
+.file-toolbar-btn.icon {
+    border: 1px solid #e5e7eb;
+    background: var(--mc-cell-background);
+    padding: 6px;
+}
+
+.file-toolbar-btn.icon:hover {
+    background: #f3f4f6;
 }
 
 .file-toolbar-btn:hover:not(:disabled) {

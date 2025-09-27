@@ -33,7 +33,21 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
 
   const getPackages = async (): Promise<Package[]> => {
     const pkgs = await fetchInstalledPackages();
-    return pkgs.map(p => ({ name: p.name, version: p.version, description: '' }));
+    const seen = new Set<string>();
+    const out: Package[] = [];
+    for (const p of pkgs) {
+      const name = p.name || '';
+      const version = p.version || '';
+       // ignore base package
+       // we might need to remove this? idk double check later 
+      if (name.toLowerCase() === 'morecompute') continue; 
+      const key = `${name}@${version}`.toLowerCase();
+      if (seen.has(key)) continue; // dedupe exact duplicates
+      seen.add(key);
+      out.push({ name, version, description: '' });
+    }
+    out.sort((a, b) => a.name.localeCompare(b.name));
+    return out;
   };
 
   const loadPackages = async () => {
@@ -84,7 +98,7 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
         </div>
         <div className="packages-list">
           {filtered.map((pkg) => (
-            <div key={pkg.name} className="package-row">
+            <div key={`${pkg.name}@${pkg.version}`} className="package-row">
               <div className="col-name package-name">{pkg.name}</div>
               <div className="col-version package-version">{pkg.version}</div>
             </div>
