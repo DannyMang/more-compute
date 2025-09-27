@@ -1,5 +1,6 @@
 import json
 from typing import List, Dict, Any
+from uuid import uuid4
 
 class Notebook:
     """Manages the state of a notebook's cells."""
@@ -12,13 +13,13 @@ class Notebook:
             self.load_from_file(file_path)
         else:
             # Default empty notebook structure
-            self.cells.append({'cell_type': 'code', 'source': '', 'outputs': []})
+            self.cells.append({'id': self._generate_cell_id(), 'cell_type': 'code', 'source': '', 'outputs': []})
 
     def get_notebook_data(self) -> Dict[str, Any]:
         return {"cells": self.cells, "metadata": self.metadata, "file_path": self.file_path}
 
     def add_cell(self, index: int, cell_type: str = 'code', source: str = ''):
-        new_cell = {'cell_type': cell_type, 'source': source, 'outputs': []}
+        new_cell = {'id': self._generate_cell_id(), 'cell_type': cell_type, 'source': source, 'outputs': []}
         self.cells.insert(index, new_cell)
 
     def delete_cell(self, index: int):
@@ -49,13 +50,21 @@ class Notebook:
         try:
             with open(file_path, 'r') as f:
                 data = json.load(f)
-                self.cells = data.get('cells', [])
+                loaded_cells = data.get('cells', [])
+                # Ensure stable IDs for all cells (back-compat for notebooks without IDs)
+                self.cells = []
+                for cell in loaded_cells:
+                    if not isinstance(cell, dict):
+                        continue
+                    if 'id' not in cell or not cell['id']:
+                        cell['id'] = self._generate_cell_id()
+                    self.cells.append(cell)
                 self.metadata = data.get('metadata', {})
                 self.file_path = file_path
         except (FileNotFoundError, json.JSONDecodeError) as e:
             print(f"Error loading notebook: {e}")
             # Initialize with a default cell if loading fails
-            self.cells = [{'cell_type': 'code', 'source': '', 'outputs': []}]
+            self.cells = [{'id': self._generate_cell_id(), 'cell_type': 'code', 'source': '', 'outputs': []}]
             self.metadata = {}
             self.file_path = file_path
 
@@ -67,3 +76,6 @@ class Notebook:
         with open(path_to_save, 'w') as f:
             f.write(self.to_json())
         self.file_path = path_to_save
+
+    def _generate_cell_id(self) -> str:
+        return f"cell-{uuid4()}"

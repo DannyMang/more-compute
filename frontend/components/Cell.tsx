@@ -34,6 +34,9 @@ export const Cell: React.FC<CellProps> = ({
 }) => {
   const editorRef = useRef<HTMLTextAreaElement>(null);
   const codeMirrorInstance = useRef<any>(null);
+  // Keep a ref to the latest index to avoid stale closures in event handlers
+  const indexRef = useRef<number>(index);
+  useEffect(() => { indexRef.current = index; }, [index]);
   const [isEditing, setIsEditing] = useState(() => cell.cell_type === 'code' || !cell.source?.trim());
 
   useEffect(() => {
@@ -48,8 +51,8 @@ export const Cell: React.FC<CellProps> = ({
         });
         codeMirrorInstance.current = editor;
 
-        editor.on('change', (instance: any) => onUpdate(index, instance.getValue()));
-        editor.on('focus', () => onSetActive(index));
+        editor.on('change', (instance: any) => onUpdate(indexRef.current, instance.getValue()));
+        editor.on('focus', () => onSetActive(indexRef.current));
         editor.on('blur', () => {
           if (cell.cell_type === 'markdown') setIsEditing(false);
         });
@@ -76,12 +79,12 @@ export const Cell: React.FC<CellProps> = ({
     if (cell.cell_type === 'markdown') {
       setIsEditing(false);
     } else {
-      onExecute(index);
+      onExecute(indexRef.current);
     }
   };
 
   const handleCellClick = () => {
-    onSetActive(index);
+    onSetActive(indexRef.current);
     if (cell.cell_type === 'markdown') {
       setIsEditing(true);
     }
@@ -99,7 +102,7 @@ export const Cell: React.FC<CellProps> = ({
         )}
       </div>
       <div className="add-cell-line add-line-above">
-        <AddCellButton onAddCell={(type) => onAddCell(type, index)} />
+        <AddCellButton onAddCell={(type) => onAddCell(type, indexRef.current)} />
       </div>
 
       <div
@@ -114,7 +117,7 @@ export const Cell: React.FC<CellProps> = ({
             <button type="button" className="cell-action drag-handle" title="Drag to reorder">
               <MoveVertical size={14} />
             </button>
-            <button type="button" className="cell-action delete-cell-btn" title="Delete cell" onClick={(e) => { e.stopPropagation(); onDelete(index); }}>
+            <button type="button" className="cell-action delete-cell-btn" title="Delete cell" onClick={(e) => { e.stopPropagation(); onDelete(indexRef.current); }}>
               <Trash2 size={14} />
             </button>
           </div>
@@ -137,7 +140,7 @@ export const Cell: React.FC<CellProps> = ({
       </div>
 
       <div className="add-cell-line add-line-below">
-        <AddCellButton onAddCell={(type) => onAddCell(type, index + 1)} />
+        <AddCellButton onAddCell={(type) => onAddCell(type, indexRef.current + 1)} />
       </div>
     </div>
   );

@@ -109,7 +109,7 @@ const normalizeCell = (cell: any, index: number): Cell => {
   const outputs = normalizeOutputs(cell?.outputs);
   const error = normalizeError(cell?.error);
   return {
-    id: cell?.id || `cell-${index}`,
+    id: typeof cell?.id === 'string' && cell.id ? cell.id : `cell-${index}`,
     cell_type: cell?.cell_type || 'code',
     source,
     outputs,
