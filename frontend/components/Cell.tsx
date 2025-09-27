@@ -93,9 +93,11 @@ export const Cell: React.FC<CellProps> = ({
   return (
     <div className="cell-wrapper">
       <div className="cell-status-indicator">
-        {cell.error ? (
+        {isExecuting ? (
+          <div className="status-placeholder" />
+        ) : cell.error ? (
           <X size={14} color="#dc2626" />
-        ) : cell.execution_count ? (
+        ) : cell.execution_count != null ? (
           <Check size={14} color="#16a34a" />
         ) : (
           <div className="status-placeholder" />

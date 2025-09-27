@@ -231,7 +231,8 @@ class WebSocketManager:
         source = data.get('source')
         if index is not None and source is not None:
             self.notebook.update_cell(index, source)
-            self.notebook.save_to_file()
+            #self.notebook.save_to_file()
+            #to -do? 
 
     
     async def _handle_load_notebook(self, websocket: WebSocket, data: dict):
