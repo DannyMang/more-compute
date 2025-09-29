@@ -5,11 +5,12 @@ export interface Cell {
   outputs: Output[];
   metadata: Record<string, unknown>;
   execution_count: number | null;
+  execution_time?: string; // e.g., "123.4ms" or "1.2s"
   error?: any;
   isEditing?: boolean;
 }
 
-export type Output = StreamOutput | ExecuteResultOutput | ErrorOutput;
+export type Output = StreamOutput | ExecuteResultOutput | ErrorOutput | DisplayDataOutput;
 
 export interface StreamOutput {
   output_type: 'stream';
@@ -21,6 +22,11 @@ export interface ExecuteResultOutput {
   output_type: 'execute_result';
   data: { 'text/plain'?: string };
   execution_count: number;
+}
+
+export interface DisplayDataOutput {
+  output_type: 'display_data';
+  data: { 'text/plain'?: string; 'image/png'?: string };
 }
 
 export interface ErrorOutput {

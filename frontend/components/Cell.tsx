@@ -5,7 +5,7 @@ import { Cell as CellType } from '@/types/notebook';
 import CellOutput from './CellOutput';
 import AddCellButton from './AddCellButton';
 import MarkdownRenderer from './MarkdownRenderer';
-import { Check, X, Trash2, Play, StopCircle, MoveVertical } from 'lucide-react';
+import { Check, X, Trash2, Play, StopCircle, MoveVertical, Loader2 } from 'lucide-react';
 
 declare const CodeMirror: any;
 
@@ -37,6 +37,52 @@ export const Cell: React.FC<CellProps> = ({
   // Keep a ref to the latest index to avoid stale closures in event handlers
   const indexRef = useRef<number>(index);
   useEffect(() => { indexRef.current = index; }, [index]);
+
+  // Execution timer (shows while running and persists final duration afterwards)
+  const intervalRef = useRef<any>(null);
+  const [elapsedLabel, setElapsedLabel] = useState<string | null>(cell.execution_time ?? null);
+
+  const formatMs = (ms: number): string => {
+    if (ms < 1000) return `${ms.toFixed(0)}ms`;
+    if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+    const totalSeconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}s`;
+  };
+
+  const parseExecTime = (s?: string | null): number | null => {
+    if (!s) return null;
+    // Accept "123.4ms" or "1.2s"
+    if (s.endsWith('ms')) return parseFloat(s.replace('ms', ''));
+    if (s.endsWith('s')) return parseFloat(s.replace('s', '')) * 1000;
+    return null;
+  };
+
+  useEffect(() => {
+    if (isExecuting) {
+      const start = Date.now();
+      setElapsedLabel('0ms');
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(() => {
+        setElapsedLabel(formatMs(Date.now() - start));
+      }, 100);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      // Persist final time from cell.execution_time if available
+      const ms = parseExecTime(cell.execution_time as any);
+      if (ms != null) setElapsedLabel(formatMs(ms));
+    }
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isExecuting, cell.execution_time]);
   const [isEditing, setIsEditing] = useState(() => cell.cell_type === 'code' || !cell.source?.trim());
 
   useEffect(() => {
@@ -94,13 +140,16 @@ export const Cell: React.FC<CellProps> = ({
     <div className="cell-wrapper">
       <div className="cell-status-indicator">
         {isExecuting ? (
-          <div className="status-placeholder" />
+          <Loader2 size={14} className="mc-spin" />
         ) : cell.error ? (
           <X size={14} color="#dc2626" />
         ) : cell.execution_count != null ? (
           <Check size={14} color="#16a34a" />
         ) : (
           <div className="status-placeholder" />
+        )}
+        {elapsedLabel && (
+          <span className="status-timer" title="Execution time">{elapsedLabel}</span>
         )}
       </div>
       <div className="add-cell-line add-line-above">

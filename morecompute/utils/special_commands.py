@@ -30,13 +30,14 @@ class AsyncSpecialCommandHandler:
 
     async def execute_special_command(self, source_code: Union[str, list, tuple], result: Dict[str, Any],
                                     start_time: float, execution_count: int,
-                                    websocket: Optional[WebSocket] = None) -> Dict[str, Any]:
+                                    websocket: Optional[WebSocket] = None,
+                                    cell_index: Optional[int] = None) -> Dict[str, Any]:
         """Execute a special command and return the result"""
         text = self._coerce_source_to_text(source_code)
         stripped = text.strip()
 
         if stripped.startswith('!'):
-            return await self._execute_shell_command(stripped[1:], result, start_time, websocket)
+            return await self._execute_shell_command(stripped[1:], result, start_time, websocket, cell_index)
         elif stripped.startswith('%%'):
             return await self._execute_cell_magic(text, result, start_time, execution_count, websocket)
         elif stripped.startswith('%'):
@@ -56,7 +57,8 @@ class AsyncSpecialCommandHandler:
             return ""
 
     async def _execute_shell_command(self, command: str, result: Dict[str, Any],
-                                   start_time: float, websocket: Optional[WebSocket] = None) -> Dict[str, Any]:
+                                   start_time: float, websocket: Optional[WebSocket] = None,
+                                   cell_index: Optional[int] = None) -> Dict[str, Any]:
         """Execute a shell command with real-time streaming output"""
         try:
             # Prepare environment and command for streaming
@@ -68,7 +70,8 @@ class AsyncSpecialCommandHandler:
                 await websocket.send_json({
                     "type": "execution_start",
                     "data": {
-                        "command": f"!{command}"
+                        "command": f"!{command}",
+                        **({"cell_index": cell_index} if cell_index is not None else {})
                     }
                 })
 
@@ -83,10 +86,10 @@ class AsyncSpecialCommandHandler:
 
             # Stream output concurrently
             stdout_task = asyncio.create_task(
-                self._stream_output(process.stdout, "stdout", result, websocket)
+                self._stream_output(process.stdout, "stdout", result, websocket, cell_index)
             )
             stderr_task = asyncio.create_task(
-                self._stream_output(process.stderr, "stderr", result, websocket)
+                self._stream_output(process.stderr, "stderr", result, websocket, cell_index)
             )
 
             # Wait for both streams to complete
@@ -101,7 +104,8 @@ class AsyncSpecialCommandHandler:
                     "type": "execution_complete",
                     "data": {
                         "return_code": return_code,
-                        "status": "error" if return_code != 0 else "ok"
+                        "status": "error" if return_code != 0 else "ok",
+                        **({"cell_index": cell_index} if cell_index is not None else {})
                     }
                 })
 
@@ -181,7 +185,8 @@ class AsyncSpecialCommandHandler:
             return ['/bin/zsh', '-c', shell_cmd]  # macOS with zsh
 
     async def _stream_output(self, stream, stream_type: str, result: Dict[str, Any],
-                           websocket: Optional[WebSocket] = None):
+                           websocket: Optional[WebSocket] = None,
+                           cell_index: Optional[int] = None):
         """Read from a stream and send to websocket, while capturing the output."""
         
         output_text = ""
@@ -199,7 +204,8 @@ class AsyncSpecialCommandHandler:
                         "type": "stream_output",
                         "data": {
                             "stream": stream_type,
-                            "text": decoded_line
+                            "text": decoded_line,
+                            **({"cell_index": cell_index} if cell_index is not None else {})
                         }
                     })
             except asyncio.CancelledError:
@@ -213,7 +219,8 @@ class AsyncSpecialCommandHandler:
                         "type": "stream_output",
                         "data": {
                             "stream": "stderr",
-                            "text": error_message
+                            "text": error_message,
+                            **({"cell_index": cell_index} if cell_index is not None else {})
                         }
                     })
                 break

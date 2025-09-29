@@ -35,6 +35,22 @@ const CellOutput: FC<CellOutputProps> = ({ outputs, error }) => {
                   {output.data?.['text/plain']}
                 </pre>
               );
+            case 'display_data': {
+              const img = (output as any).data?.['image/png'];
+              const alt = (output as any).data?.['text/plain'] || 'image/png';
+              if (img) {
+                return (
+                  <div key={index} className="output-result">
+                    <img src={`data:image/png;base64,${img}`} alt={alt} />
+                  </div>
+                );
+              }
+              return (
+                <pre key={index} className="output-result">
+                  {(output as any).data?.['text/plain']}
+                </pre>
+              );
+            }
             case 'error':
               return <ErrorDisplay key={index} error={output} />;
             default:

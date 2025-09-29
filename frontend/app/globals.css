@@ -290,17 +290,30 @@ body {
 .cell-status-indicator {
     position: absolute;
     top: 14px;
-    left: -38px;
-    width: 24px;
+    left: -48px;
+    width: auto; /* allow room for timer */
     height: 24px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 2px;
+    padding: 0 2px;
 }
 
 .cell-status-indicator .status-placeholder {
     width: 14px;
     height: 14px;
+}
+
+.cell-status-indicator .status-timer {
+    margin-left: 0;
+    font-size: 9px;
+    color: #6b7280;
+    min-width: auto;
+    text-align: center;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 /* Main Cell */
@@ -392,6 +405,16 @@ body {
 
 .cell-action:hover img {
     opacity: 1;
+}
+
+/* Simple spin animation for loader icon */
+.mc-spin {
+    animation: mc-spin 0.9s linear infinite;
+}
+
+@keyframes mc-spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
 }
 
 /* Cell Content */

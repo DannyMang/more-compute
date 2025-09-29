@@ -115,6 +115,7 @@ const normalizeCell = (cell: any, index: number): Cell => {
     outputs,
     metadata: cell?.metadata || {},
     execution_count: cell?.execution_count ?? null,
+    execution_time: cell?.execution_time,
     error,
   } as Cell;
 };
@@ -189,7 +190,11 @@ function notebookReducer(state: NotebookState, action: NotebookAction): Notebook
     }
     
     case 'EXECUTION_COMPLETE': {
-      const { cell_index, result } = action.payload;
+      const { cell_index } = action.payload;
+      // Support both shapes: { result: {...} } and flat payload {...}
+      const result = (action.payload && action.payload.result)
+        ? action.payload.result
+        : action.payload || {};
       const newExecuting = new Set(state.executingCells);
       newExecuting.delete(cell_index);
       return {
@@ -197,13 +202,17 @@ function notebookReducer(state: NotebookState, action: NotebookAction): Notebook
         executingCells: newExecuting,
         cells: state.cells.map((cell, i) => {
           if (i !== cell_index) return cell;
-          const normalizedOutputs = normalizeOutputs(result.outputs);
-          const normalizedError = normalizeError(result.error);
+          const normalizedOutputs = normalizeOutputs(result?.outputs);
+          const normalizedError = normalizeError(result?.error);
+
+          const existingOutputs = cell.outputs || [];
+          const finalNonStream = normalizedOutputs.filter(o => (o as any).output_type !== 'stream');
           return {
             ...cell,
             ...result,
-            outputs: normalizedOutputs,
-            execution_count: result.execution_count ?? cell.execution_count,
+            outputs: [...existingOutputs, ...finalNonStream],
+            execution_count: result?.execution_count ?? cell.execution_count,
+            execution_time: result?.execution_time ?? cell.execution_time,
             error: normalizedError,
           };
         }),
