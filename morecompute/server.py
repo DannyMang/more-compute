@@ -226,8 +226,8 @@ class WebSocketManager:
             await self._send_error(websocket, f"Unknown message type: {message_type}")
 
     async def _handle_execute_cell(self, websocket: WebSocket, data: dict):
+        import sys
         cell_index = data.get("cell_index")
-        
         if cell_index is None or not (0 <= cell_index < len(self.notebook.cells)):
             await self._send_error(websocket, "Invalid cell index.")
             return
@@ -239,7 +239,32 @@ class WebSocketManager:
             "data": {"cell_index": cell_index, "execution_count": getattr(self.executor, 'execution_count', 0) + 1}
         })
 
-        result = await self.executor.execute_cell(cell_index, source, websocket)
+        try:
+            result = await self.executor.execute_cell(cell_index, source, websocket)
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[SERVER ERROR] execute_cell failed: {error_msg}", file=sys.stderr, flush=True)
+            
+            # Send error to frontend
+            result = {
+                'status': 'error',
+                'execution_count': None,
+                'execution_time': '0ms',
+                'outputs': [],
+                'error': {
+                    'output_type': 'error',
+                    'ename': type(e).__name__,
+                    'evalue': error_msg,
+                    'traceback': [f'{type(e).__name__}: {error_msg}', 'Worker failed to start or crashed. Check server logs.']
+                }
+            }
+            await websocket.send_json({
+                "type": "execution_error",
+                "data": {
+                    "cell_index": cell_index,
+                    "error": result['error']
+                }
+            })
 
         self.notebook.cells[cell_index]['outputs'] = result.get('outputs', [])
         self.notebook.cells[cell_index]['execution_count'] = result.get('execution_count')
@@ -290,23 +315,51 @@ class WebSocketManager:
             cell_index = data.get('cell_index')
         except Exception:
             cell_index = None
+        
+        import sys
+        print(f"[SERVER] Interrupt request received for cell {cell_index}", file=sys.stderr, flush=True)
+        
+        # Perform the interrupt (this may take up to 1 second)
         await self.executor.interrupt_kernel(cell_index=cell_index)
+        
+        print(f"[SERVER] Interrupt completed, sending error message", file=sys.stderr, flush=True)
+        
         # Inform all clients that the currently running cell (if any) is interrupted
         try:
             await websocket.send_json({
                 "type": "execution_error",
                 "data": {
-                    "cell_index": data.get('cell_index'),
+                    "cell_index": cell_index,
                     "error": {
                         "output_type": "error",
                         "ename": "KeyboardInterrupt",
                         "evalue": "Execution interrupted by user",
-                        "traceback": []
+                        "traceback": ["KeyboardInterrupt: Execution was stopped by user"]
                     }
                 }
             })
-        except Exception:
-            pass
+            # Also send execution_complete to ensure cell stops showing as executing
+            await websocket.send_json({
+                "type": "execution_complete",
+                "data": {
+                    "cell_index": cell_index,
+                    "result": {
+                        "status": "error",
+                        "execution_count": None,
+                        "execution_time": "interrupted",
+                        "outputs": [],
+                        "error": {
+                            "output_type": "error",
+                            "ename": "KeyboardInterrupt",
+                            "evalue": "Execution interrupted by user",
+                            "traceback": ["KeyboardInterrupt: Execution was stopped by user"]
+                        }
+                    }
+                }
+            })
+            print(f"[SERVER] Error messages sent for cell {cell_index}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[SERVER] Failed to send error messages: {e}", file=sys.stderr, flush=True)
     
     async def _handle_reset_kernel(self, websocket: WebSocket, data: dict):
         self.executor.reset_kernel()

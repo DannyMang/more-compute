@@ -6,6 +6,10 @@ import base64
 import io
 import traceback
 import zmq
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import re
 
 
 
@@ -18,7 +22,7 @@ def _setup_signals():
         os._exit(0)
     try:
         signal.signal(signal.SIGTERM, _handler)
-        signal.signal(signal.SIGINT, _handler)
+        signal.signal(signal.SIGINT, signal.default_int_handler)
     except Exception:
         pass
 
@@ -64,12 +68,6 @@ class _StreamForwarder:
 
 def _capture_matplotlib(pub, cell_index):
     try:
-        import matplotlib
-        matplotlib.use('Agg')
-        import matplotlib.pyplot as plt
-    except Exception:
-        return
-    try:
         figs = plt.get_fignums()
         for num in figs:
             try:
@@ -97,6 +95,8 @@ def worker_main():
     ctx = zmq.Context.instance()
     rep = ctx.socket(zmq.REP)
     rep.bind(cmd_addr)
+    # Set timeout so we can check for signals during execution
+    rep.setsockopt(zmq.RCVTIMEO, 100)  # 100ms timeout
     pub = ctx.socket(zmq.PUB)
     pub.bind(pub_addr)
 
@@ -107,23 +107,32 @@ def worker_main():
 
     last_hb = time.time()
     current_cell = None
+    shutdown_requested = False
+    
     while True:
         try:
             msg = rep.recv_json()
-        except Exception:
-            # Periodic heartbeat
+        except zmq.Again:
+            # Timeout - check if we should send heartbeat
             if time.time() - last_hb > 5.0:
                 pub.send_json({'type': 'heartbeat', 'ts': time.time()})
                 last_hb = time.time()
-            time.sleep(0.05)
+            if shutdown_requested:
+                break
+            continue
+        except Exception:
+            if shutdown_requested:
+                break
             continue
         mtype = msg.get('type')
         if mtype == 'ping':
-            rep.send_json({'ok': True})
+            rep.send_json({'ok': True, 'pid': os.getpid()})
             continue
         if mtype == 'shutdown':
-            rep.send_json({'ok': True})
-            break
+            rep.send_json({'ok': True, 'pid': os.getpid()})
+            shutdown_requested = True
+            # Don't break immediately - let the loop handle cleanup
+            continue
         if mtype == 'interrupt':
             requested = msg.get('cell_index') if isinstance(msg, dict) else None
             if requested is None or requested == current_cell:
@@ -131,7 +140,7 @@ def worker_main():
                     os.kill(os.getpid(), signal.SIGINT)
                 except Exception:
                     pass
-            rep.send_json({'ok': True})
+            rep.send_json({'ok': True, 'pid': os.getpid()})
             continue
         if mtype == 'execute_cell':
             code = msg.get('code', '')
@@ -165,17 +174,41 @@ def worker_main():
                     continue
                 compiled = compile(code, '<cell>', 'exec')
                 exec(compiled, g, l)
+                
+                # Try to evaluate last expression for display (like Jupyter)
                 lines = code.strip().split('\n')
                 if lines:
                     last = lines[-1].strip()
+                    # Skip comments and empty lines
                     if last and not last.startswith('#'):
-                        try:
-                            res = eval(last, g, l)
-                        except Exception:
-                            res = None
-                        else:
-                            if res is not None:
-                                pub.send_json({'type': 'execute_result', 'cell_index': cell_index, 'execution_count': exec_count + 1, 'data': {'text/plain': repr(res)}})
+                        # Check if it looks like a statement (assignment, import, etc)
+                        is_statement = False
+                        
+                        # Check for assignment (but not comparison operators)
+                        if '=' in last and not any(op in last for op in ['==', '!=', '<=', '>=', '=<', '=>']):
+                            is_statement = True
+                        
+                        # Check for statement keywords (handle both "assert x" and "assert(x)")
+                        statement_keywords = ['import', 'from', 'def', 'class', 'if', 'elif', 'else', 
+                                            'for', 'while', 'try', 'except', 'finally', 'with', 
+                                            'assert', 'del', 'global', 'nonlocal', 'pass', 'break', 
+                                            'continue', 'return', 'raise', 'yield']
+                        
+                        # Get first word, handling cases like "assert(...)" by splitting on non-alphanumeric
+                        first_word_match = re.match(r'^(\w+)', last)
+                        first_word = first_word_match.group(1) if first_word_match else ''
+                        
+                        if first_word in statement_keywords:
+                            is_statement = True
+                        
+                        if not is_statement:
+                            try:
+                                res = eval(last, g, l)
+                                if res is not None:
+                                    pub.send_json({'type': 'execute_result', 'cell_index': cell_index, 'execution_count': exec_count + 1, 'data': {'text/plain': repr(res)}})
+                            except Exception as e:
+                                print(f"[WORKER] Failed to eval last expression '{last[:50]}...': {e}", file=sys.stderr, flush=True)
+                
                 _capture_matplotlib(pub, cell_index)
             except KeyboardInterrupt:
                 status = 'error'
@@ -190,7 +223,7 @@ def worker_main():
             if error_payload:
                 pub.send_json({'type': 'execution_error', 'cell_index': cell_index, 'error': error_payload})
             pub.send_json({'type': 'execution_complete', 'cell_index': cell_index, 'result': {'status': status, 'execution_count': exec_count, 'execution_time': duration_ms, 'outputs': [], 'error': error_payload}})
-            rep.send_json({'ok': True})
+            rep.send_json({'ok': True, 'pid': os.getpid()})
             current_cell = None
 
     try:

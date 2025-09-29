@@ -176,14 +176,28 @@ function notebookReducer(state: NotebookState, action: NotebookAction): Notebook
         cells: state.cells.map((cell, i) => {
           if (i !== cell_index) return cell;
           const outputs = [...(cell.outputs || [])];
-          outputs.push({
-            output_type: 'execute_result',
-            execution_count,
-            data: {
-              ...(data || {}),
-              'text/plain': coerceToString(data?.['text/plain'] ?? ''),
-            },
-          } as ExecuteResultOutput);
+          
+          // Check if this is display data (e.g., matplotlib image)
+          const hasImageData = (data as any)?.['image/png'] || (data as any)?.['image/jpeg'] || (data as any)?.['image/svg+xml'];
+          
+          if (hasImageData) {
+            // Create display_data output for images (matplotlib plots)
+            outputs.push({
+              output_type: 'display_data',
+              data: data || {},
+            } as any);
+          } else {
+            // Create execute_result output for text results
+            outputs.push({
+              output_type: 'execute_result',
+              execution_count,
+              data: {
+                ...(data || {}),
+                'text/plain': coerceToString(data?.['text/plain'] ?? ''),
+              },
+            } as ExecuteResultOutput);
+          }
+          
           return { ...cell, outputs, execution_count };
         }),
       };
@@ -368,7 +382,7 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
     ws.on('execution_start', handleExecutionStart);
     ws.on('stream_output', handleStreamOutput);
     ws.on('execution_complete', handleExecutionComplete);
-    ws.on('execute_result', handleExecuteResult);
+    ws.on('execution_result', handleExecuteResult);
     ws.on('execution_error', handleExecutionError);
     
     return () => ws.disconnect();
