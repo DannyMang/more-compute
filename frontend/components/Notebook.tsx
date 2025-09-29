@@ -190,11 +190,12 @@ function notebookReducer(state: NotebookState, action: NotebookAction): Notebook
     }
     
     case 'EXECUTION_COMPLETE': {
-      const { cell_index } = action.payload;
+      const payload = action.payload || {};
+      const cell_index = payload.cell_index;
       // Support both shapes: { result: {...} } and flat payload {...}
-      const result = (action.payload && action.payload.result)
-        ? action.payload.result
-        : action.payload || {};
+      const result = (payload && payload.result)
+        ? payload.result
+        : payload || {};
       const newExecuting = new Set(state.executingCells);
       newExecuting.delete(cell_index);
       return {
@@ -202,7 +203,7 @@ function notebookReducer(state: NotebookState, action: NotebookAction): Notebook
         executingCells: newExecuting,
         cells: state.cells.map((cell, i) => {
           if (i !== cell_index) return cell;
-          const normalizedOutputs = normalizeOutputs(result?.outputs);
+          const normalizedOutputs = normalizeOutputs(Array.isArray((result as any).outputs) ? (result as any).outputs : []);
           const normalizedError = normalizeError(result?.error);
 
           const existingOutputs = cell.outputs || [];
@@ -347,19 +348,18 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
   }, []);
 
   useEffect(() => {
-    const wsUrl = `ws://localhost:8000/ws`;
-
     const ws = new WebSocketService();
     wsRef.current = ws;
-    
     handleKernelStatusUpdate('connecting');
 
-    ws.connect(wsUrl).then(() => {
-      ws.loadNotebook(notebookName || 'default');
-    }).catch(error => {
-      console.error('Failed to connect:', error);
-      handleKernelStatusUpdate('disconnected');
-    });
+    ws.connect('ws://127.0.0.1:8000/ws')
+      .then(() => {
+        ws.loadNotebook(notebookName || 'default');
+      })
+      .catch(error => {
+        console.error('Failed to connect:', error);
+        handleKernelStatusUpdate('disconnected');
+      });
 
     ws.on('connect', () => handleKernelStatusUpdate('connected'));
     ws.on('disconnect', () => handleKernelStatusUpdate('disconnected'));
@@ -387,6 +387,10 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
     
     wsRef.current?.executeCell(index, cell.source);
   }, [cells]);
+
+  const interruptCell = useCallback((index: number) => {
+    wsRef.current?.interruptKernel(index);
+  }, []);
 
   const deleteCell = useCallback((index: number) => {
     wsRef.current?.deleteCell(index);
@@ -425,6 +429,7 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
           isActive={currentCellIndex === index}
           isExecuting={executingCells.has(index)}
           onExecute={executeCell}
+          onInterrupt={interruptCell}
           onDelete={deleteCell}
           onUpdate={updateCell}
           onSetActive={setCurrentCellIndex}

@@ -27,6 +27,12 @@ class NotebookLauncher:
         os.environ["MORECOMPUTE_ROOT"] = str(root_dir.resolve())
         os.environ["MORECOMPUTE_NOTEBOOK_PATH"] = str(self.notebook_path)
         self.settings = self._load_settings(root_dir)
+        try:
+            exec_mode = self.settings.get("execution_mode")
+            if exec_mode in ("inprocess", "process", "zmq"):
+                os.environ["MORECOMPUTE_EXECUTION_MODE"] = exec_mode
+        except Exception:
+            pass
 
     def _load_settings(self, root_dir: Path) -> dict:
         """Load project-level settings from settings.json if present."""
@@ -42,6 +48,9 @@ class NotebookLauncher:
     def start_backend(self):
         """Start the FastAPI backend server"""
         try:
+            # Force a stable port (default 8000); if busy, ask to free it
+            chosen_port = int(os.getenv("MORECOMPUTE_PORT", "8000"))
+            self._ensure_port_available(chosen_port)
             cmd = [
                 sys.executable,
                 "-m",
@@ -50,7 +59,7 @@ class NotebookLauncher:
                 "--host",
                 "localhost",
                 "--port",
-                "8000",
+                str(chosen_port),
             ]
 
             # Enable autoreload only when debugging or explicitly requested
@@ -82,9 +91,66 @@ class NotebookLauncher:
                 stdout=stdout_dest,
                 stderr=stderr_dest,
             )
+            # Save for later printing/opening
+            self.backend_port = chosen_port
         except Exception as e:
             print(f"Failed to start backend: {e}")
             sys.exit(1)
+
+    def _ensure_port_available(self, port: int) -> None:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("127.0.0.1", port))
+                return  # free
+            except OSError:
+                pass  # in use
+        # Port is in use - show processes and ask to kill
+        print(f"\nPort {port} appears to be in use.")
+        pids = []
+        try:
+            out = subprocess.check_output(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"]).decode("utf-8", errors="ignore")
+            print(out)
+            for line in out.splitlines()[1:]:
+                parts = line.split()
+                if len(parts) > 1 and parts[1].isdigit():
+                    pids.append(int(parts[1]))
+        except Exception:
+            print("Could not list processes with lsof. You may need to free the port manually.")
+        resp = input(f"Kill processes on port {port} and continue? [y/N]: ").strip().lower()
+        if resp != "y":
+            print("Aborting. Set MORECOMPUTE_PORT to a different port to override.")
+            sys.exit(1)
+        # Attempt to kill
+        for pid in pids:
+            try:
+                os.kill(pid, 9)
+            except Exception:
+                pass
+        # Fallback: kill known patterns
+        try:
+            subprocess.run(["pkill", "-f", "uvicorn .*morecompute.server:app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        try:
+            subprocess.run(["pkill", "-f", "morecompute.zmq_worker"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        # Brief pause to let the OS release the port
+        time.sleep(0.5)
+        # Poll until it binds
+        start = time.time()
+        while time.time() - start < 5.0:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s2.bind(("127.0.0.1", port))
+                    return
+                except OSError:
+                    time.sleep(0.25)
+        print(f"Port {port} still busy. Please free it or set MORECOMPUTE_PORT to another port.")
+        sys.exit(1)
 
     def start_frontend(self):
         """Start the frontend server (Next.js or legacy)"""
@@ -124,7 +190,8 @@ class NotebookLauncher:
         else:
             # Legacy frontend is served by backend
             time.sleep(2)
-            webbrowser.open("http://localhost:8000")
+            port = getattr(self, 'backend_port', 8000)
+            webbrowser.open(f"http://localhost:{port}")
 
     def cleanup(self):
         """Clean up processes on exit"""
@@ -149,7 +216,8 @@ class NotebookLauncher:
             print("        ➜  URL: http://localhost:3000\n")
         else:
             print("\n        Edit notebook in your browser!\n")
-            print("        ➜  URL: http://localhost:8000\n")
+            port = getattr(self, 'backend_port', 8000)
+            print(f"        ➜  URL: http://localhost:{port}\n")
 
         # Set up signal handlers
         def signal_handler(signum, frame):

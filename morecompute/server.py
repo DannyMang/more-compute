@@ -11,7 +11,14 @@ from pathlib import Path
 import importlib.metadata as importlib_metadata
 
 from .notebook import Notebook
-from .next_executor import NextCodeExecutor
+import os as _os
+mode = _os.getenv('MORECOMPUTE_EXECUTION_MODE', 'inprocess')
+if mode == 'process':
+    from .next_process_executor import NextProcessExecutor as _Executor
+elif mode == 'zmq':
+    from .next_zmq_executor import NextZmqExecutor as _Executor
+else:
+    from .next_executor import NextCodeExecutor as _Executor
 from .utils.pyEnv import PythonEnvironmentDetector
 from .utils.systemEnv import DeviceMetrics
 from .utils.error_utils import ErrorUtils
@@ -46,9 +53,37 @@ if notebook_path_env:
 else:
     notebook = Notebook()
 error_utils = ErrorUtils()
-executor = NextCodeExecutor(error_utils=error_utils)
+executor = _Executor(error_utils=error_utils)
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 metrics = DeviceMetrics()
+
+
+def _coerce_cell_source(value):
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return value.decode('utf-8')  # type: ignore[arg-type]
+        except Exception:
+            return value.decode('utf-8', errors='ignore')  # type: ignore[arg-type]
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if item is None:
+                continue
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, (bytes, bytearray)):
+                try:
+                    parts.append(item.decode('utf-8'))  # type: ignore[arg-type]
+                except Exception:
+                    parts.append(item.decode('utf-8', errors='ignore'))  # type: ignore[arg-type]
+            else:
+                parts.append(str(item))
+        return ''.join(parts)
+    return str(value)
 
 @app.get("/")
 async def read_root(request: Request):
@@ -197,15 +232,15 @@ class WebSocketManager:
             await self._send_error(websocket, "Invalid cell index.")
             return
 
-        source = self.notebook.cells[cell_index].get('source', '')
+        source = _coerce_cell_source(self.notebook.cells[cell_index].get('source', ''))
         
         await websocket.send_json({
             "type": "execution_start",
-            "data": {"cell_index": cell_index, "execution_count": self.executor.execution_count + 1}
+            "data": {"cell_index": cell_index, "execution_count": getattr(self.executor, 'execution_count', 0) + 1}
         })
-        
+
         result = await self.executor.execute_cell(cell_index, source, websocket)
-        
+
         self.notebook.cells[cell_index]['outputs'] = result.get('outputs', [])
         self.notebook.cells[cell_index]['execution_count'] = result.get('execution_count')
         
@@ -251,8 +286,27 @@ class WebSocketManager:
             await self._send_error(websocket, f"Failed to save notebook: {exc}")
 
     async def _handle_interrupt_kernel(self, websocket: WebSocket, data: dict):
-        await self.executor.interrupt_kernel()
-        await websocket.send_json({"type": "kernel_interrupted", "data": {}})
+        try:
+            cell_index = data.get('cell_index')
+        except Exception:
+            cell_index = None
+        await self.executor.interrupt_kernel(cell_index=cell_index)
+        # Inform all clients that the currently running cell (if any) is interrupted
+        try:
+            await websocket.send_json({
+                "type": "execution_error",
+                "data": {
+                    "cell_index": data.get('cell_index'),
+                    "error": {
+                        "output_type": "error",
+                        "ename": "KeyboardInterrupt",
+                        "evalue": "Execution interrupted by user",
+                        "traceback": []
+                    }
+                }
+            })
+        except Exception:
+            pass
     
     async def _handle_reset_kernel(self, websocket: WebSocket, data: dict):
         self.executor.reset_kernel()
