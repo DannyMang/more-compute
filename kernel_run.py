@@ -16,11 +16,10 @@ from morecompute.notebook import Notebook
 DEFAULT_NOTEBOOK_NAME = "notebook.ipynb"
 
 class NotebookLauncher:
-    def __init__(self, notebook_path: Path, use_new_frontend=False, debug=False):
+    def __init__(self, notebook_path: Path, debug=False):
         self.backend_process = None
         self.frontend_process = None
         self.root_dir = Path(__file__).parent
-        self.use_new_frontend = use_new_frontend
         self.debug = debug
         self.notebook_path = notebook_path
         root_dir = notebook_path.parent if notebook_path.parent != Path('') else Path.cwd()
@@ -153,45 +152,39 @@ class NotebookLauncher:
         sys.exit(1)
 
     def start_frontend(self):
-        """Start the frontend server (Next.js or legacy)"""
-        if self.use_new_frontend:
-            try:
-                frontend_dir = self.root_dir / "frontend"
+        """Start the Next.js frontend server"""
+        try:
+            frontend_dir = self.root_dir / "frontend"
 
-                # Check if node_modules exists
-                if not (frontend_dir / "node_modules").exists():
-                    print("Installing dependencies...")
-                    subprocess.run(
-                        ["npm", "install"],
-                        cwd=frontend_dir,
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-
-                fe_stdout = None if self.debug else subprocess.DEVNULL
-                fe_stderr = None if self.debug else subprocess.DEVNULL
-
-                self.frontend_process = subprocess.Popen(
-                    ["npm", "run", "dev"],
+            # Check if node_modules exists
+            if not (frontend_dir / "node_modules").exists():
+                print("Installing dependencies...")
+                subprocess.run(
+                    ["npm", "install"],
                     cwd=frontend_dir,
-                    stdout=fe_stdout,
-                    stderr=fe_stderr
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
                 )
 
-                # Wait a bit then open browser
-                time.sleep(3)
-                webbrowser.open("http://localhost:3000")
+            fe_stdout = None if self.debug else subprocess.DEVNULL
+            fe_stderr = None if self.debug else subprocess.DEVNULL
 
-            except Exception as e:
-                print(f"Failed to start frontend: {e}")
-                self.cleanup()
-                sys.exit(1)
-        else:
-            # Legacy frontend is served by backend
-            time.sleep(2)
-            port = getattr(self, 'backend_port', 8000)
-            webbrowser.open(f"http://localhost:{port}")
+            self.frontend_process = subprocess.Popen(
+                ["npm", "run", "dev"],
+                cwd=frontend_dir,
+                stdout=fe_stdout,
+                stderr=fe_stderr
+            )
+
+            # Wait a bit then open browser
+            time.sleep(3)
+            webbrowser.open("http://localhost:3000")
+
+        except Exception as e:
+            print(f"Failed to start frontend: {e}")
+            self.cleanup()
+            sys.exit(1)
 
     def cleanup(self):
         """Clean up processes on exit"""
@@ -211,13 +204,8 @@ class NotebookLauncher:
 
     def run(self):
         """Main run method"""
-        if self.use_new_frontend:
-            print("\n        Edit notebook in your browser!\n")
-            print("        ➜  URL: http://localhost:3000\n")
-        else:
-            print("\n        Edit notebook in your browser!\n")
-            port = getattr(self, 'backend_port', 8000)
-            print(f"        ➜  URL: http://localhost:{port}\n")
+        print("\n        Edit notebook in your browser!\n")
+        print("        ➜  URL: http://localhost:3000\n")
 
         # Set up signal handlers
         def signal_handler(signum, frame):
@@ -241,7 +229,7 @@ class NotebookLauncher:
                     self.cleanup()
                     sys.exit(1)
 
-                if self.use_new_frontend and self.frontend_process and self.frontend_process.poll() is not None:
+                if self.frontend_process and self.frontend_process.poll() is not None:
                     self.cleanup()
                     sys.exit(1)
 
@@ -252,21 +240,8 @@ class NotebookLauncher:
             self.cleanup()
 
 
-class NotebookArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
-        if "mode_or_path" in message or "the following arguments are required" in message:
-            message = "Usage: kernel_run [new|legacy] <notebook>.ipynb"
-        super().error(message)
-
-
 def build_parser() -> argparse.ArgumentParser:
-    parser = NotebookArgumentParser(description="Launch the MoreCompute notebook")
-    parser.add_argument(
-        "mode_or_path",
-        nargs="?",
-        default=None,
-        help="Optional mode ('new' or 'legacy') or notebook path",
-    )
+    parser = argparse.ArgumentParser(description="Launch the MoreCompute notebook")
     parser.add_argument(
         "notebook_path",
         nargs="?",
@@ -300,16 +275,7 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    mode = 'new'
-    raw_notebook_path = None
-
-    if args.mode_or_path in ('new', 'legacy'):
-        mode = args.mode_or_path
-        raw_notebook_path = args.notebook_path
-    elif args.mode_or_path:
-        raw_notebook_path = args.mode_or_path
-    else:
-        raw_notebook_path = args.notebook_path
+    raw_notebook_path = args.notebook_path
 
     notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
     if raw_notebook_path is None:
@@ -323,7 +289,6 @@ def main(argv=None):
 
     launcher = NotebookLauncher(
         notebook_path=notebook_path,
-        use_new_frontend=(mode == "new"),
         debug=args.debug
     )
     launcher.run()
@@ -331,6 +296,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-
-    
-    

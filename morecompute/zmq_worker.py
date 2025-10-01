@@ -11,8 +11,6 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import re
 
-
-
 def _setup_signals():
     def _handler(signum, frame):
         try:
