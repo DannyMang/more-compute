@@ -36,7 +36,11 @@ python3 kernel_run.py new
 ```bash
 kernel_run your_notebook.py
 # or
+python3 kernel_run.py your_notebook.py
+...
 kernel_run your_notebook.ipynb
+# or
+python3 kernel_run.py your_notebook.py
 ```
 
 ## Features
