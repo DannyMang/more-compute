@@ -16,17 +16,22 @@ from morecompute.notebook import Notebook
 DEFAULT_NOTEBOOK_NAME = "notebook.ipynb"
 
 class NotebookLauncher:
-    def __init__(self, notebook_path: Path, use_new_frontend=False, debug=False):
+    def __init__(self, notebook_path: Path, debug=False):
         self.backend_process = None
         self.frontend_process = None
         self.root_dir = Path(__file__).parent
-        self.use_new_frontend = use_new_frontend
         self.debug = debug
         self.notebook_path = notebook_path
         root_dir = notebook_path.parent if notebook_path.parent != Path('') else Path.cwd()
         os.environ["MORECOMPUTE_ROOT"] = str(root_dir.resolve())
         os.environ["MORECOMPUTE_NOTEBOOK_PATH"] = str(self.notebook_path)
         self.settings = self._load_settings(root_dir)
+        try:
+            exec_mode = self.settings.get("execution_mode")
+            if exec_mode in ("inprocess", "process", "zmq"):
+                os.environ["MORECOMPUTE_EXECUTION_MODE"] = exec_mode
+        except Exception:
+            pass
 
     def _load_settings(self, root_dir: Path) -> dict:
         """Load project-level settings from settings.json if present."""
@@ -42,6 +47,9 @@ class NotebookLauncher:
     def start_backend(self):
         """Start the FastAPI backend server"""
         try:
+            # Force a stable port (default 8000); if busy, ask to free it
+            chosen_port = int(os.getenv("MORECOMPUTE_PORT", "8000"))
+            self._ensure_port_available(chosen_port)
             cmd = [
                 sys.executable,
                 "-m",
@@ -50,7 +58,7 @@ class NotebookLauncher:
                 "--host",
                 "localhost",
                 "--port",
-                "8000",
+                str(chosen_port),
             ]
 
             # Enable autoreload only when debugging or explicitly requested
@@ -82,49 +90,101 @@ class NotebookLauncher:
                 stdout=stdout_dest,
                 stderr=stderr_dest,
             )
+            # Save for later printing/opening
+            self.backend_port = chosen_port
         except Exception as e:
             print(f"Failed to start backend: {e}")
             sys.exit(1)
 
-    def start_frontend(self):
-        """Start the frontend server (Next.js or legacy)"""
-        if self.use_new_frontend:
+    def _ensure_port_available(self, port: int) -> None:
+        import socket
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
-                frontend_dir = self.root_dir / "frontend"
+                s.bind(("127.0.0.1", port))
+                return  # free
+            except OSError:
+                pass  # in use
+        # Port is in use - show processes and ask to kill
+        print(f"\nPort {port} appears to be in use.")
+        pids = []
+        try:
+            out = subprocess.check_output(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"]).decode("utf-8", errors="ignore")
+            print(out)
+            for line in out.splitlines()[1:]:
+                parts = line.split()
+                if len(parts) > 1 and parts[1].isdigit():
+                    pids.append(int(parts[1]))
+        except Exception:
+            print("Could not list processes with lsof. You may need to free the port manually.")
+        resp = input(f"Kill processes on port {port} and continue? [y/N]: ").strip().lower()
+        if resp != "y":
+            print("Aborting. Set MORECOMPUTE_PORT to a different port to override.")
+            sys.exit(1)
+        # Attempt to kill
+        for pid in pids:
+            try:
+                os.kill(pid, 9)
+            except Exception:
+                pass
+        # Fallback: kill known patterns
+        try:
+            subprocess.run(["pkill", "-f", "uvicorn .*morecompute.server:app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        try:
+            subprocess.run(["pkill", "-f", "morecompute.zmq_worker"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+        # Brief pause to let the OS release the port
+        time.sleep(0.5)
+        # Poll until it binds
+        start = time.time()
+        while time.time() - start < 5.0:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
+                s2.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s2.bind(("127.0.0.1", port))
+                    return
+                except OSError:
+                    time.sleep(0.25)
+        print(f"Port {port} still busy. Please free it or set MORECOMPUTE_PORT to another port.")
+        sys.exit(1)
 
-                # Check if node_modules exists
-                if not (frontend_dir / "node_modules").exists():
-                    print("Installing dependencies...")
-                    subprocess.run(
-                        ["npm", "install"],
-                        cwd=frontend_dir,
-                        check=True,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
+    def start_frontend(self):
+        """Start the Next.js frontend server"""
+        try:
+            frontend_dir = self.root_dir / "frontend"
 
-                fe_stdout = None if self.debug else subprocess.DEVNULL
-                fe_stderr = None if self.debug else subprocess.DEVNULL
-
-                self.frontend_process = subprocess.Popen(
-                    ["npm", "run", "dev"],
+            # Check if node_modules exists
+            if not (frontend_dir / "node_modules").exists():
+                print("Installing dependencies...")
+                subprocess.run(
+                    ["npm", "install"],
                     cwd=frontend_dir,
-                    stdout=fe_stdout,
-                    stderr=fe_stderr
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
                 )
 
-                # Wait a bit then open browser
-                time.sleep(3)
-                webbrowser.open("http://localhost:3000")
+            fe_stdout = None if self.debug else subprocess.DEVNULL
+            fe_stderr = None if self.debug else subprocess.DEVNULL
 
-            except Exception as e:
-                print(f"Failed to start frontend: {e}")
-                self.cleanup()
-                sys.exit(1)
-        else:
-            # Legacy frontend is served by backend
-            time.sleep(2)
-            webbrowser.open("http://localhost:8000")
+            self.frontend_process = subprocess.Popen(
+                ["npm", "run", "dev"],
+                cwd=frontend_dir,
+                stdout=fe_stdout,
+                stderr=fe_stderr
+            )
+
+            # Wait a bit then open browser
+            time.sleep(3)
+            webbrowser.open("http://localhost:3000")
+
+        except Exception as e:
+            print(f"Failed to start frontend: {e}")
+            self.cleanup()
+            sys.exit(1)
 
     def cleanup(self):
         """Clean up processes on exit"""
@@ -144,12 +204,8 @@ class NotebookLauncher:
 
     def run(self):
         """Main run method"""
-        if self.use_new_frontend:
-            print("\n        Edit notebook in your browser!\n")
-            print("        ➜  URL: http://localhost:3000\n")
-        else:
-            print("\n        Edit notebook in your browser!\n")
-            print("        ➜  URL: http://localhost:8000\n")
+        print("\n        Edit notebook in your browser!\n")
+        print("        ➜  URL: http://localhost:3000\n")
 
         # Set up signal handlers
         def signal_handler(signum, frame):
@@ -173,7 +229,7 @@ class NotebookLauncher:
                     self.cleanup()
                     sys.exit(1)
 
-                if self.use_new_frontend and self.frontend_process and self.frontend_process.poll() is not None:
+                if self.frontend_process and self.frontend_process.poll() is not None:
                     self.cleanup()
                     sys.exit(1)
 
@@ -184,21 +240,8 @@ class NotebookLauncher:
             self.cleanup()
 
 
-class NotebookArgumentParser(argparse.ArgumentParser):
-    def error(self, message):
-        if "mode_or_path" in message or "the following arguments are required" in message:
-            message = "Usage: kernel_run [new|legacy] <notebook>.ipynb"
-        super().error(message)
-
-
 def build_parser() -> argparse.ArgumentParser:
-    parser = NotebookArgumentParser(description="Launch the MoreCompute notebook")
-    parser.add_argument(
-        "mode_or_path",
-        nargs="?",
-        default=None,
-        help="Optional mode ('new' or 'legacy') or notebook path",
-    )
+    parser = argparse.ArgumentParser(description="Launch the MoreCompute notebook")
     parser.add_argument(
         "notebook_path",
         nargs="?",
@@ -232,16 +275,7 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    mode = 'new'
-    raw_notebook_path = None
-
-    if args.mode_or_path in ('new', 'legacy'):
-        mode = args.mode_or_path
-        raw_notebook_path = args.notebook_path
-    elif args.mode_or_path:
-        raw_notebook_path = args.mode_or_path
-    else:
-        raw_notebook_path = args.notebook_path
+    raw_notebook_path = args.notebook_path
 
     notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
     if raw_notebook_path is None:
@@ -255,7 +289,6 @@ def main(argv=None):
 
     launcher = NotebookLauncher(
         notebook_path=notebook_path,
-        use_new_frontend=(mode == "new"),
         debug=args.debug
     )
     launcher.run()
@@ -263,6 +296,3 @@ def main(argv=None):
 
 if __name__ == "__main__":
     main()
-
-    
-    

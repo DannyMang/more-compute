@@ -188,8 +188,8 @@ class NextCodeExecutor:
                     }
                 })
 
-    async def interrupt_kernel(self):
-        print("Kernel interrupt requested (not fully implemented).")
+    async def interrupt_kernel(self, cell_index: Optional[int] = None):
+        print("Kernel interrupt requested.")
 
     def reset_kernel(self):
         self.globals = {"__name__": "__main__"}

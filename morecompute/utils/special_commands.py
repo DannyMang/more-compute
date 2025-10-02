@@ -148,6 +148,10 @@ class AsyncSpecialCommandHandler:
         result["execution_time"] = f"{(time.time() - start_time) * 1000:.1f}ms"
         return result
 
+    async def interrupt(self):
+        # Placeholder for future process-based interruption logic
+        return
+
     def _prepare_streaming_environment(self, shell_cmd: str) -> dict:
         """Prepare environment variables for unbuffered output"""
         env = os.environ.copy()

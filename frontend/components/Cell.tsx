@@ -15,6 +15,7 @@ interface CellProps {
   isActive: boolean;
   isExecuting: boolean;
   onExecute: (index: number) => void;
+  onInterrupt: (index: number) => void;
   onDelete: (index: number) => void;
   onUpdate: (index: number, source: string) => void;
   onSetActive: (index: number) => void;
@@ -28,6 +29,7 @@ export const Cell: React.FC<CellProps> = ({
   isExecuting,
   onExecute,
   onDelete,
+  onInterrupt,
   onUpdate,
   onSetActive,
   onAddCell,
@@ -125,7 +127,11 @@ export const Cell: React.FC<CellProps> = ({
     if (cell.cell_type === 'markdown') {
       setIsEditing(false);
     } else {
-      onExecute(indexRef.current);
+      if (isExecuting) {
+        onInterrupt(indexRef.current);
+      } else {
+        onExecute(indexRef.current);
+      }
     }
   };
 
@@ -139,9 +145,9 @@ export const Cell: React.FC<CellProps> = ({
   return (
     <div className="cell-wrapper">
       <div className="cell-status-indicator">
-        {isExecuting ? (
-          <Loader2 size={14} className="mc-spin" />
-        ) : cell.error ? (
+      {isExecuting ? (
+        <Loader2 size={14} className="mc-spin" />
+      ) : cell.error ? (
           <X size={14} color="#dc2626" />
         ) : cell.execution_count != null ? (
           <Check size={14} color="#16a34a" />
@@ -162,7 +168,7 @@ export const Cell: React.FC<CellProps> = ({
       >
         <div className="cell-hover-controls">
           <div className="cell-actions-right">
-            <button type="button" className="cell-action run-cell-btn" title="Run cell" onClick={(e) => { e.stopPropagation(); handleExecute(); }}>
+            <button type="button" className="cell-action run-cell-btn" title={isExecuting ? 'Stop cell' : 'Run cell'} onClick={(e) => { e.stopPropagation(); handleExecute(); }}>
               {isExecuting ? <StopCircle size={14} /> : <Play size={14} />}
             </button>
             <button type="button" className="cell-action drag-handle" title="Drag to reorder">

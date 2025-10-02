@@ -6,3 +6,4 @@ jupyter>=1.0.0
 nbformat>=5.0.0
 click>=8.0.0
 psutil>=5.9.0
+pyzmq>=25.0.0

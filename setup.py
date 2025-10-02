@@ -28,11 +28,11 @@ setup(
     install_requires=[
         "fastapi>=0.104.0",
         "uvicorn[standard]>=0.24.0",
-        "jinja2>=3.0.0",
         "python-multipart>=0.0.5",
         "jupyter>=1.0.0",
         "nbformat>=5.0.0",
         "click>=8.0.0",
+        "pyzmq>=25.0.0",
     ],
     entry_points={
         "console_scripts": [
@@ -40,13 +40,4 @@ setup(
         ],
     },
     include_package_data=True,
-    package_data={
-        # Ensure wheel includes nested static/js/css/html assets
-        "morecompute": [
-            "static/*",
-            "static/**/*",
-            "templates/*",
-            "templates/**/*",
-        ],
-    },
 )

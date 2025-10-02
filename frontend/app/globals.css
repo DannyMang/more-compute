@@ -12,10 +12,12 @@
     --mc-text-color: #1f2937;
     --mc-markdown-color: #1f2937;
     --mc-line-number-color: #9ca3af;
+    --text-secondary: #6b7280;
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: var(--mc-background);
     color: var(--mc-text-color);
     line-height: 1.6;
@@ -116,7 +118,8 @@ body {
 }
 
 @keyframes pulse {
-    0%, 100% {
+    0%,
+    100% {
         opacity: 1;
     }
     50% {
@@ -164,7 +167,7 @@ body {
 }
 
 .add-cell-line::before {
-    content: '';
+    content: "";
     position: absolute;
     top: -10px;
     left: 0;
@@ -176,7 +179,7 @@ body {
 
 /* Extended hover area for add-line-below to capture hover below cells */
 .add-line-below::before {
-    content: '';
+    content: "";
     position: absolute;
     top: -8px;
     left: 0;
@@ -187,7 +190,7 @@ body {
 }
 
 .add-cell-line::after {
-    content: '';
+    content: "";
     position: absolute;
     top: -1px;
     left: 50px;
@@ -255,7 +258,7 @@ body {
 
 /* Create hover area that includes both button and menu */
 .add-cell-button::after {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -20px;
@@ -413,8 +416,12 @@ body {
 }
 
 @keyframes mc-spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 /* Cell Content */
@@ -436,7 +443,9 @@ body {
     border: none;
     outline: none;
     resize: none;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family:
+        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+        "Courier New", monospace;
     font-size: 14px;
     line-height: 1.6;
     padding: 16px 20px;
@@ -452,7 +461,9 @@ body {
 /* CodeMirror Styling */
 .CodeMirror {
     height: auto;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family:
+        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+        "Courier New", monospace;
     font-size: 14px;
     line-height: 1.6;
     border: none;
@@ -466,7 +477,7 @@ body {
 
 .CodeMirror-scroll {
     /* Content-based sizing - start small and grow with content */
-    min-height: 32px;  /* Single line minimum */
+    min-height: 32px; /* Single line minimum */
     padding: 8px 16px;
     transition: min-height 0.2s ease;
     background: var(--mc-cell-background);
@@ -485,15 +496,15 @@ body {
 
 /* Smart sizing classes applied dynamically */
 .cell.cell-empty .CodeMirror-scroll {
-    min-height: 32px;  /* Very compact for empty cells */
+    min-height: 32px; /* Very compact for empty cells */
 }
 
 .cell.cell-single-line .CodeMirror-scroll {
-    min-height: 40px;  /* Slightly more space for single line */
+    min-height: 40px; /* Slightly more space for single line */
 }
 
 .cell.cell-focused .CodeMirror-scroll {
-    min-height: 48px;  /* More space when focused for editing */
+    min-height: 48px; /* More space when focused for editing */
 }
 
 .CodeMirror-cursor {
@@ -540,19 +551,19 @@ body {
     line-height: 1.7;
     color: var(--mc-markdown-color);
     cursor: pointer;
-    min-height: auto;  /* Let content determine height */
+    min-height: auto; /* Let content determine height */
 }
 
 /* Smart sizing for markdown content */
 .cell.cell-empty .markdown-rendered,
 .cell.cell-empty .text-cell-output {
-    min-height: 24px;  /* Very compact for empty markdown */
+    min-height: 24px; /* Very compact for empty markdown */
     padding: 4px 12px;
 }
 
 .cell.cell-single-line .markdown-rendered,
 .cell.cell-single-line .text-cell-output {
-    min-height: 32px;  /* Single line markdown */
+    min-height: 32px; /* Single line markdown */
     padding: 6px 14px;
 }
 
@@ -560,22 +571,33 @@ body {
     background: rgba(59, 130, 246, 0.02);
 }
 
-.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, 
-.markdown-rendered h4, .markdown-rendered h5, .markdown-rendered h6 {
+.markdown-rendered h1,
+.markdown-rendered h2,
+.markdown-rendered h3,
+.markdown-rendered h4,
+.markdown-rendered h5,
+.markdown-rendered h6 {
     margin: 16px 0 8px 0;
     font-weight: 600;
     color: #111827;
 }
 
-.markdown-rendered h1 { font-size: 1.5em; }
-.markdown-rendered h2 { font-size: 1.3em; }
-.markdown-rendered h3 { font-size: 1.1em; }
+.markdown-rendered h1 {
+    font-size: 1.5em;
+}
+.markdown-rendered h2 {
+    font-size: 1.3em;
+}
+.markdown-rendered h3 {
+    font-size: 1.1em;
+}
 
 .markdown-rendered p {
     margin: 8px 0;
 }
 
-.markdown-rendered ul, .markdown-rendered ol {
+.markdown-rendered ul,
+.markdown-rendered ol {
     margin: 8px 0;
     padding-left: 20px;
 }
@@ -588,7 +610,9 @@ body {
     background: #f3f4f6;
     padding: 2px 4px;
     border-radius: 3px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family:
+        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+        "Courier New", monospace;
     font-size: 0.9em;
 }
 
@@ -641,7 +665,9 @@ body {
 }
 
 .execution-count {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family:
+        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+        "Courier New", monospace;
     font-size: 10px;
     color: #9ca3af;
 }
@@ -694,7 +720,9 @@ body {
     padding: 12px 16px;
     margin: 8px 0;
     border-radius: 6px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family:
+        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+        "Courier New", monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -718,7 +746,9 @@ body {
     margin: 8px 0;
     border-radius: 6px;
     border: 1px solid #e5e7eb;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family:
+        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+        "Courier New", monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -731,7 +761,9 @@ body {
     margin: 8px 0;
     border-radius: 6px;
     border: 1px solid #fecaca;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family:
+        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+        "Courier New", monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -748,13 +780,19 @@ body {
 }
 
 .cell.executing .execution-count::after {
-    content: ' •';
+    content: " •";
     animation: blink 1s infinite;
 }
 
 @keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0.3; }
+    0%,
+    50% {
+        opacity: 1;
+    }
+    51%,
+    100% {
+        opacity: 0.3;
+    }
 }
 
 /* Drag and Drop */
@@ -773,11 +811,11 @@ body {
         padding: 20px 10px;
         max-width: 100%;
     }
-    
+
     .execution-indicator {
         display: none;
     }
-    
+
     .cell-hover-controls {
         position: relative;
         top: auto;
@@ -966,7 +1004,9 @@ body {
     border-radius: 6px;
     font-size: 12px;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease;
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -1094,7 +1134,9 @@ body {
 }
 
 .file-preview-content {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family:
+        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+        "Courier New", monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-break: break-word;
@@ -1160,7 +1202,7 @@ body {
 .settings-editor {
     width: 100%;
     height: 400px;
-    font-family: 'SF Mono', Monaco, monospace;
+    font-family: "SF Mono", Monaco, monospace;
     font-size: 13px;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
@@ -1426,4 +1468,351 @@ body {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
+}
+
+/* Runtime Popup Styles (Modal-inspired) */
+.runtime-popup {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow-y: auto;
+}
+
+.runtime-popup-loading,
+.runtime-popup-error {
+    padding: 40px 20px;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.runtime-section {
+    padding: 20px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.runtime-section:last-child {
+    border-bottom: none;
+}
+
+.runtime-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.runtime-section-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--mc-text-color);
+    margin: 0 0 12px 0;
+}
+
+.runtime-cost {
+    font-size: 14px;
+    color: #10b981;
+    font-weight: 500;
+}
+
+.runtime-kernel-status {
+    margin-bottom: 12px;
+    font-size: 14px;
+    color: var(--text-secondary);
+}
+
+.kernel-status-active {
+    font-weight: 600;
+    color: var(--mc-text-color);
+}
+
+.runtime-subtitle {
+    font-size: 13px;
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+}
+
+.runtime-subtitle em {
+    font-style: italic;
+    color: var(--mc-text-color);
+}
+
+.runtime-metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px;
+    background: #f0f9ff;
+    border: 1px solid #0ea5e9;
+    border-radius: 8px;
+    margin-bottom: 20px;
+}
+
+.runtime-metric-label {
+    display: flex;
+    align-items: center;
+    font-size: 13px;
+    font-weight: 500;
+    color: #0369a1;
+}
+
+.runtime-metric-value {
+    text-align: right;
+}
+
+.runtime-subsection {
+    margin-top: 20px;
+}
+
+.runtime-subsection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.runtime-subsection-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--mc-text-color);
+    margin: 0;
+    display: flex;
+    align-items: center;
+}
+
+.runtime-icon-btn {
+    background: transparent;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.runtime-icon-btn:hover {
+    background: #f3f4f6;
+    color: var(--mc-text-color);
+}
+
+.runtime-env-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.runtime-env-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.runtime-env-item:hover {
+    border-color: #3b82f6;
+    background: #f8fafc;
+}
+
+.runtime-env-item.active {
+    border-color: #10b981;
+    background: #f0fdf4;
+}
+
+.runtime-env-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.runtime-env-name {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--mc-text-color);
+}
+
+.runtime-env-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.runtime-env-version {
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.runtime-env-type {
+    font-size: 10px;
+    color: #6b7280;
+    background: #f3f4f6;
+    padding: 2px 6px;
+    border-radius: 10px;
+}
+
+.runtime-env-path {
+    font-size: 11px;
+    color: #9ca3af;
+    font-family: monospace;
+}
+
+.runtime-gpu-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.runtime-gpu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+.runtime-gpu-item:hover {
+    border-color: #8b5cf6;
+    background: #faf5ff;
+}
+
+.runtime-gpu-info {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.runtime-gpu-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.runtime-gpu-name {
+    font-weight: 500;
+    font-size: 14px;
+    color: var(--mc-text-color);
+}
+
+.runtime-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 12px;
+    text-transform: capitalize;
+}
+
+.runtime-status-running {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.runtime-status-stopped {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+.runtime-status-starting {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.runtime-gpu-details {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: #6b7280;
+}
+
+.runtime-gpu-type {
+    font-weight: 500;
+    color: #8b5cf6;
+}
+
+.runtime-gpu-region {
+    color: #6b7280;
+}
+
+.runtime-gpu-cost {
+    color: #10b981;
+    font-weight: 500;
+}
+
+.runtime-empty-state {
+    text-align: center;
+    padding: 24px 16px;
+    background: #f9fafb;
+    border: 1px dashed #d1d5db;
+    border-radius: 8px;
+}
+
+.runtime-btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.runtime-btn-primary {
+    background: #3b82f6;
+    color: white;
+}
+
+.runtime-btn-primary:hover {
+    background: #2563eb;
+}
+
+.runtime-btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+}
+
+.runtime-btn-secondary:hover {
+    background: #e5e7eb;
+}
+
+.runtime-btn-sm {
+    padding: 5px 12px;
+    font-size: 12px;
+}
+
+.runtime-btn-link {
+    background: transparent;
+    color: #3b82f6;
+    padding: 6px 8px;
+    font-size: 13px;
+}
+
+.runtime-btn-link:hover {
+    background: #f0f9ff;
+    color: #2563eb;
+}
+
+.runtime-badge {
+    padding: 4px 10px;
+    font-size: 11px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.runtime-badge-success {
+    background: #10b981;
+    color: white;
 }
