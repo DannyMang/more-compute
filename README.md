@@ -1,9 +1,9 @@
 # MoreCompute
 An interactive notebook environment similar to Marimo and Google Colab that runs locally.
 
-For references: 
+For references:
 
-https://marimo.io/ 
+https://marimo.io/
 
 https://colab.google/
 
@@ -25,14 +25,18 @@ pip install morecompute
 
 ### Create a new notebook
 ```bash
-kernal_run new
+kernel_run new
+```
+or
+```bash
+python3 kernel_run.py new
 ```
 
 ### Open an existing notebook
 ```bash
-kernal_run your_notebook.py
+kernel_run your_notebook.py
 # or
-kernal_run your_notebook.ipynb
+kernel_run your_notebook.ipynb
 ```
 
 ## Features
