@@ -25,14 +25,14 @@ pip install morecompute
 
 ### Create a new notebook
 ```bash
-kernal_run new
+kernel_run new
 ```
 
 ### Open an existing notebook
 ```bash
-kernal_run your_notebook.py
+kernel_run your_notebook.py
 # or
-kernal_run your_notebook.ipynb
+kernel_run your_notebook.ipynb
 ```
 
 ## Features
