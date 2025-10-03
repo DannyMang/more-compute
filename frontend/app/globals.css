@@ -309,7 +309,7 @@ body {
     gap: 8px;
     padding: 8px 16px;
     border: 1px solid #DBC7A8;
-    background: #E9E7E3;
+    background: #fff;
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
@@ -320,7 +320,7 @@ body {
 }
 
 .cell-type-option:hover {
-    background: #fff;
+    background: #E9E7E3;
     cursor: pointer;
 }
 
