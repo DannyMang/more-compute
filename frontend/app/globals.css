@@ -389,6 +389,36 @@ body {
     box-shadow: 0 0 0 1px #3b82f6;
 }
 
+/* Markdown display mode - no borders or background */
+.cell.markdown-display-mode {
+    border: none !important;
+    background: transparent !important;
+    margin: 0;
+    padding: 0;
+    box-shadow: none;
+}
+
+.cell.markdown-display-mode:hover {
+    box-shadow: none;
+}
+
+.cell.markdown-display-mode .cell-content {
+    border: none !important;
+    background: transparent !important;
+    padding: 0;
+    margin: 0;
+}
+
+/* Override markdown hover background for display mode */
+.cell.markdown-display-mode .markdown-rendered:hover {
+    background: transparent !important;
+}
+
+/* Ensure markdown renderer has no background in display mode */
+.cell.markdown-display-mode .markdown-rendered {
+    background: transparent !important;
+}
+
 /* Cell Hover Controls */
 .cell-hover-controls {
     position: absolute;

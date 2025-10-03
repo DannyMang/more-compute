@@ -85,6 +85,9 @@ export const Cell: React.FC<CellProps> = ({
   }, [isExecuting, cell.execution_time]);
   const [isEditing, setIsEditing] = useState(() => cell.cell_type === 'code' || !cell.source?.trim());
 
+  // Determine if this is a markdown cell with content in display mode
+  const isMarkdownWithContent = cell.cell_type === 'markdown' && !isEditing && cell.source?.trim();
+
   useEffect(() => {
     if (isEditing) {
       if (!codeMirrorInstance.current && editorRef.current && typeof CodeMirror !== 'undefined') {
@@ -138,47 +141,53 @@ export const Cell: React.FC<CellProps> = ({
 
   return (
     <div className="cell-wrapper">
-      <div className="cell-status-indicator">
-        <span className="status-indicator">
-          <span className="status-bracket">[</span>
-          {isExecuting ? (
-            <Loader2 size={14} className="mc-spin" />
-          ) : cell.error ? (
-            <X size={14} color="#dc2626" />
-          ) : cell.execution_count != null ? (
-            <Check size={14} color="#16a34a" />
-          ) : (
-            <span style={{ width: '14px', height: '14px', display: 'inline-block' }}></span>
+      {/* Only show status indicator for non-markdown-display cells */}
+      {!isMarkdownWithContent && (
+        <div className="cell-status-indicator">
+          <span className="status-indicator">
+            <span className="status-bracket">[</span>
+            {isExecuting ? (
+              <Loader2 size={14} className="mc-spin" />
+            ) : cell.error ? (
+              <X size={14} color="#dc2626" />
+            ) : cell.execution_count != null ? (
+              <Check size={14} color="#16a34a" />
+            ) : (
+              <span style={{ width: '14px', height: '14px', display: 'inline-block' }}></span>
+            )}
+            <span className="status-bracket">]</span>
+          </span>
+          {elapsedLabel && (
+            <span className="status-timer" title="Execution time">{elapsedLabel}</span>
           )}
-          <span className="status-bracket">]</span>
-        </span>
-        {elapsedLabel && (
-          <span className="status-timer" title="Execution time">{elapsedLabel}</span>
-        )}
-      </div>
+        </div>
+      )}
       <div className="add-cell-line add-line-above">
         <AddCellButton onAddCell={(type) => onAddCell(type, indexRef.current)} />
       </div>
 
       <div
-        className={`cell ${isActive ? 'active' : ''} ${isExecuting ? 'executing' : ''}`}
+        className={`cell ${isActive ? 'active' : ''} ${isExecuting ? 'executing' : ''} ${isMarkdownWithContent ? 'markdown-display-mode' : ''}`}
         data-cell-index={index}
       >
-        <div className="cell-hover-controls">
-          <div className="cell-actions-right">
-            <button type="button" className="cell-action run-cell-btn" title="Run cell" onClick={(e) => { e.stopPropagation(); handleExecute(); }}>
-              {isExecuting ? <StopCircle size={14} /> : <Play size={14} />}
-            </button>
-            <button type="button" className="cell-action drag-handle" title="Drag to reorder">
-              <MoveVertical size={14} />
-            </button>
-            <button type="button" className="cell-action delete-cell-btn" title="Delete cell" onClick={(e) => { e.stopPropagation(); onDelete(indexRef.current); }}>
-              <Trash2 size={14} />
-            </button>
+        {/* Only show hover controls for non-markdown-display cells */}
+        {!isMarkdownWithContent && (
+          <div className="cell-hover-controls">
+            <div className="cell-actions-right">
+              <button type="button" className="cell-action run-cell-btn" title="Run cell" onClick={(e) => { e.stopPropagation(); handleExecute(); }}>
+                {isExecuting ? <StopCircle size={14} /> : <Play size={14} />}
+              </button>
+              <button type="button" className="cell-action drag-handle" title="Drag to reorder">
+                <MoveVertical size={14} />
+              </button>
+              <button type="button" className="cell-action delete-cell-btn" title="Delete cell" onClick={(e) => { e.stopPropagation(); onDelete(indexRef.current); }}>
+                <Trash2 size={14} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
-        <div className="cell-content" onClick={handleCellClick}>
+        <div className={`cell-content ${isMarkdownWithContent ? 'cursor-pointer' : ''}`} onClick={handleCellClick}>
           <div className="cell-input">
             {isEditing || cell.cell_type === 'code' ? (
               <div className={`cell-editor-container ${cell.cell_type === 'markdown' ? 'markdown-editor-container' : 'code-editor-container'}`}>
@@ -190,8 +199,6 @@ export const Cell: React.FC<CellProps> = ({
           </div>
           <CellOutput outputs={cell.outputs} error={cell.error} />
         </div>
-        
-        {/* Execution Indicator and Status */}
       </div>
 
       <div className="add-cell-line add-line-below">
