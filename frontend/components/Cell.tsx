@@ -17,6 +17,7 @@ interface CellProps {
   isActive: boolean;
   isExecuting: boolean;
   onExecute: (index: number) => void;
+  onInterrupt: (index: number) => void;
   onDelete: (index: number) => void;
   onUpdate: (index: number, source: string) => void;
   onSetActive: (index: number) => void;
@@ -30,6 +31,7 @@ export const Cell: React.FC<CellProps> = ({
   isExecuting,
   onExecute,
   onDelete,
+  onInterrupt,
   onUpdate,
   onSetActive,
   onAddCell,
@@ -130,7 +132,11 @@ export const Cell: React.FC<CellProps> = ({
     if (cell.cell_type === 'markdown') {
       setIsEditing(false);
     } else {
-      onExecute(indexRef.current);
+      if (isExecuting) {
+        onInterrupt(indexRef.current);
+      } else {
+        onExecute(indexRef.current);
+      }
     }
   };
 

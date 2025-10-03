@@ -40,6 +40,7 @@
     --mc-markdown-heading-color: #624204;
     --mc-markdown-paragraph-color: #575042;
     --mc-line-number-color: #9ca3af;
+    --text-secondary: #6b7280;
 }
 
 @media (prefers-color-scheme: light) {
@@ -55,7 +56,8 @@
 }
 
 body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     background-color: var(--mc-background);
     color: var(--mc-text-color);
     line-height: 1.6;
@@ -156,7 +158,8 @@ body {
 }
 
 @keyframes pulse {
-    0%, 100% {
+    0%,
+    100% {
         opacity: 1;
     }
     50% {
@@ -204,7 +207,7 @@ body {
 }
 
 .add-cell-line::before {
-    content: '';
+    content: "";
     position: absolute;
     top: -10px;
     left: 0;
@@ -224,7 +227,7 @@ body {
 
 /* Extended hover area for add-line-below to capture hover below cells */
 .add-line-below::before {
-    content: '';
+    content: "";
     position: absolute;
     top: -8px;
     left: 0;
@@ -235,7 +238,7 @@ body {
 }
 
 .add-cell-line::after {
-    content: '';
+    content: "";
     position: absolute;
     top: -10px;
     left: 0;
@@ -293,7 +296,7 @@ body {
 
 /* Create hover area that includes both button and menu */
 .add-cell-button::after {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -20px;
@@ -463,8 +466,12 @@ body {
 }
 
 @keyframes mc-spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+        transform: rotate(0deg);
+    }
+    100% {
+        transform: rotate(360deg);
+    }
 }
 
 /* Cell Content */
@@ -535,7 +542,7 @@ body {
 
 .CodeMirror-scroll {
     /* Content-based sizing - start small and grow with content */
-    min-height: 32px;  /* Single line minimum */
+    min-height: 32px; /* Single line minimum */
     padding: 8px 16px;
     transition: min-height 0.2s ease;
     background: var(--mc-cell-background);
@@ -554,15 +561,15 @@ body {
 
 /* Smart sizing classes applied dynamically */
 .cell.cell-empty .CodeMirror-scroll {
-    min-height: 32px;  /* Very compact for empty cells */
+    min-height: 32px; /* Very compact for empty cells */
 }
 
 .cell.cell-single-line .CodeMirror-scroll {
-    min-height: 40px;  /* Slightly more space for single line */
+    min-height: 40px; /* Slightly more space for single line */
 }
 
 .cell.cell-focused .CodeMirror-scroll {
-    min-height: 48px;  /* More space when focused for editing */
+    min-height: 48px; /* More space when focused for editing */
 }
 
 .CodeMirror-cursor {
@@ -609,19 +616,19 @@ body {
     line-height: 1.7;
     color: var(--mc-markdown-color);
     cursor: pointer;
-    min-height: auto;  /* Let content determine height */
+    min-height: auto; /* Let content determine height */
 }
 
 /* Smart sizing for markdown content */
 .cell.cell-empty .markdown-rendered,
 .cell.cell-empty .text-cell-output {
-    min-height: 24px;  /* Very compact for empty markdown */
+    min-height: 24px; /* Very compact for empty markdown */
     padding: 4px 12px;
 }
 
 .cell.cell-single-line .markdown-rendered,
 .cell.cell-single-line .text-cell-output {
-    min-height: 32px;  /* Single line markdown */
+    min-height: 32px; /* Single line markdown */
     padding: 6px 14px;
 }
 
@@ -637,9 +644,15 @@ body {
     font-family: 'Tiempos', serif;
 }
 
-.markdown-rendered h1 { font-size: 1.5em; }
-.markdown-rendered h2 { font-size: 1.3em; }
-.markdown-rendered h3 { font-size: 1.1em; }
+.markdown-rendered h1 {
+    font-size: 1.5em;
+}
+.markdown-rendered h2 {
+    font-size: 1.3em;
+}
+.markdown-rendered h3 {
+    font-size: 1.1em;
+}
 
 .markdown-rendered p {
     margin: 8px 0;
@@ -648,7 +661,8 @@ body {
     color: var(--mc-markdown-paragraph-color);
 }
 
-.markdown-rendered ul, .markdown-rendered ol {
+.markdown-rendered ul,
+.markdown-rendered ol {
     margin: 8px 0;
     padding-left: 20px;
 }
@@ -826,13 +840,19 @@ body {
 }
 
 .cell.executing .execution-count::after {
-    content: ' •';
+    content: " •";
     animation: blink 1s infinite;
 }
 
 @keyframes blink {
-    0%, 50% { opacity: 1; }
-    51%, 100% { opacity: 0.3; }
+    0%,
+    50% {
+        opacity: 1;
+    }
+    51%,
+    100% {
+        opacity: 0.3;
+    }
 }
 
 /* Drag and Drop */
@@ -1044,7 +1064,9 @@ body {
     border-radius: 6px;
     font-size: 12px;
     cursor: pointer;
-    transition: background-color 0.2s ease, color 0.2s ease;
+    transition:
+        background-color 0.2s ease,
+        color 0.2s ease;
     display: inline-flex;
     align-items: center;
     gap: 6px;

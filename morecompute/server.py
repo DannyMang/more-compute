@@ -1,7 +1,6 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 import json
 import os
 import asyncio
@@ -11,16 +10,22 @@ from pathlib import Path
 import importlib.metadata as importlib_metadata
 
 from .notebook import Notebook
-from .next_executor import NextCodeExecutor
+import os as _os
+mode = _os.getenv('MORECOMPUTE_EXECUTION_MODE', 'inprocess')
+if mode == 'process':
+    from .next_process_executor import NextProcessExecutor as _Executor
+elif mode == 'zmq':
+    from .next_zmq_executor import NextZmqExecutor as _Executor
+else:
+    from .next_executor import NextCodeExecutor as _Executor
 from .utils.pyEnv import PythonEnvironmentDetector
 from .utils.systemEnv import DeviceMetrics
 from .utils.error_utils import ErrorUtils
+from .services.prime_intellect import PrimeIntellectService, CreatePodRequest, PodResponse
 
 
 BASE_DIR = Path(os.getenv("MORECOMPUTE_ROOT", Path.cwd())).resolve()
 PACKAGE_DIR = Path(__file__).resolve().parent
-STATIC_DIR = (PACKAGE_DIR / "static").resolve()
-TEMPLATES_DIR = (PACKAGE_DIR / "templates").resolve()
 ASSETS_DIR = Path(os.getenv("MORECOMPUTE_ASSETS_DIR", BASE_DIR / "assets")).resolve()
 
 
@@ -35,7 +40,8 @@ def resolve_path(requested_path: str) -> Path:
 
 
 app = FastAPI()
-app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+# Mount assets directory for icons, images, etc.
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
@@ -46,13 +52,41 @@ if notebook_path_env:
 else:
     notebook = Notebook()
 error_utils = ErrorUtils()
-executor = NextCodeExecutor(error_utils=error_utils)
-templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+executor = _Executor(error_utils=error_utils)
 metrics = DeviceMetrics()
 
-@app.get("/")
-async def read_root(request: Request):
-    return templates.TemplateResponse("notebook.html", {"request": request})
+# Initialize Prime Intellect service if API key is provided
+prime_api_key = os.getenv("PRIME_INTELLECT_API_KEY")
+prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
+
+
+def _coerce_cell_source(value):
+    if value is None:
+        return ''
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return value.decode('utf-8')  # type: ignore[arg-type]
+        except Exception:
+            return value.decode('utf-8', errors='ignore')  # type: ignore[arg-type]
+    if isinstance(value, list):
+        parts = []
+        for item in value:
+            if item is None:
+                continue
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, (bytes, bytearray)):
+                try:
+                    parts.append(item.decode('utf-8'))  # type: ignore[arg-type]
+                except Exception:
+                    parts.append(item.decode('utf-8', errors='ignore'))  # type: ignore[arg-type]
+            else:
+                parts.append(str(item))
+        return ''.join(parts)
+    return str(value)
+
 
 @app.get("/api/packages")
 async def list_installed_packages():
@@ -77,7 +111,27 @@ async def get_metrics():
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {exc}")
 
+@app.get("/api/environments")
+async def get_environments(full:  bool = True):
+    """
+    Return available Python environments.
+    Args:
+        full: If True (default), performs comprehensive scan (conda, system, venv).
+              Takes a few seconds but finds all environments.
+    """
+    try:
+        detector = PythonEnvironmentDetector()
+        environments = detector.detect_all_environments()
+        current_env = detector.get_current_environment()
 
+        return {
+            "status": "success",
+            "environments": environments,
+            "current": current_env
+        }
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to detect environments: {exc}")
 
 @app.get("/api/files")
 async def list_files(path: str = "."):
@@ -85,7 +139,7 @@ async def list_files(path: str = "."):
     if not directory.exists() or not directory.is_dir():
         raise HTTPException(status_code=404, detail="Directory not found")
 
-    items: List[Dict[str, Optional[str]]] = []
+    items: list[Dict[str, Optional[str]]] = []
     try:
         for entry in sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
             stat = entry.stat()
@@ -128,6 +182,7 @@ async def read_file(path: str, max_bytes: int = 256_000):
         text += "\n\n… (truncated)"
 
     return PlainTextResponse(text)
+
 
 class WebSocketManager:
     """Manages WebSocket connections and message handling."""
@@ -172,7 +227,7 @@ class WebSocketManager:
     async def _handle_message(self, websocket: WebSocket, message: dict):
         message_type = message.get("type")
         data = message.get("data", {})
-        
+
         handlers = {
             "execute_cell": self._handle_execute_cell,
             "add_cell": self._handle_add_cell,
@@ -191,24 +246,49 @@ class WebSocketManager:
             await self._send_error(websocket, f"Unknown message type: {message_type}")
 
     async def _handle_execute_cell(self, websocket: WebSocket, data: dict):
+        import sys
         cell_index = data.get("cell_index")
-        
         if cell_index is None or not (0 <= cell_index < len(self.notebook.cells)):
             await self._send_error(websocket, "Invalid cell index.")
             return
 
-        source = self.notebook.cells[cell_index].get('source', '')
-        
+        source = _coerce_cell_source(self.notebook.cells[cell_index].get('source', ''))
+
         await websocket.send_json({
             "type": "execution_start",
-            "data": {"cell_index": cell_index, "execution_count": self.executor.execution_count + 1}
+            "data": {"cell_index": cell_index, "execution_count": getattr(self.executor, 'execution_count', 0) + 1}
         })
-        
-        result = await self.executor.execute_cell(cell_index, source, websocket)
-        
+
+        try:
+            result = await self.executor.execute_cell(cell_index, source, websocket)
+        except Exception as e:
+            error_msg = str(e)
+            print(f"[SERVER ERROR] execute_cell failed: {error_msg}", file=sys.stderr, flush=True)
+
+            # Send error to frontend
+            result = {
+                'status': 'error',
+                'execution_count': None,
+                'execution_time': '0ms',
+                'outputs': [],
+                'error': {
+                    'output_type': 'error',
+                    'ename': type(e).__name__,
+                    'evalue': error_msg,
+                    'traceback': [f'{type(e).__name__}: {error_msg}', 'Worker failed to start or crashed. Check server logs.']
+                }
+            }
+            await websocket.send_json({
+                "type": "execution_error",
+                "data": {
+                    "cell_index": cell_index,
+                    "error": result['error']
+                }
+            })
+
         self.notebook.cells[cell_index]['outputs'] = result.get('outputs', [])
         self.notebook.cells[cell_index]['execution_count'] = result.get('execution_count')
-        
+
         await websocket.send_json({
             "type": "execution_complete",
             "data": { "cell_index": cell_index, "result": result }
@@ -232,9 +312,9 @@ class WebSocketManager:
         if index is not None and source is not None:
             self.notebook.update_cell(index, source)
             #self.notebook.save_to_file()
-            #to -do? 
+            #to -do?
 
-    
+
     async def _handle_load_notebook(self, websocket: WebSocket, data: dict):
         # In a real app, this would load from a file path in `data`
         # For now, it just sends the current state back to the requester
@@ -251,9 +331,55 @@ class WebSocketManager:
             await self._send_error(websocket, f"Failed to save notebook: {exc}")
 
     async def _handle_interrupt_kernel(self, websocket: WebSocket, data: dict):
-        await self.executor.interrupt_kernel()
-        await websocket.send_json({"type": "kernel_interrupted", "data": {}})
-    
+        try:
+            cell_index = data.get('cell_index')
+        except Exception:
+            cell_index = None
+
+        import sys
+        print(f"[SERVER] Interrupt request received for cell {cell_index}", file=sys.stderr, flush=True)
+
+        # Perform the interrupt (this may take up to 1 second)
+        await self.executor.interrupt_kernel(cell_index=cell_index)
+
+        print(f"[SERVER] Interrupt completed, sending error message", file=sys.stderr, flush=True)
+
+        # Inform all clients that the currently running cell (if any) is interrupted
+        try:
+            await websocket.send_json({
+                "type": "execution_error",
+                "data": {
+                    "cell_index": cell_index,
+                    "error": {
+                        "output_type": "error",
+                        "ename": "KeyboardInterrupt",
+                        "evalue": "Execution interrupted by user",
+                        "traceback": ["KeyboardInterrupt: Execution was stopped by user"]
+                    }
+                }
+            })
+            await websocket.send_json({
+                "type": "execution_complete",
+                "data": {
+                    "cell_index": cell_index,
+                    "result": {
+                        "status": "error",
+                        "execution_count": None,
+                        "execution_time": "interrupted",
+                        "outputs": [],
+                        "error": {
+                            "output_type": "error",
+                            "ename": "KeyboardInterrupt",
+                            "evalue": "Execution interrupted by user",
+                            "traceback": ["KeyboardInterrupt: Execution was stopped by user"]
+                        }
+                    }
+                }
+            })
+            print(f"[SERVER] Error messages sent for cell {cell_index}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[SERVER] Failed to send error messages: {e}", file=sys.stderr, flush=True)
+
     async def _handle_reset_kernel(self, websocket: WebSocket, data: dict):
         self.executor.reset_kernel()
         self.notebook.clear_all_outputs()
@@ -262,9 +388,57 @@ class WebSocketManager:
     async def _send_error(self, websocket: WebSocket, error_message: str):
         await websocket.send_json({"type": "error", "data": {"error": error_message}})
 
+
 manager = WebSocketManager()
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     await manager.handle_message_loop(websocket)
+
+
+#gpu connection api
+@app.get("/api/gpu/availability")
+async def get_gpu_availability(
+    regions: list[str] | None = None,
+    gpu_count: int | None = None,
+    gpu_type: str | None = None,
+    security: str | None = None
+):
+    """Get available GPU resources from Prime Intellect."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.get_gpu_availability(regions, gpu_count, gpu_type, security)
+
+
+@app.get("/api/gpu/pods")
+async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int = 0):
+    """Get list of user's GPU pods."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.get_pods(status, limit, offset)
+
+
+@app.post("/api/gpu/pods")
+async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
+    """Create a new GPU pod."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.create_pod(pod_request)
+
+
+@app.get("/api/gpu/pods/{pod_id}")
+async def get_gpu_pod(pod_id: str) -> PodResponse:
+    """Get details of a specific GPU pod."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.get_pod(pod_id)
+
+
+@app.delete("/api/gpu/pods/{pod_id}")
+async def delete_gpu_pod(pod_id: str):
+    """Delete a GPU pod."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.delete_pod(pod_id)
