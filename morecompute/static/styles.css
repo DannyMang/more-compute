@@ -166,6 +166,14 @@ body {
     pointer-events: auto; /* Allow hover detection */
 }
 
+/* Extra padding for top cell hover area */
+.add-line-above::before {
+    height: 28px;
+    top: -14px;
+    left: 50px;
+    right: 50px;
+}
+
 /* Extended hover area for add-line-below to capture hover below cells */
 .add-line-below::before {
     content: '';

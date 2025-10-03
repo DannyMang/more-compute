@@ -148,7 +148,7 @@ export const Cell: React.FC<CellProps> = ({
           <span className="status-indicator">
             <span className="status-bracket">[</span>
             {isExecuting ? (
-              <UpdateIcon className="w-4 h-4" />
+              <UpdateIcon className="w-1 h-1" />
             ) : cell.error ? (
               <X size={14} color="#dc2626" />
             ) : cell.execution_count != null ? (
