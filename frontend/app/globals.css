@@ -170,7 +170,7 @@ body {
 
 /* Notebook Wrapper */
 .notebook-wrapper {
-    max-width: 900px;
+    max-width: 1100px;
     margin: 0 auto;
     padding: 40px 20px;
 }
@@ -442,54 +442,17 @@ body {
     align-items: center;
 }
 
-.cell-action {
-    width: 28px;
-    height: 28px;
-    border: none;
-    background: rgba(255, 255, 255, 0.9);
-    border-radius: 6px;
+.cell-button {
+    /* Styling is handled by inline styles in CellButton component */
+}
+
+.cell-actions-right {
     display: flex;
+    gap: 4px;
     align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(8px);
 }
 
-.cell-action:hover {
-    background: rgba(255, 255, 255, 1);
-    transform: scale(1.05);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-}
-
-.cell-action.run-cell-btn:hover {
-    background: #dcfdf4;
-}
-
-.cell-action.delete-cell-btn:hover {
-    background: #fef2f2;
-}
-
-.cell-action.run-cell-btn.stop-mode {
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-}
-
-.cell-action.run-cell-btn.stop-mode:hover {
-    background: rgba(239, 68, 68, 0.2);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-}
-
-.cell-action img {
-    width: 14px;
-    height: 14px;
-    opacity: 0.7;
-}
-
-.cell-action:hover img {
-    opacity: 1;
-}
+/* Legacy cell-action styles removed - now handled by CellButton component */
 
 /* Simple spin animation for loader icon */
 .mc-spin {
@@ -665,7 +628,7 @@ body {
 
 .markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3,
 .markdown-rendered h4, .markdown-rendered h5, .markdown-rendered h6 {
-    margin: 4px 0 4px 0;
+    margin: 0px 0 0px 0;
     font-weight: 600;
     color: var(--mc-markdown-heading-color);
     font-family: 'Tiempos', serif;
