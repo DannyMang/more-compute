@@ -344,6 +344,20 @@ body {
     height: 14px;
 }
 
+.status-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: monospace;
+    font-size: 12px;
+    color: inherit;
+    margin-top: -1px;
+}
+
+.status-bracket {
+    opacity: 0.3;
+}
+
 .cell-status-indicator .status-timer {
     margin-left: 0;
     font-size: 9px;

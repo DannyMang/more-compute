@@ -139,15 +139,19 @@ export const Cell: React.FC<CellProps> = ({
   return (
     <div className="cell-wrapper">
       <div className="cell-status-indicator">
-        {isExecuting ? (
-          <Loader2 size={14} className="mc-spin" />
-        ) : cell.error ? (
-          <X size={14} color="#dc2626" />
-        ) : cell.execution_count != null ? (
-          <Check size={14} color="#16a34a" />
-        ) : (
-          <div className="status-placeholder" />
-        )}
+        <span className="status-indicator">
+          <span className="status-bracket">[</span>
+          {isExecuting ? (
+            <Loader2 size={14} className="mc-spin" />
+          ) : cell.error ? (
+            <X size={14} color="#dc2626" />
+          ) : cell.execution_count != null ? (
+            <Check size={14} color="#16a34a" />
+          ) : (
+            <span style={{ width: '14px', height: '14px', display: 'inline-block' }}></span>
+          )}
+          <span className="status-bracket">]</span>
+        </span>
         {elapsedLabel && (
           <span className="status-timer" title="Execution time">{elapsedLabel}</span>
         )}
