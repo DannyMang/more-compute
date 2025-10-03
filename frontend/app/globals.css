@@ -35,8 +35,10 @@
     --font-mono: 'VeraMono', 'CustomMono', 'Fira Code', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
     --font-display: 'DisplayFont', 'Inter', system-ui, sans-serif;
     --mc-cell-background: #F4EEE7;
-    --mc-text-color: #372E25;
+    --mc-text-color: #575042;
     --mc-markdown-color: #372E25;
+    --mc-markdown-heading-color: #624204;
+    --mc-markdown-paragraph-color: #575042;
     --mc-line-number-color: #9ca3af;
 }
 
@@ -664,7 +666,7 @@ body {
 .markdown-rendered h4, .markdown-rendered h5, .markdown-rendered h6 {
     margin: 4px 0 4px 0;
     font-weight: 600;
-    color: #111827;
+    color: var(--mc-markdown-heading-color);
     font-family: 'Tiempos', serif;
 }
 
@@ -676,6 +678,7 @@ body {
     margin: 8px 0;
     font-family: 'Fira', monospace;
     letter-spacing: -0.02em;
+    color: var(--mc-markdown-paragraph-color);
 }
 
 .markdown-rendered ul, .markdown-rendered ol {
@@ -686,6 +689,7 @@ body {
 .markdown-rendered li {
     margin: 4px 0;
     font-family: 'Fira', sans-serif;
+    color: var(--mc-markdown-paragraph-color);
 }
 
 .markdown-rendered code {
@@ -714,13 +718,13 @@ body {
     border-left: 3px solid #d1d5db;
     padding-left: 12px;
     margin: 12px 0;
-    color: #6b7280;
+    color: var(--mc-markdown-paragraph-color);
     font-style: italic;
     font-family: 'Fira', sans-serif;
 }
 
 .markdown-rendered a {
-    color: #3b82f6;
+    color: var(--mc-markdown-paragraph-color);
     text-decoration: none;
     font-family: 'Fira', sans-serif;
 }
