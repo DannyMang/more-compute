@@ -315,6 +315,8 @@ body {
     font-weight: 500;
     border-radius: 8px;
     color: #575042;
+    font-family: 'Fira';
+    letter-spacing: -0.02em;
 }
 
 .cell-type-option:hover {
