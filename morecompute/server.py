@@ -21,6 +21,7 @@ else:
 from .utils.pyEnv import PythonEnvironmentDetector
 from .utils.systemEnv import DeviceMetrics
 from .utils.error_utils import ErrorUtils
+from .services.prime_intellect import PrimeIntellectService, CreatePodRequest, PodResponse
 
 
 BASE_DIR = Path(os.getenv("MORECOMPUTE_ROOT", Path.cwd())).resolve()
@@ -53,6 +54,10 @@ else:
 error_utils = ErrorUtils()
 executor = _Executor(error_utils=error_utils)
 metrics = DeviceMetrics()
+
+# Initialize Prime Intellect service if API key is provided
+prime_api_key = os.getenv("PRIME_INTELLECT_API_KEY")
+prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
 
 
 def _coerce_cell_source(value):
@@ -391,3 +396,49 @@ manager = WebSocketManager()
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
     await manager.handle_message_loop(websocket)
+
+
+#gpu connection api
+@app.get("/api/gpu/availability")
+async def get_gpu_availability(
+    regions: list[str] | None = None,
+    gpu_count: int | None = None,
+    gpu_type: str | None = None,
+    security: str | None = None
+):
+    """Get available GPU resources from Prime Intellect."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.get_gpu_availability(regions, gpu_count, gpu_type, security)
+
+
+@app.get("/api/gpu/pods")
+async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int = 0):
+    """Get list of user's GPU pods."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.get_pods(status, limit, offset)
+
+
+@app.post("/api/gpu/pods")
+async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
+    """Create a new GPU pod."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.create_pod(pod_request)
+
+
+@app.get("/api/gpu/pods/{pod_id}")
+async def get_gpu_pod(pod_id: str) -> PodResponse:
+    """Get details of a specific GPU pod."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.get_pod(pod_id)
+
+
+@app.delete("/api/gpu/pods/{pod_id}")
+async def delete_gpu_pod(pod_id: str):
+    """Delete a GPU pod."""
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    return await prime_intellect.delete_pod(pod_id)
