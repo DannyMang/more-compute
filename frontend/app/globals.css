@@ -416,9 +416,10 @@ body {
     background: transparent !important;
 }
 
-/* Ensure markdown renderer has no background in display mode */
+/* Ensure markdown renderer has no background and reduced padding in display mode */
 .cell.markdown-display-mode .markdown-rendered {
     background: transparent !important;
+    padding: 2px 4px !important;
 }
 
 /* Cell Hover Controls */
