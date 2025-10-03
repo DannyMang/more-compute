@@ -56,9 +56,16 @@ const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ source, onClick }) 
     // Blockquotes
     html = html.replace(/^> (.+)$/gim, '<blockquote>$1</blockquote>');
     
-    // Line breaks and paragraphs
-    html = html.replace(/\n\n+/g, '</p><p>').replace(/\n/g, '<br>');
-    if (!html.match(/^<(h[1-6]|ul|ol|pre|blockquote|hr|p)/)) {
+    // Handle HTML br tags first - convert them to proper line breaks
+    html = html.replace(/<br\s*\/?>/gi, '\n');
+
+    // Line breaks and paragraphs - handle paragraph separation properly
+    // Split by double newlines to create paragraphs, but preserve single line breaks within paragraphs
+    html = html.replace(/\n\s*\n/g, '</p><p>');  // Paragraph breaks (double newlines with optional whitespace)
+    html = html.replace(/\n(?!<\/p>)/g, '<br>');  // Line breaks within paragraphs (but not paragraph breaks)
+
+    // Ensure content is wrapped in paragraph tags if not already in a block element
+    if (!html.match(/^<(h[1-6]|ul|ol|pre|blockquote|hr|p)/) && html.trim()) {
         html = '<p>' + html + '</p>';
     }
     

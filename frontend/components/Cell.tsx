@@ -177,8 +177,8 @@ export const Cell: React.FC<CellProps> = ({
         <div className="cell-content" onClick={handleCellClick}>
           <div className="cell-input">
             {isEditing || cell.cell_type === 'code' ? (
-              <div className="cell-editor-container">
-                <textarea ref={editorRef} defaultValue={cell.source} className="cell-editor" />
+              <div className={`cell-editor-container ${cell.cell_type === 'markdown' ? 'markdown-editor-container' : 'code-editor-container'}`}>
+                <textarea ref={editorRef} defaultValue={cell.source} className={`cell-editor ${cell.cell_type === 'markdown' ? 'markdown-editor' : 'code-editor'}`} />
               </div>
             ) : (
               <MarkdownRenderer source={cell.source} onClick={() => setIsEditing(true)} />

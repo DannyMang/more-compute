@@ -1,49 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* MoreCompute Notebook Styles - Marimo inspired */
 
-/* Custom Font Face Declarations */
+
 @font-face {
-    font-family: 'CustomFont';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/CustomFont-Regular.woff2') format('woff2'),
-         url('/fonts/CustomFont-Regular.woff') format('woff');
+  font-family: 'Fira';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/Fira.ttf') format('truetype');
 }
 
 @font-face {
-    font-family: 'CustomFont';
-    font-style: normal;
-    font-weight: 700;
-    font-display: swap;
-    src: url('/fonts/CustomFont-Bold.woff2') format('woff2'),
-         url('/fonts/CustomFont-Bold.woff') format('woff');
-}
-
-@font-face {
-    font-family: 'CustomMono';
-    font-style: normal;
-    font-weight: 400;
-    font-display: swap;
-    src: url('/fonts/CustomMono-Regular.woff2') format('woff2'),
-         url('/fonts/CustomMono-Regular.woff') format('woff');
-}
-
-@font-face {
-    font-family: 'DisplayFont';
-    font-style: normal;
-    font-weight: 300;
-    font-display: swap;
-    src: url('/fonts/DisplayFont-Light.woff2') format('woff2'),
-         url('/fonts/DisplayFont-Light.woff') format('woff');
-}
-
-@font-face {
-    font-family: 'DisplayFont';
-    font-style: normal;
-    font-weight: 600;
-    font-display: swap;
-    src: url('/fonts/DisplayFont-SemiBold.woff2') format('woff2'),
-         url('/fonts/DisplayFont-SemiBold.woff') format('woff');
+  font-family: 'Tiempos';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/Tiempos.woff2') format('woff2');
 }
 
 * {
@@ -53,16 +28,28 @@
 }
 
 :root {
-    --mc-background: #f8fafc;
-    
+    --mc-background: #E9E7E3;
+
     /* Font Family Custom Properties */
     --font-sans: 'CustomFont', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-mono: 'VeraMono', 'CustomMono', 'Fira Code', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
     --font-display: 'DisplayFont', 'Inter', system-ui, sans-serif;
-    --mc-cell-background: #ffffff;
-    --mc-text-color: #1f2937;
-    --mc-markdown-color: #1f2937;
+    --mc-cell-background: #F4EEE7;
+    --mc-text-color: #372E25;
+    --mc-markdown-color: #372E25;
     --mc-line-number-color: #9ca3af;
+}
+
+@media (prefers-color-scheme: light) {
+    :root {
+        --mc-cell-background: #F4EEE7;
+    }
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --mc-cell-background: #0B1118;
+    }
 }
 
 body {
@@ -373,15 +360,14 @@ body {
     margin: 20px 0;
     padding: 0;
     background: var(--mc-cell-background);
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
+    border: 2px solid #DBC7A8;
+    border-radius: 0.5px;
     transition: all 0.2s ease;
     overflow: hidden;
 }
 
 .cell:hover {
-    border-color: #d1d5db;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    box-shadow: 2px 4px 0 #E2DACC;
 }
 
 .cell.active {
@@ -487,7 +473,7 @@ body {
     border: none;
     outline: none;
     resize: none;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 14px;
     line-height: 1.6;
     padding: 16px 20px;
@@ -500,10 +486,29 @@ body {
     outline: none;
 }
 
+/* Markdown editor styling - uses Fira font for better readability */
+.markdown-editor-container {
+    /* Inherits from cell-editor-container */
+}
+
+.markdown-editor {
+    font-family: 'Fira', 'CustomFont', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+    /* Keep other properties from .cell-editor */
+}
+
+/* Code editor styling - keeps monospace font */
+.code-editor-container {
+    /* Inherits from cell-editor-container */
+}
+
+.code-editor {
+    /* Inherits monospace font from .cell-editor */
+}
+
 /* CodeMirror Styling */
 .CodeMirror {
     height: auto;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 14px;
     line-height: 1.6;
     border: none;
@@ -613,9 +618,10 @@ body {
 
 .markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3,
 .markdown-rendered h4, .markdown-rendered h5, .markdown-rendered h6 {
-    margin: 16px 0 8px 0;
+    margin: 4px 0 4px 0;
     font-weight: 600;
     color: #111827;
+    font-family: 'Tiempos', serif;
 }
 
 .markdown-rendered h1 { font-size: 1.5em; }
@@ -624,6 +630,8 @@ body {
 
 .markdown-rendered p {
     margin: 8px 0;
+    font-family: 'Fira', monospace;
+    letter-spacing: -0.02em;
 }
 
 .markdown-rendered ul, .markdown-rendered ol {
@@ -633,13 +641,14 @@ body {
 
 .markdown-rendered li {
     margin: 4px 0;
+    font-family: 'Fira', sans-serif;
 }
 
 .markdown-rendered code {
     background: #f3f4f6;
     padding: 2px 4px;
     border-radius: 3px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 0.9em;
 }
 
@@ -654,6 +663,7 @@ body {
 .markdown-rendered pre code {
     background: none;
     padding: 0;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
 }
 
 .markdown-rendered blockquote {
@@ -662,11 +672,13 @@ body {
     margin: 12px 0;
     color: #6b7280;
     font-style: italic;
+    font-family: 'Fira', sans-serif;
 }
 
 .markdown-rendered a {
     color: #3b82f6;
     text-decoration: none;
+    font-family: 'Fira', sans-serif;
 }
 
 .markdown-rendered a:hover {
@@ -692,7 +704,7 @@ body {
 }
 
 .execution-count {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 10px;
     color: #9ca3af;
 }
@@ -745,7 +757,7 @@ body {
     padding: 12px 16px;
     margin: 8px 0;
     border-radius: 6px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -769,7 +781,7 @@ body {
     margin: 8px 0;
     border-radius: 6px;
     border: 1px solid #e5e7eb;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -782,7 +794,7 @@ body {
     margin: 8px 0;
     border-radius: 6px;
     border: 1px solid #fecaca;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -1145,7 +1157,7 @@ body {
 }
 
 .file-preview-content {
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-break: break-word;
@@ -1211,7 +1223,7 @@ body {
 .settings-editor {
     width: 100%;
     height: 400px;
-    font-family: 'SF Mono', Monaco, monospace;
+    font-family: 'Fira', 'SF Mono', Monaco, monospace;
     font-size: 13px;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
