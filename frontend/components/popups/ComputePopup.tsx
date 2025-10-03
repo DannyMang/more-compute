@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { Zap, ExternalLink, Plus, Activity } from "lucide-react";
+import { fetchGpuPods, PodResponse, PodsListParams } from "@/lib/api";
 
 interface GPUPod {
   id: string;
@@ -17,34 +18,25 @@ interface ComputePopupProps {
 const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [gpuPods, setGpuPods] = useState<GPUPod[]>([]);
   const [loading, setLoading] = useState(false);
+  const [kernelStatus, setKernelStatus] = useState(false);
 
   useEffect(() => {
     loadGPUPods();
   }, []);
 
-  const loadGPUPods = async () => {
+  const loadGPUPods = async (params?: PodsListParams) => {
+    setLoading(true);
     try {
-      setLoading(true);
-      // Mock GPU pods data - replace with real API later
-      const mockPods: GPUPod[] = [
-        {
-          id: "pod-1",
-          name: "H100 Pod",
-          status: "running",
-          gpuType: "H100_80GB",
-          region: "us-east-1",
-          costPerHour: 2.49,
-        },
-        {
-          id: "pod-2",
-          name: "A100 Pod",
-          status: "stopped",
-          gpuType: "A100_40GB",
-          region: "us-west-2",
-          costPerHour: 1.1,
-        },
-      ];
-      setGpuPods(mockPods);
+      const response = await fetchGpuPods(params || { limit: 100 });
+      const pods = (response.data || []).map((pod: PodResponse) => ({
+        id: pod.id,
+        name: pod.name,
+        status: pod.status as "running" | "stopped" | "starting",
+        gpuType: pod.gpuName,
+        region: "Unknown", //look at later
+        costPerHour: pod.priceHr,
+      }));
+      setGpuPods(pods);
     } catch (err) {
       console.error("Failed to load GPU pods:", err);
     } finally {
@@ -53,7 +45,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   };
 
   const handleConnectToPrimeIntellect = () => {
-    window.open("https://app.primeintellect.ai", "_blank");
+    window.open("https://app.primeintellect.ai/dashboard/tokens", "_blank");
   };
 
   return (
@@ -63,7 +55,14 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         <h3 className="runtime-section-title">Kernel</h3>
         <div className="runtime-kernel-status">
           The kernel is currently{" "}
-          <span className="kernel-status-active">running</span>.
+          <span
+            className={
+              kernelStatus ? "kernel-status-active" : "kernel-status-inactive"
+            }
+          >
+            {kernelStatus ? "running" : "not running"}
+          </span>
+          .
         </div>
         <button className="runtime-btn runtime-btn-secondary">
           Stop kernel
