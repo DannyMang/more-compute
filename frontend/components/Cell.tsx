@@ -5,7 +5,9 @@ import { Cell as CellType } from '@/types/notebook';
 import CellOutput from './CellOutput';
 import AddCellButton from './AddCellButton';
 import MarkdownRenderer from './MarkdownRenderer';
-import { Check, X, Trash2, Play, StopCircle, MoveVertical, Loader2 } from 'lucide-react';
+import CellButton from './CellButton';
+import { UpdateIcon, LinkBreak2Icon, PlayIcon, RowSpacingIcon } from '@radix-ui/react-icons';
+import { Check, X } from 'lucide-react';
 
 declare const CodeMirror: any;
 
@@ -122,7 +124,7 @@ export const Cell: React.FC<CellProps> = ({
         codeMirrorInstance.current = null;
       }
     }
-  }, [isEditing, cell.source]); 
+  }, [isEditing, cell.source]);
 
   const handleExecute = () => {
     if (cell.cell_type === 'markdown') {
@@ -141,13 +143,12 @@ export const Cell: React.FC<CellProps> = ({
 
   return (
     <div className="cell-wrapper">
-      {/* Only show status indicator for non-markdown-display cells */}
       {!isMarkdownWithContent && (
         <div className="cell-status-indicator">
           <span className="status-indicator">
             <span className="status-bracket">[</span>
             {isExecuting ? (
-              <Loader2 size={14} className="mc-spin" />
+              <RefreshIcon className="w-4 h-4" />
             ) : cell.error ? (
               <X size={14} color="#dc2626" />
             ) : cell.execution_count != null ? (
@@ -174,15 +175,27 @@ export const Cell: React.FC<CellProps> = ({
         {!isMarkdownWithContent && (
           <div className="cell-hover-controls">
             <div className="cell-actions-right">
-              <button type="button" className="cell-action run-cell-btn" title="Run cell" onClick={(e) => { e.stopPropagation(); handleExecute(); }}>
-                {isExecuting ? <StopCircle size={14} /> : <Play size={14} />}
-              </button>
-              <button type="button" className="cell-action drag-handle" title="Drag to reorder">
-                <MoveVertical size={14} />
-              </button>
-              <button type="button" className="cell-action delete-cell-btn" title="Delete cell" onClick={(e) => { e.stopPropagation(); onDelete(indexRef.current); }}>
-                <Trash2 size={14} />
-              </button>
+              <CellButton
+                icon={
+                  <PlayIcon className="w-6 h-6" />
+                }
+                onClick={(e) => { e.stopPropagation(); handleExecute(); }}
+                title={isExecuting ? "Stop execution" : "Run cell"}
+                isLoading={isExecuting}
+              />
+              <CellButton
+                icon={
+                  <RowSpacingIcon className="w-6 h-6" />
+                }
+                title="Drag to reorder"
+              />
+              <CellButton
+                icon={
+                  <LinkBreak2Icon className="w-5 h-5" />
+                }
+                onClick={(e) => { e.stopPropagation(); onDelete(indexRef.current); }}
+                title="Delete cell"
+              />
             </div>
           </div>
         )}
