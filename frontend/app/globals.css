@@ -238,10 +238,10 @@ body {
     content: '';
     position: absolute;
     top: -10px;
-    left: 0px;
-    right: 0px;
-    height: 2px;
-    background: #3b82f6;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #DBC7A8;
     opacity: 0;
     transition: opacity 0.2s ease;
 }
@@ -252,26 +252,20 @@ body {
 
 .add-cell-button {
     position: absolute;
-    top: -12px;
+    top: -27px;
     left: 50%;
     transform: translateX(-50%);
-    width: 32px;
-    height: 32px;
-    background: #3b82f6;
-    border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
     opacity: 0;
-    transition: all 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    pointer-events: auto; /* Always allow button interactions */
+    transition: opacity 0.2s ease;
+    pointer-events: auto;
+    z-index: 100;
 }
 
 .add-cell-line:hover .add-cell-button {
     opacity: 1;
-    transform: translateX(-50%) scale(1.1);
 }
 
 .add-cell-button img {
@@ -281,23 +275,20 @@ body {
 }
 
 .cell-type-menu {
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: white;
-    border: 1px solid #e5e7eb;
-    border-radius: 6px;
-    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-    padding: 4px;
-    display: none;
+    display: flex;
+    flex-direction: row;
+    gap: 16px;
+    justify-content: center;
+    align-items: center;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
     z-index: 20;
-    margin-top: 4px;
-    min-width: 80px;
 }
 
 .add-cell-line:hover .cell-type-menu {
-    display: block;
+    opacity: 1;
+    pointer-events: auto;
 }
 
 /* Create hover area that includes both button and menu */
@@ -312,20 +303,23 @@ body {
 }
 
 .cell-type-option {
-    display: block;
-    width: 60px;
-    padding: 6px 8px;
-    border: none;
-    background: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border: 1px solid #DBC7A8;
+    background: #E9E7E3;
     cursor: pointer;
-    font-size: 12px;
-    text-align: center;
-    border-radius: 4px;
-    transition: background-color 0.15s ease;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 8px;
+    color: #575042;
 }
 
 .cell-type-option:hover {
-    background: #f3f4f6;
+    background: #fff;
+    cursor: pointer;
 }
 
 /* Cell Wrapper */
