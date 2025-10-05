@@ -5,7 +5,6 @@ import json
 import os
 import asyncio
 from datetime import datetime, timezone
-from typing import Optional, List, Dict
 from pathlib import Path
 import importlib.metadata as importlib_metadata
 
@@ -146,7 +145,7 @@ async def list_files(path: str = "."):
     if not directory.exists() or not directory.is_dir():
         raise HTTPException(status_code=404, detail="Directory not found")
 
-    items: list[Dict[str, Optional[str]]] = []
+    items: list[dict[str, str | int]] = []
     try:
         for entry in sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
             stat = entry.stat()
@@ -193,8 +192,8 @@ async def read_file(path: str, max_bytes: int = 256_000):
 
 class WebSocketManager:
     """Manages WebSocket connections and message handling."""
-    def __init__(self):
-        self.clients: Dict[WebSocket, None] = {}
+    def __init__(self) -> None:
+        self.clients: dict[WebSocket, None] = {}
         self.executor = executor
         self.notebook = notebook
 
