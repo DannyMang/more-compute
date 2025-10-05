@@ -10,14 +10,7 @@ from pathlib import Path
 import importlib.metadata as importlib_metadata
 
 from .notebook import Notebook
-import os as _os
-mode = _os.getenv('MORECOMPUTE_EXECUTION_MODE', 'inprocess')
-if mode == 'process':
-    from .next_process_executor import NextProcessExecutor as _Executor
-elif mode == 'zmq':
-    from .next_zmq_executor import NextZmqExecutor as _Executor
-else:
-    from .next_executor import NextCodeExecutor as _Executor
+from .next_zmq_executor import NextZmqExecutor
 from .utils.pyEnv import PythonEnvironmentDetector
 from .utils.systemEnv import DeviceMetrics
 from .utils.error_utils import ErrorUtils
@@ -52,7 +45,7 @@ if notebook_path_env:
 else:
     notebook = Notebook()
 error_utils = ErrorUtils()
-executor = _Executor(error_utils=error_utils)
+executor = NextZmqExecutor(error_utils=error_utils)
 metrics = DeviceMetrics()
 
 # Initialize Prime Intellect service if API key is provided
