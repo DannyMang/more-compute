@@ -1,1 +1,3 @@
-{ "backend_autoreload": false }
+{
+  "backend_autoreload": false
+}

@@ -43,7 +43,7 @@ class NextZmqExecutor:
         try:
             tmp.connect(self.cmd_addr)
             tmp.send_json({'type': 'ping'})
-            _ = tmp.recv_json()
+            _ = tmp.recv_json() # Are you there?
         except Exception:
             pass
         else:
@@ -61,9 +61,9 @@ class NextZmqExecutor:
             # Keep track of the worker process
             # Redirect stderr to see errors during development
             self.worker_proc = subprocess.Popen(
-                [sys.executable, '-m', 'morecompute.zmq_worker'], 
-                env=env, 
-                stdout=subprocess.DEVNULL, 
+                [sys.executable, '-m', 'morecompute.zmq_worker'],
+                env=env,
+                stdout=subprocess.DEVNULL,
                 stderr=None  # Show errors in terminal
             )
             for _ in range(50):
@@ -145,7 +145,7 @@ class NextZmqExecutor:
                     }
                 })
                 break
-            
+
             # Timeout check for stuck operations
             if time.time() - start_time > max_wait:
                 print(f"[EXECUTE] Cell {cell_index} exceeded max wait time, timing out", file=sys.stderr, flush=True)
@@ -159,7 +159,7 @@ class NextZmqExecutor:
                     }
                 })
                 break
-            
+
             try:
                 msg = self.sub.recv_json(flags=zmq.NOBLOCK)
             except zmq.Again:
@@ -183,7 +183,7 @@ class NextZmqExecutor:
                 result.update(msg.get('result') or {})
                 result.setdefault('execution_count', execution_count)
                 break
-        
+
         # Try to receive the reply from REQ socket (if worker is still alive)
         # If we interrupted/killed the worker, this will fail and we need to reset the socket
         try:
@@ -218,16 +218,16 @@ class NextZmqExecutor:
         """Interrupt the kernel with escalation to force-kill if needed"""
         import sys
         print(f"[INTERRUPT] Starting interrupt for cell {cell_index}", file=sys.stderr, flush=True)
-        
+
         # Mark this cell as interrupted so execute_cell can break out
         if isinstance(cell_index, int):
             self.interrupted_cell = cell_index
             print(f"[INTERRUPT] Marked cell {cell_index} as interrupted", file=sys.stderr, flush=True)
-        
+
         payload: Dict[str, Any] = {'type': 'interrupt'}
         if isinstance(cell_index, int):
             payload['cell_index'] = cell_index
-        
+
         # Try graceful interrupt, but don't trust it for blocking I/O
         try:
             # Very short timeout since we'll force-kill anyway
@@ -242,33 +242,33 @@ class NextZmqExecutor:
             # Reset timeouts
             self.req.setsockopt(zmq.SNDTIMEO, -1)
             self.req.setsockopt(zmq.RCVTIMEO, -1)
-        
+
         # Wait briefly to see if worker responds, but DON'T read from pub socket
         # (execute_cell is already reading from it - we'd steal messages!)
         # Instead, just wait a moment and force-kill if needed
         print(f"[INTERRUPT] Waiting {self.interrupt_timeout}s before force-kill...", file=sys.stderr, flush=True)
         await asyncio.sleep(self.interrupt_timeout)
-        
+
         # For blocking I/O operations, interrupt rarely works - just force-kill
         # The interrupted_cell flag will let execute_cell break out gracefully
         print(f"[INTERRUPT] Force killing worker to ensure stop...", file=sys.stderr, flush=True)
         await self._force_kill_worker()
         print(f"[INTERRUPT] Force kill completed", file=sys.stderr, flush=True)
-        
+
         # Interrupt special handler
         if self.special_handler:
             try:
                 await self.special_handler.interrupt()
             except Exception:
                 pass
-        
+
         print(f"[INTERRUPT] Interrupt complete", file=sys.stderr, flush=True)
 
     async def _force_kill_worker(self):
         """Force kill the worker process and respawn"""
         import sys
         print(f"[FORCE_KILL] Killing worker PID={self.worker_pid}", file=sys.stderr, flush=True)
-        
+
         if self.worker_pid:
             try:
                 # For blocking I/O, SIGKILL immediately - no mercy
@@ -279,7 +279,7 @@ class NextZmqExecutor:
                 print(f"[FORCE_KILL] Process {self.worker_pid} already dead", file=sys.stderr, flush=True)
             except Exception as e:
                 print(f"[FORCE_KILL] Error killing PID {self.worker_pid}: {e}", file=sys.stderr, flush=True)
-        
+
         # Also try via Popen object if available
         if self.worker_proc:
             try:
@@ -288,7 +288,7 @@ class NextZmqExecutor:
                 await asyncio.sleep(0.1)
             except Exception as e:
                 print(f"[FORCE_KILL] Error killing via Popen: {e}", file=sys.stderr, flush=True)
-        
+
         # CRITICAL: Reset socket state - close and recreate
         # The REQ socket may be waiting for a reply from the dead worker
         try:
@@ -299,13 +299,13 @@ class NextZmqExecutor:
             print(f"[FORCE_KILL] REQ socket reset complete", file=sys.stderr, flush=True)
         except Exception as e:
             print(f"[FORCE_KILL] Error resetting socket: {e}", file=sys.stderr, flush=True)
-        
+
         # Respawn worker
         try:
             self._ensure_worker()
         except Exception:
             pass
-    
+
     def reset_kernel(self):
         """Reset the kernel by shutting down worker and restarting"""
         # Try graceful shutdown first
@@ -319,7 +319,7 @@ class NextZmqExecutor:
         finally:
             self.req.setsockopt(zmq.SNDTIMEO, -1)
             self.req.setsockopt(zmq.RCVTIMEO, -1)
-        
+
         # Force kill if needed
         if self.worker_pid:
             try:
@@ -332,7 +332,7 @@ class NextZmqExecutor:
                     pass
             except Exception:
                 pass
-        
+
         if self.worker_proc:
             try:
                 self.worker_proc.terminate()
@@ -342,12 +342,12 @@ class NextZmqExecutor:
                     self.worker_proc.kill()
                 except Exception:
                     pass
-        
+
         # Reset state
         self.execution_count = 0
         self.worker_pid = None
         self.worker_proc = None
-        
+
         # Recreate sockets
         try:
             self.req.close(0)
@@ -355,15 +355,13 @@ class NextZmqExecutor:
             self.req.connect(self.cmd_addr)
         except Exception:
             pass
-        
+
         # Reset special handler
         if self.special_handler is not None:
             self.special_handler = AsyncSpecialCommandHandler({"__name__": "__main__"})
-        
+
         # Respawn worker
         try:
             self._ensure_worker()
         except Exception:
             pass
-
-

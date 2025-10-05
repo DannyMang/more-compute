@@ -73,6 +73,10 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [gpuPods, setGpuPods] = useState<GPUPod[]>([]);
   const [loading, setLoading] = useState(false);
   const [kernelStatus, setKernelStatus] = useState(false);
+  const [apiConfigured, setApiConfigured] = useState<boolean | null>(null);
+  const [apiKey, setApiKey] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // GPU Availability state
   const [showBrowseGPUs, setShowBrowseGPUs] = useState(false);
@@ -83,7 +87,19 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [podCreationError, setPodCreationError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadGPUPods();
+    const checkApiConfig = async () => {
+      try {
+        const config = await fetchGpuConfig();
+        setApiConfigured(config.configured);
+        if (config.configured) {
+          await loadGPUPods();
+        }
+      } catch (err) {
+        console.error("Failed to check GPU config:", err);
+        setApiConfigured(false);
+      }
+    };
+    checkApiConfig();
   }, []);
 
   const loadGPUPods = async (params?: PodsListParams) => {
