@@ -16,10 +16,12 @@ import { Output, ErrorOutput } from '@/types/notebook';
 interface ErrorDisplayProps {
   error: Output;
   maxLines?: number;
+  onFixIndentation?: () => void;
 }
 
-const TypedErrorDisplay: FC<{ error: ErrorOutput }> = ({ error }) => {
+const TypedErrorDisplay: FC<{ error: ErrorOutput; onFixIndentation?: () => void }> = ({ error, onFixIndentation }) => {
   const [isCopied, setIsCopied] = useState(false);
+  const isIndentationError = error.ename === 'IndentationError';
 
   const copyToClipboard = () => {
     const errorDetails = `Error: ${error.ename}: ${error.evalue}\n\nTraceback:\n${error.traceback.join('\n')}`;
@@ -101,28 +103,57 @@ const TypedErrorDisplay: FC<{ error: ErrorOutput }> = ({ error }) => {
           marginTop: '8px'
         }}
       >
-        {/* Copy Button */}
-        <button
-          onClick={copyToClipboard}
-          style={{
-            position: 'absolute',
-            top: '8px',
-            right: '8px',
-            zIndex: 10,
-            background: 'rgba(255, 255, 255, 0.9)',
-            border: '1px solid #d1d5db',
-            borderRadius: '4px',
-            padding: '6px',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            transition: 'all 0.2s ease'
-          }}
-          title="Copy error to clipboard"
-        >
-          {isCopied ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
-        </button>
+        {/* Action Buttons */}
+        <div style={{
+          position: 'absolute',
+          top: '8px',
+          right: '8px',
+          zIndex: 10,
+          display: 'flex',
+          gap: '4px'
+        }}>
+          {/* Fix Indentation Button */}
+          {isIndentationError && onFixIndentation && (
+            <button
+              onClick={onFixIndentation}
+              style={{
+                background: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid #3b82f6',
+                borderRadius: '4px',
+                padding: '6px 10px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease',
+                fontSize: '11px',
+                fontWeight: 500,
+                color: '#3b82f6'
+              }}
+              title="Auto-fix indentation"
+            >
+              Fix Indent
+            </button>
+          )}
+          {/* Copy Button */}
+          <button
+            onClick={copyToClipboard}
+            style={{
+              background: 'rgba(255, 255, 255, 0.9)',
+              border: '1px solid #d1d5db',
+              borderRadius: '4px',
+              padding: '6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              transition: 'all 0.2s ease'
+            }}
+            title="Copy error to clipboard"
+          >
+            {isCopied ? <Check size={14} color="#10b981" /> : <Copy size={14} />}
+          </button>
+        </div>
 
         {/* Truncation Indicator */}
         {/* The original code had this, but the new TypedErrorDisplay doesn't have it.
@@ -166,12 +197,12 @@ const TypedErrorDisplay: FC<{ error: ErrorOutput }> = ({ error }) => {
   );
 };
 
-const ErrorDisplay: FC<ErrorDisplayProps> = ({ error }) => {
+const ErrorDisplay: FC<ErrorDisplayProps> = ({ error, onFixIndentation }) => {
   // Type guard to ensure we have an ErrorOutput
   if (error.output_type !== 'error') {
     return null;
   }
-  return <TypedErrorDisplay error={error} />;
+  return <TypedErrorDisplay error={error} onFixIndentation={onFixIndentation} />;
 };
 
 export default ErrorDisplay;

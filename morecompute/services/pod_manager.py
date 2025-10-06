@@ -25,6 +25,7 @@ class PodKernelManager:
     remote_cmd_port : int
     remote_pub_port: int
     executor: "NextZmqExecutor | None"
+    _ssh_key_cache: str | None
 
     def __init__(
         self,
@@ -52,6 +53,37 @@ class PodKernelManager:
         self.remote_cmd_port = remote_cmd_port
         self.remote_pub_port = remote_pub_port
         self.executor = None
+        self._ssh_key_cache = None
+
+    def _get_ssh_key(self) -> str | None:
+        """
+        Get SSH key path, checking environment variable and common locations.
+        Returns None if no key is found.
+        """
+        if self._ssh_key_cache is not None:
+            return self._ssh_key_cache
+
+        # Check environment variable first
+        ssh_key = os.getenv("MORECOMPUTE_SSH_KEY")
+        if ssh_key:
+            expanded = os.path.expanduser(ssh_key)
+            if os.path.exists(expanded):
+                self._ssh_key_cache = expanded
+                return expanded
+
+        # Try common SSH key paths (including Prime Intellect's recommended name)
+        common_keys = [
+            "~/.ssh/primeintellect_ed25519",  # Prime Intellect's recommended name
+            "~/.ssh/id_ed25519",
+            "~/.ssh/id_rsa",
+        ]
+        for key_path in common_keys:
+            expanded_path = os.path.expanduser(key_path)
+            if os.path.exists(expanded_path):
+                self._ssh_key_cache = expanded_path
+                return expanded_path
+
+        return None
 
     async def connect_to_pod(self, pod_id:str) -> dict[str, object]:
         """
@@ -62,24 +94,54 @@ class PodKernelManager:
         Response:
             dict with connection status
         """
+        import sys
 
         self.pod = await self.pi_service.get_pod(pod_id)
+
+        print(f"[POD MANAGER] Pod status: {self.pod.status}", file=sys.stderr, flush=True)
+        print(f"[POD MANAGER] SSH connection: {self.pod.sshConnection}", file=sys.stderr, flush=True)
+
         if not self.pod.sshConnection:
             return{
                 "status":"error",
-                "message":"Pod does not have SSH connection or some other error occured"
+                "message": f"Pod is not ready yet. Status: {self.pod.status}. SSH connection info is not available. Please wait for pod to finish provisioning."
             }
 
-        #oarse SSH connection string (format : ssh root@ip -p port)
+        # Validate SSH connection string is not empty/whitespace
+        if not self.pod.sshConnection.strip():
+            return{
+                "status":"error",
+                "message": f"Pod SSH connection is empty. Status: {self.pod.status}"
+            }
+
+        # Parse SSH connection string
+        # Format can be: "ssh root@ip -p port" OR "root@ip -p port"
         ssh_parts = self.pod.sshConnection.split()
-        host_part = ssh_parts[1]
-        ssh_host = host_part.split("@")[1] if "@" in host_part else host_part
+
+        # Find the part containing @ (user@host)
+        host_part = None
+        for part in ssh_parts:
+            if "@" in part:
+                host_part = part
+                break
+
+        if not host_part:
+            return{
+                "status":"error",
+                "message": f"Invalid SSH connection format (no user@host found): {self.pod.sshConnection}"
+            }
+
+        # Extract host from user@host
+        ssh_host = host_part.split("@")[1]
         ssh_port = "22"
 
+        # Extract port if specified with -p flag
         if "-p" in ssh_parts:
             port_idx = ssh_parts.index("-p")
             if port_idx + 1 < len(ssh_parts):
                 ssh_port = ssh_parts[port_idx + 1]
+
+        print(f"[POD MANAGER] Parsed SSH host: {ssh_host}, port: {ssh_port}", file=sys.stderr, flush=True)
 
         #deploy worker code to pod
         deploy_result = await self._deploy_worker(ssh_host, ssh_port)
@@ -130,15 +192,21 @@ class PodKernelManager:
             with tarfile.open(tmp_path, 'w:gz') as tar:
                 tar.add(morecompute_dir, arcname='morecompute')
 
-            # Copy tarball to remote
-            scp_cmd = [
-                "scp",
-                "-P", ssh_port,
+            # Build SSH command with optional key override
+            scp_cmd = ["scp", "-P", ssh_port]
+
+            ssh_key = self._get_ssh_key()
+            if ssh_key:
+                scp_cmd.extend(["-i", ssh_key])
+
+            scp_cmd.extend([
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "BatchMode=yes",  # Prevent password prompts, fail fast if key auth doesn't work
+                "-o", "ConnectTimeout=10",
                 tmp_path,
                 f"root@{ssh_host}:/tmp/morecompute.tar.gz"
-            ]
+            ])
 
             result = subprocess.run(
                 scp_cmd,
@@ -148,17 +216,39 @@ class PodKernelManager:
             )
 
             if result.returncode != 0:
-                return {
-                    "status": "error",
-                    "message": f"Failed to copy worker code: {result.stderr}"
-                }
+                error_msg = result.stderr.lower()
+                if "permission denied" in error_msg or "publickey" in error_msg:
+                    return {
+                        "status": "error",
+                        "message": (
+                            "SSH authentication failed. Please add your SSH public key to Prime Intellect:\n"
+                            "1. Visit https://app.primeintellect.ai/dashboard/tokens\n"
+                            "2. Upload your public key (~/.ssh/id_ed25519.pub or ~/.ssh/id_rsa.pub)\n"
+                            "3. Try connecting again"
+                        )
+                    }
+                elif "host key verification failed" in error_msg:
+                    return {
+                        "status": "error",
+                        "message": f"SSH host verification failed. This is unusual. Error: {result.stderr}"
+                    }
+                else:
+                    return {
+                        "status": "error",
+                        "message": f"Failed to copy worker code to pod. SSH Error: {result.stderr}"
+                    }
 
             # Extract on remote and install dependencies
-            ssh_cmd = [
-                "ssh",
-                "-p", ssh_port,
+            ssh_cmd = ["ssh", "-p", ssh_port]
+
+            if ssh_key:
+                ssh_cmd.extend(["-i", ssh_key])
+
+            ssh_cmd.extend([
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "BatchMode=yes",
+                "-o", "ConnectTimeout=10",
                 f"root@{ssh_host}",
                 (
                     "cd /tmp && "
@@ -166,7 +256,7 @@ class PodKernelManager:
                     "pip install --quiet pyzmq && "
                     "echo 'Deployment complete'"
                 )
-            ]
+            ])
 
             result = subprocess.run(
                 ssh_cmd,
@@ -205,17 +295,23 @@ class PodKernelManager:
         """
         try:
             # Create SSH tunnel: local ports -> remote ports
-            # -L local_port:localhost:remote_port
-            tunnel_cmd = [
-                "ssh",
-                "-p", ssh_port,
+            ssh_key = self._get_ssh_key()
+            tunnel_cmd = ["ssh", "-p", ssh_port]
+
+            if ssh_key:
+                tunnel_cmd.extend(["-i", ssh_key])
+
+            tunnel_cmd.extend([
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "BatchMode=yes",
+                "-o", "ServerAliveInterval=60",
+                "-o", "ServerAliveCountMax=3",
                 "-N",  # No command execution
                 "-L", f"{self.local_cmd_port}:localhost:{self.remote_cmd_port}",
                 "-L", f"{self.local_pub_port}:localhost:{self.remote_pub_port}",
                 f"root@{ssh_host}"
-            ]
+            ])
 
             self.ssh_tunnel_proc = subprocess.Popen(
                 tunnel_cmd,
@@ -226,7 +322,6 @@ class PodKernelManager:
             # Wait briefly for tunnel to establish
             await asyncio.sleep(2)
 
-            # Check if tunnel is still running
             if self.ssh_tunnel_proc.poll() is not None:
                 return {
                     "status": "error",
@@ -258,11 +353,17 @@ class PodKernelManager:
         """
         try:
             # Start worker in background on remote pod
-            worker_cmd = [
-                "ssh",
-                "-p", ssh_port,
+            ssh_key = self._get_ssh_key()
+            worker_cmd = ["ssh", "-p", ssh_port]
+
+            if ssh_key:
+                worker_cmd.extend(["-i", ssh_key])
+
+            worker_cmd.extend([
                 "-o", "StrictHostKeyChecking=no",
                 "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "BatchMode=yes",
+                "-o", "ConnectTimeout=10",
                 f"root@{ssh_host}",
                 (
                     f"cd /tmp && "
@@ -273,7 +374,7 @@ class PodKernelManager:
                     f"> /tmp/worker.log 2>&1 & "
                     f"echo $!"
                 )
-            ]
+            ])
 
             result = subprocess.run(
                 worker_cmd,
@@ -334,8 +435,6 @@ class PodKernelManager:
             dict with disconnection status
         """
         messages = []
-
-        # Kill SSH tunnel
         if self.ssh_tunnel_proc:
             try:
                 self.ssh_tunnel_proc.terminate()

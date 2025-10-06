@@ -13,12 +13,18 @@ import {
   setGpuApiKey,
   fetchGpuAvailability,
   createGpuPod,
+  deleteGpuPod,
+  connectToPod,
+  disconnectFromPod,
+  getPodConnectionStatus,
   PodResponse,
   PodsListParams,
   GpuAvailability,
   GpuAvailabilityParams,
   CreatePodRequest,
+  PodConnectionStatus,
 } from "@/lib/api";
+import ErrorModal from "@/components/ErrorModal";
 
 interface GPUPod {
   id: string;
@@ -85,6 +91,22 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [filters, setFilters] = useState<GpuAvailabilityParams>({});
   const [creatingPodId, setCreatingPodId] = useState<string | null>(null);
   const [podCreationError, setPodCreationError] = useState<string | null>(null);
+  const [connectingPodId, setConnectingPodId] = useState<string | null>(null);
+  const [connectedPodId, setConnectedPodId] = useState<string | null>(null);
+  const [deletingPodId, setDeletingPodId] = useState<string | null>(null);
+
+  // Error modal state
+  const [errorModal, setErrorModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    actionLabel?: string;
+    actionUrl?: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
 
   useEffect(() => {
     const checkApiConfig = async () => {
@@ -93,6 +115,12 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         setApiConfigured(config.configured);
         if (config.configured) {
           await loadGPUPods();
+          // Check if already connected to a pod
+          const status = await getPodConnectionStatus();
+          if (status.connected && status.pod) {
+            setConnectedPodId(status.pod.id);
+            setKernelStatus(true); // Kernel is running when connected to pod
+          }
         }
       } catch (err) {
         console.error("Failed to check GPU config:", err);
@@ -100,20 +128,39 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       }
     };
     checkApiConfig();
-  }, []);
+
+    // Poll pod list every 10 seconds if configured
+    const pollInterval = setInterval(async () => {
+      if (apiConfigured) {
+        await loadGPUPods();
+      }
+    }, 10000);
+
+    return () => clearInterval(pollInterval);
+  }, [apiConfigured]);
 
   const loadGPUPods = async (params?: PodsListParams) => {
     setLoading(true);
     try {
       const response = await fetchGpuPods(params || { limit: 100 });
-      const pods = (response.data || []).map((pod: PodResponse) => ({
-        id: pod.id,
-        name: pod.name,
-        status: pod.status as "running" | "stopped" | "starting",
-        gpuType: pod.gpuName,
-        region: "Unknown", //look at later
-        costPerHour: pod.priceHr,
-      }));
+      const pods = (response.data || []).map((pod: PodResponse) => {
+        // Map API status to UI status
+        let uiStatus: "running" | "stopped" | "starting" = "stopped";
+        if (pod.status === "ACTIVE") {
+          uiStatus = "running";
+        } else if (pod.status === "PROVISIONING" || pod.status === "PENDING") {
+          uiStatus = "starting";
+        }
+
+        return {
+          id: pod.id,
+          name: pod.name,
+          status: uiStatus,
+          gpuType: pod.gpuName,
+          region: "Unknown", //look at later
+          costPerHour: pod.priceHr,
+        };
+      });
       setGpuPods(pods);
     } catch (err) {
       console.error("Failed to load GPU pods:", err);
@@ -153,18 +200,17 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       const podRequest: CreatePodRequest = {
         pod: {
           name: podName,
-          type: "HOSTED",
-          providerType: gpu.provider.toLowerCase(),
-          gpuName: gpu.gpuType,
-          gpuCount: gpu.gpuCount,
-          socket: gpu.socket,
-          priceHr: gpu.prices?.onDemand || 0,
           cloudId: gpu.cloudId,
+          gpuType: gpu.gpuType,
+          socket: gpu.socket,
+          gpuCount: gpu.gpuCount,
           diskSize: gpu.disk?.defaultCount || 100,
           vcpus: gpu.vcpu?.defaultCount || 16,
           memory: gpu.memory?.defaultCount || 128,
           image: gpu.images?.[0] || "ubuntu_22_cuda_12",
           security: gpu.security,
+          dataCenterId: gpu.dataCenter || undefined,
+          country: gpu.country || undefined,
         },
         provider: {
           type: gpu.provider.toLowerCase(),
@@ -178,14 +224,128 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
 
       // Close browse section and show success
       setShowBrowseGPUs(false);
-      alert(`Pod "${newPod.name}" created successfully!`);
+      alert(`Pod "${newPod.name}" created successfully! Wait for provisioning (~2-5 min).`);
     } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to create pod";
+      let errorMsg = "Failed to create pod";
+
+      if (err instanceof Error) {
+        errorMsg = err.message;
+
+        // Parse specific error cases
+        if (errorMsg.includes("402") || errorMsg.includes("Insufficient funds")) {
+          errorMsg = "Insufficient funds. Please add credits to your Prime Intellect wallet:\nhttps://app.primeintellect.ai/dashboard/billing";
+        } else if (errorMsg.includes("401") || errorMsg.includes("403")) {
+          errorMsg = "Authentication failed. Check your API key configuration.";
+        } else if (errorMsg.includes("data_center_id")) {
+          errorMsg = "Pod configuration error: Missing data center ID. Try a different GPU or provider.";
+        }
+      }
+
       setPodCreationError(errorMsg);
-      alert(`Failed to create pod: ${errorMsg}`);
+
+      // Show error in modal with link to billing if insufficient funds
+      if (errorMsg.includes("Insufficient funds")) {
+        setErrorModal({
+          isOpen: true,
+          title: "Insufficient Funds",
+          message: errorMsg,
+          actionLabel: "Add Credits",
+          actionUrl: "https://app.primeintellect.ai/dashboard/billing",
+        });
+      } else {
+        setErrorModal({
+          isOpen: true,
+          title: "Failed to Create Pod",
+          message: errorMsg,
+        });
+      }
     } finally {
       setCreatingPodId(null);
+    }
+  };
+
+  const handleConnectToPod = async (podId: string) => {
+    setConnectingPodId(podId);
+    try {
+      const result = await connectToPod(podId);
+      if (result.status === "ok") {
+        setConnectedPodId(podId);
+        setKernelStatus(true); // Mark kernel as running
+        setErrorModal({
+          isOpen: true,
+          title: "✓ Connected!",
+          message: "Successfully connected to GPU pod. You can now run code on the remote GPU.",
+        });
+      } else {
+        // Show detailed error message from backend
+        let errorMsg = result.message || "Connection failed";
+
+        // Check for SSH key issues
+        if (errorMsg.includes("SSH authentication") || errorMsg.includes("SSH public key")) {
+          setErrorModal({
+            isOpen: true,
+            title: "SSH Key Required",
+            message: errorMsg,
+            actionLabel: "Add SSH Key",
+            actionUrl: "https://app.primeintellect.ai/dashboard/tokens",
+          });
+        } else {
+          setErrorModal({
+            isOpen: true,
+            title: "Connection Failed",
+            message: errorMsg,
+          });
+        }
+      }
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to connect to pod";
+      setErrorModal({
+        isOpen: true,
+        title: "Connection Error",
+        message: errorMsg,
+      });
+    } finally {
+      setConnectingPodId(null);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    try {
+      await disconnectFromPod();
+      setConnectedPodId(null);
+      setKernelStatus(false); // Mark kernel as not running
+      alert("Disconnected from pod");
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to disconnect";
+      alert(`Disconnect error: ${errorMsg}`);
+    }
+  };
+
+  const handleDeletePod = async (podId: string, podName: string) => {
+    if (!confirm(`Are you sure you want to terminate pod "${podName}"?`)) {
+      return;
+    }
+
+    setDeletingPodId(podId);
+    try {
+      // Disconnect if this is the connected pod
+      if (connectedPodId === podId) {
+        await disconnectFromPod();
+        setConnectedPodId(null);
+        setKernelStatus(false);
+      }
+
+      await deleteGpuPod(podId);
+      alert(`Pod "${podName}" terminated successfully`);
+      await loadGPUPods();
+    } catch (err) {
+      const errorMsg =
+        err instanceof Error ? err.message : "Failed to terminate pod";
+      alert(`Terminate error: ${errorMsg}`);
+    } finally {
+      setDeletingPodId(null);
     }
   };
 
@@ -217,7 +377,16 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   };
 
   return (
-    <div className="runtime-popup">
+    <>
+      <ErrorModal
+        isOpen={errorModal.isOpen}
+        onClose={() => setErrorModal({ ...errorModal, isOpen: false })}
+        title={errorModal.title}
+        message={errorModal.message}
+        actionLabel={errorModal.actionLabel}
+        actionUrl={errorModal.actionUrl}
+      />
+      <div className="runtime-popup">
       {/* Kernel Status Section */}
       <section className="runtime-section" style={{ padding: "6px 12px" }}>
         <h3
@@ -404,34 +573,80 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                         </span>
                       </div>
                     </div>
-                    <div>
+                    <div style={{ display: "flex", gap: "4px" }}>
                       {pod.status === "running" ? (
-                        <button
-                          className="runtime-btn runtime-btn-sm"
-                          style={{ fontSize: "11px", padding: "4px 8px" }}
-                        >
-                          Connect
-                        </button>
+                        connectedPodId === pod.id ? (
+                          <button
+                            className="runtime-btn runtime-btn-sm"
+                            onClick={handleDisconnect}
+                            style={{
+                              fontSize: "11px",
+                              padding: "4px 8px",
+                              backgroundColor: "var(--success)",
+                            }}
+                          >
+                            Disconnect
+                          </button>
+                        ) : (
+                          <button
+                            className="runtime-btn runtime-btn-sm"
+                            onClick={() => handleConnectToPod(pod.id)}
+                            disabled={connectingPodId === pod.id}
+                            style={{ fontSize: "11px", padding: "4px 8px" }}
+                          >
+                            {connectingPodId === pod.id
+                              ? "Connecting..."
+                              : "Connect"}
+                          </button>
+                        )
                       ) : (
                         <button
                           className="runtime-btn runtime-btn-sm runtime-btn-secondary"
                           style={{ fontSize: "11px", padding: "4px 8px" }}
+                          disabled
                         >
-                          Start
+                          {pod.status === "starting" ? "Starting..." : "Stopped"}
                         </button>
                       )}
+                      <button
+                        className="runtime-btn runtime-btn-sm"
+                        onClick={() => handleDeletePod(pod.id, pod.name)}
+                        disabled={deletingPodId === pod.id}
+                        style={{
+                          fontSize: "11px",
+                          padding: "4px 8px",
+                          backgroundColor: "var(--error-color)",
+                          color: "white",
+                        }}
+                      >
+                        {deletingPodId === pod.id ? "..." : "×"}
+                      </button>
                     </div>
                   </div>
                 ))}
               </div>
-              <button
-                className="runtime-btn runtime-btn-link"
-                onClick={handleConnectToPrimeIntellect}
-                style={{ fontSize: "12px", padding: "6px 8px" }}
-              >
-                <Plus size={12} style={{ marginRight: "4px" }} />
-                Add new pod
-              </button>
+              <div style={{ display: "flex", gap: "4px" }}>
+                <button
+                  className="runtime-btn runtime-btn-link"
+                  onClick={() => loadGPUPods()}
+                  style={{ fontSize: "12px", padding: "6px 8px", flex: 1 }}
+                >
+                  Refresh
+                </button>
+                <button
+                  className="runtime-btn runtime-btn-link"
+                  onClick={() => {
+                    setShowBrowseGPUs(!showBrowseGPUs);
+                    if (!showBrowseGPUs && availableGPUs.length === 0) {
+                      loadAvailableGPUs();
+                    }
+                  }}
+                  style={{ fontSize: "12px", padding: "6px 8px", flex: 1 }}
+                >
+                  <Plus size={12} style={{ marginRight: "4px" }} />
+                  Browse GPUs
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -782,6 +997,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         )}
       </section>
     </div>
+    </>
   );
 };
 

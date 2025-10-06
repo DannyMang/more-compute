@@ -5,6 +5,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 import importlib.metadata as importlib_metadata
+import zmq
+import textwrap
 
 from .notebook import Notebook
 from .execution import NextZmqExecutor
@@ -12,6 +14,7 @@ from .utils.pyEnv import PythonEnvironmentDetector
 from .utils.systemEnv import DeviceMetrics
 from .utils.error_utils import ErrorUtils
 from .services.prime_intellect import PrimeIntellectService, CreatePodRequest, PodResponse
+from .services.pod_manager import PodKernelManager
 
 
 BASE_DIR = Path(os.getenv("MORECOMPUTE_ROOT", Path.cwd())).resolve()
@@ -62,6 +65,7 @@ if not prime_api_key:
             pass
 
 prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
+pod_manager: PodKernelManager | None = None
 
 
 def _coerce_cell_source(value):
@@ -163,6 +167,18 @@ async def list_files(path: str = "."):
         "path": str(directory.relative_to(BASE_DIR)) if directory != BASE_DIR else ".",
         "items": items,
     }
+
+
+@app.post("/api/fix-indentation")
+async def fix_indentation(request: Request):
+    """Fix indentation in Python code using textwrap.dedent()."""
+    try:
+        body = await request.json()
+        code = body.get("code", "")
+        fixed_code = textwrap.dedent(code)
+        return {"fixed_code": fixed_code}
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to fix indentation: {exc}")
 
 
 @app.get("/api/file")
@@ -474,9 +490,33 @@ async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int 
 @app.post("/api/gpu/pods")
 async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
     """Create a new GPU pod."""
+    import sys
+    print(f"[CREATE POD] Received request: {pod_request.model_dump()}", file=sys.stderr, flush=True)
+
     if not prime_intellect:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
-    return await prime_intellect.create_pod(pod_request)
+
+    try:
+        result = await prime_intellect.create_pod(pod_request)
+        print(f"[CREATE POD] Success: {result}", file=sys.stderr, flush=True)
+        return result
+    except HTTPException as e:
+        if e.status_code == 402:
+            raise HTTPException(
+                status_code=402,
+                detail="Insufficient funds in your Prime Intellect wallet. Please add credits at https://app.primeintellect.ai/dashboard/billing"
+            )
+        elif e.status_code == 401 or e.status_code == 403:
+            raise HTTPException(
+                status_code=e.status_code,
+                detail="Authentication failed. Please check your Prime Intellect API key."
+            )
+        else:
+            print(f"[CREATE POD] Error: {e}", file=sys.stderr, flush=True)
+            raise
+    except Exception as e:
+        print(f"[CREATE POD] Error: {e}", file=sys.stderr, flush=True)
+        raise
 
 
 @app.get("/api/gpu/pods/{pod_id}")
@@ -493,3 +533,75 @@ async def delete_gpu_pod(pod_id: str):
     if not prime_intellect:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
     return await prime_intellect.delete_pod(pod_id)
+
+
+@app.post("/api/gpu/pods/{pod_id}/connect")
+async def connect_to_pod(pod_id: str):
+    """Connect to a GPU pod and establish SSH tunnel for remote execution."""
+    global pod_manager
+
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    if pod_manager is None:
+        pod_manager = PodKernelManager(pi_service=prime_intellect)
+
+    # Disconnect from any existing pod first, may need to fix later for multi-pod
+    if pod_manager.pod is not None:
+        await pod_manager.disconnect()
+
+    # Connect to the new pod
+    result = await pod_manager.connect_to_pod(pod_id)
+
+    if result.get("status") == "ok":
+        pod_manager.attach_executor(executor)
+        addresses = pod_manager.get_executor_addresses()
+        executor.cmd_addr = addresses["cmd_addr"]
+        executor.pub_addr = addresses["pub_addr"]
+
+        # Reconnect executor sockets to tunneled ports
+        executor.req.close(0)  # type: ignore[reportAttributeAccessIssue]
+        executor.req = executor.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        executor.req.connect(executor.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
+
+        executor.sub.close(0)  # type: ignore[reportAttributeAccessIssue]
+        executor.sub = executor.ctx.socket(zmq.SUB)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        executor.sub.connect(executor.pub_addr)  # type: ignore[reportAttributeAccessIssue]
+        executor.sub.setsockopt_string(zmq.SUBSCRIBE, '')  # type: ignore[reportAttributeAccessIssue]
+
+    return result
+
+
+@app.post("/api/gpu/pods/disconnect")
+async def disconnect_from_pod():
+    """Disconnect from current GPU pod."""
+    global pod_manager
+
+    if pod_manager is None or pod_manager.pod is None:
+        return {"status": "ok", "message": "No active connection"}
+
+    result = await pod_manager.disconnect()
+
+    # Reset executor to local addresses
+    executor.cmd_addr = os.getenv('MC_ZMQ_CMD_ADDR', 'tcp://127.0.0.1:5555')
+    executor.pub_addr = os.getenv('MC_ZMQ_PUB_ADDR', 'tcp://127.0.0.1:5556')
+
+    # Reconnect to local worker
+    executor.req.close(0)  # type: ignore[reportAttributeAccessIssue]
+    executor.req = executor.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+    executor.req.connect(executor.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
+
+    executor.sub.close(0)  # type: ignore[reportAttributeAccessIssue]
+    executor.sub = executor.ctx.socket(zmq.SUB)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+    executor.sub.connect(executor.pub_addr)  # type: ignore[reportAttributeAccessIssue]
+    executor.sub.setsockopt_string(zmq.SUBSCRIBE, '')  # type: ignore[reportAttributeAccessIssue]
+
+    return result
+
+
+@app.get("/api/gpu/pods/connection/status")
+async def get_pod_connection_status():
+    """Get status of current pod connection."""
+    if pod_manager is None:
+        return {"connected": False, "pod": None}
+
+    return await pod_manager.get_status()

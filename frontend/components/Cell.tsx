@@ -8,6 +8,7 @@ import MarkdownRenderer from './MarkdownRenderer';
 import CellButton from './CellButton';
 import { UpdateIcon, LinkBreak2Icon, PlayIcon, RowSpacingIcon } from '@radix-ui/react-icons';
 import { Check, X } from 'lucide-react';
+import { fixIndentation } from '@/lib/api';
 
 declare const CodeMirror: any;
 
@@ -147,6 +148,20 @@ export const Cell: React.FC<CellProps> = ({
     }
   };
 
+  const handleFixIndentation = async () => {
+    try {
+      const fixedCode = await fixIndentation(cell.source);
+      onUpdate(indexRef.current, fixedCode);
+
+      // Update CodeMirror if it's initialized
+      if (codeMirrorInstance.current) {
+        codeMirrorInstance.current.setValue(fixedCode);
+      }
+    } catch (err) {
+      console.error('Failed to fix indentation:', err);
+    }
+  };
+
   return (
     <div className="cell-wrapper">
       {!isMarkdownWithContent && (
@@ -216,7 +231,7 @@ export const Cell: React.FC<CellProps> = ({
               <MarkdownRenderer source={cell.source} onClick={() => setIsEditing(true)} />
             )}
           </div>
-          <CellOutput outputs={cell.outputs} error={cell.error} />
+          <CellOutput outputs={cell.outputs} error={cell.error} onFixIndentation={handleFixIndentation} />
         </div>
       </div>
 

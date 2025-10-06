@@ -8,23 +8,26 @@ class EnvVar(BaseModel):
     value: str
 
 class PodConfig(BaseModel):
+    # Required fields
     name: str
     cloudId: str
-    gpuType: str = "H100_80GB"
-    socket: str = "PCIe"
+    gpuType: str
+    socket: str
     gpuCount: int = 1
-    diskSize: int = 100
-    vcpus: int = 16
-    memory: int = 128
+
+    # Optional
+    diskSize: int | None = None
+    vcpus: int | None = None
+    memory: int | None = None
     maxPrice: float | None = None
-    image: str = "ubuntu_22_cuda_12"
+    image: str | None = None
     customTemplateId: str | None = None
     dataCenterId: str | None = None
     country: str | None = None
-    security: str = "secure_cloud"
+    security: str | None = None
     envVars: list[EnvVar] | None = None
     jupyterPassword: str | None = None
-    autoRestart: bool = False
+    autoRestart: bool | None = None
 
 
 class ProviderConfig(BaseModel):
@@ -149,10 +152,14 @@ class PrimeIntellectService:
         """
         Create a new pod
         """
+        import sys
+        payload = pod_request.model_dump(exclude_none=True)
+        print(f"[PI SERVICE] Creating pod with payload: {payload}", file=sys.stderr, flush=True)
+
         response = await self._make_request(
             "POST",
-            "/pods",
-            json_data=pod_request.model_dump(exclude_none=True)
+            "/pods/",
+            json_data=payload
         )
         return PodResponse.model_validate(response)
 

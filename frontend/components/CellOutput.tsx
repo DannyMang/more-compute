@@ -7,11 +7,12 @@ import ErrorDisplay from './ErrorDisplay';
 interface CellOutputProps {
   outputs: Output[];
   error: any;
+  onFixIndentation?: () => void;
 }
 
-const CellOutput: FC<CellOutputProps> = ({ outputs, error }) => {
+const CellOutput: FC<CellOutputProps> = ({ outputs, error, onFixIndentation }) => {
   if (error) {
-    return <ErrorDisplay error={error} />;
+    return <ErrorDisplay error={error} onFixIndentation={onFixIndentation} />;
   }
 
   if (!outputs || outputs.length === 0) {
@@ -52,7 +53,7 @@ const CellOutput: FC<CellOutputProps> = ({ outputs, error }) => {
               );
             }
             case 'error':
-              return <ErrorDisplay key={index} error={output} />;
+              return <ErrorDisplay key={index} error={output} onFixIndentation={onFixIndentation} />;
             default:
               return (
                 <pre key={index} className="output-unknown">
