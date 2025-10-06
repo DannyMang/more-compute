@@ -95,6 +95,7 @@ def worker_main():
     rep.bind(cmd_addr)
     # Set timeout so we can check for signals during execution
     rep.setsockopt(zmq.RCVTIMEO, 100)  # 100ms timeout
+
     pub = ctx.socket(zmq.PUB)
     pub.bind(pub_addr)
 
@@ -106,7 +107,7 @@ def worker_main():
     last_hb = time.time()
     current_cell = None
     shutdown_requested = False
-    
+
     while True:
         try:
             msg = rep.recv_json()
@@ -172,7 +173,7 @@ def worker_main():
                     continue
                 compiled = compile(code, '<cell>', 'exec')
                 exec(compiled, g, l)
-                
+
                 # Try to evaluate last expression for display (like Jupyter)
                 lines = code.strip().split('\n')
                 if lines:
@@ -181,24 +182,24 @@ def worker_main():
                     if last and not last.startswith('#'):
                         # Check if it looks like a statement (assignment, import, etc)
                         is_statement = False
-                        
+
                         # Check for assignment (but not comparison operators)
                         if '=' in last and not any(op in last for op in ['==', '!=', '<=', '>=', '=<', '=>']):
                             is_statement = True
-                        
+
                         # Check for statement keywords (handle both "assert x" and "assert(x)")
-                        statement_keywords = ['import', 'from', 'def', 'class', 'if', 'elif', 'else', 
-                                            'for', 'while', 'try', 'except', 'finally', 'with', 
-                                            'assert', 'del', 'global', 'nonlocal', 'pass', 'break', 
+                        statement_keywords = ['import', 'from', 'def', 'class', 'if', 'elif', 'else',
+                                            'for', 'while', 'try', 'except', 'finally', 'with',
+                                            'assert', 'del', 'global', 'nonlocal', 'pass', 'break',
                                             'continue', 'return', 'raise', 'yield']
-                        
+
                         # Get first word, handling cases like "assert(...)" by splitting on non-alphanumeric
                         first_word_match = re.match(r'^(\w+)', last)
                         first_word = first_word_match.group(1) if first_word_match else ''
-                        
+
                         if first_word in statement_keywords:
                             is_statement = True
-                        
+
                         if not is_statement:
                             try:
                                 res = eval(last, g, l)
@@ -206,7 +207,7 @@ def worker_main():
                                     pub.send_json({'type': 'execute_result', 'cell_index': cell_index, 'execution_count': exec_count + 1, 'data': {'text/plain': repr(res)}})
                             except Exception as e:
                                 print(f"[WORKER] Failed to eval last expression '{last[:50]}...': {e}", file=sys.stderr, flush=True)
-                
+
                 _capture_matplotlib(pub, cell_index)
             except KeyboardInterrupt:
                 status = 'error'
@@ -236,5 +237,3 @@ def worker_main():
 
 if __name__ == '__main__':
     worker_main()
-
-

@@ -5,19 +5,11 @@ import json
 import os
 import asyncio
 from datetime import datetime, timezone
-from typing import Optional, List, Dict
 from pathlib import Path
 import importlib.metadata as importlib_metadata
 
 from .notebook import Notebook
-import os as _os
-mode = _os.getenv('MORECOMPUTE_EXECUTION_MODE', 'inprocess')
-if mode == 'process':
-    from .next_process_executor import NextProcessExecutor as _Executor
-elif mode == 'zmq':
-    from .next_zmq_executor import NextZmqExecutor as _Executor
-else:
-    from .next_executor import NextCodeExecutor as _Executor
+from .next_zmq_executor import NextZmqExecutor
 from .utils.pyEnv import PythonEnvironmentDetector
 from .utils.systemEnv import DeviceMetrics
 from .utils.error_utils import ErrorUtils
@@ -52,11 +44,25 @@ if notebook_path_env:
 else:
     notebook = Notebook()
 error_utils = ErrorUtils()
-executor = _Executor(error_utils=error_utils)
+executor = NextZmqExecutor(error_utils=error_utils)
 metrics = DeviceMetrics()
 
 # Initialize Prime Intellect service if API key is provided
+# Check environment variable first, then .env file (commonly gitignored)
 prime_api_key = os.getenv("PRIME_INTELLECT_API_KEY")
+if not prime_api_key:
+    env_path = BASE_DIR / ".env"
+    if env_path.exists():
+        try:
+            with env_path.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if line.startswith("PRIME_INTELLECT_API_KEY="):
+                        prime_api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                        break
+        except Exception:
+            pass
+
 prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
 
 
@@ -139,7 +145,7 @@ async def list_files(path: str = "."):
     if not directory.exists() or not directory.is_dir():
         raise HTTPException(status_code=404, detail="Directory not found")
 
-    items: list[Dict[str, Optional[str]]] = []
+    items: list[dict[str, str | int]] = []
     try:
         for entry in sorted(directory.iterdir(), key=lambda p: (not p.is_dir(), p.name.lower())):
             stat = entry.stat()
@@ -186,8 +192,8 @@ async def read_file(path: str, max_bytes: int = 256_000):
 
 class WebSocketManager:
     """Manages WebSocket connections and message handling."""
-    def __init__(self):
-        self.clients: Dict[WebSocket, None] = {}
+    def __init__(self) -> None:
+        self.clients: dict[WebSocket, None] = {}
         self.executor = executor
         self.notebook = notebook
 
@@ -399,6 +405,53 @@ async def websocket_endpoint(websocket: WebSocket):
 
 
 #gpu connection api
+@app.get("/api/gpu/config")
+async def get_gpu_config():
+    """Check if Prime Intellect API is configured."""
+    return {"configured": prime_intellect is not None}
+
+
+@app.post("/api/gpu/config")
+async def set_gpu_config(request: Request):
+    """Save Prime Intellect API key to .env file (commonly gitignored) and reinitialize service."""
+    global prime_intellect
+
+    try:
+        body = await request.json()
+        api_key = body.get("api_key", "").strip()
+
+        if not api_key:
+            raise HTTPException(status_code=400, detail="API key is required")
+
+        env_path = BASE_DIR / ".env"
+
+        # Read existing .env content
+        existing_lines = []
+        if env_path.exists():
+            with env_path.open("r", encoding="utf-8") as f:
+                existing_lines = f.readlines()
+
+        # Remove any existing PRIME_INTELLECT_API_KEY lines
+        new_lines = [line for line in existing_lines if not line.strip().startswith("PRIME_INTELLECT_API_KEY=")]
+
+        # Add the new API key
+        new_lines.append(f"PRIME_INTELLECT_API_KEY={api_key}\n")
+
+        # Write back to .env
+        with env_path.open("w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+        # Reinitialize the Prime Intellect service
+        prime_intellect = PrimeIntellectService(api_key=api_key)
+
+        return {"configured": True, "message": "API key saved successfully"}
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to save API key: {exc}")
+
+
 @app.get("/api/gpu/availability")
 async def get_gpu_availability(
     regions: list[str] | None = None,

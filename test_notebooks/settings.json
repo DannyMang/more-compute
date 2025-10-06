@@ -1,1 +1,3 @@
-{ "execution_mode": "zmq", "backend_autoreload": false }
+{
+  "backend_autoreload": false
+}

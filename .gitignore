@@ -47,7 +47,7 @@ Thumbs.db
 # Logs
 *.log
 
-# TypeScript (if we decide to use it later)
+# TypeScript
 node_modules/
 *.tsbuildinfo
 

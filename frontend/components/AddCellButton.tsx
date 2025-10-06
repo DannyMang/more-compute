@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { CodeIcon, PlusIcon, TextIcon } from '@radix-ui/react-icons';
 
 interface AddCellButtonProps {
   onAddCell: (type: 'code' | 'markdown') => void;
@@ -14,7 +15,6 @@ export const AddCellButton: React.FC<AddCellButtonProps> = ({ onAddCell }) => {
 
   return (
     <div className="add-cell-button">
-      <img src="/assets/icons/add.svg" alt="Add cell" />
       <div className="cell-type-menu">
         <button
           type="button"
@@ -22,7 +22,8 @@ export const AddCellButton: React.FC<AddCellButtonProps> = ({ onAddCell }) => {
           data-type="code"
           onClick={(e) => handleAdd('code', e)}
         >
-          Code
+          <CodeIcon className="w-4 h-4" />
+          <span>Code</span>
         </button>
         <button
           type="button"
@@ -30,7 +31,8 @@ export const AddCellButton: React.FC<AddCellButtonProps> = ({ onAddCell }) => {
           data-type="markdown"
           onClick={(e) => handleAdd('markdown', e)}
         >
-          Text
+          <TextIcon className="w-4 h-4" />
+          <span>Text</span>
         </button>
       </div>
     </div>

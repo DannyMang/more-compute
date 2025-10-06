@@ -1,25 +1,4 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /* MoreCompute Notebook Styles - Marimo inspired */
-
-
-@font-face {
-  font-family: 'Fira';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/Fira.ttf') format('truetype');
-}
-
-@font-face {
-  font-family: 'Tiempos';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/Tiempos.woff2') format('woff2');
-}
 
 * {
     margin: 0;
@@ -27,39 +6,10 @@
     box-sizing: border-box;
 }
 
-:root {
-    --mc-background: #E9E7E3;
-
-    /* Font Family Custom Properties */
-    --font-sans: 'CustomFont', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    --font-mono: 'VeraMono', 'CustomMono', 'Fira Code', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
-    --font-display: 'DisplayFont', 'Inter', system-ui, sans-serif;
-    --mc-cell-background: #F4EEE7;
-    --mc-text-color: #575042;
-    --mc-markdown-color: #372E25;
-    --mc-markdown-heading-color: #624204;
-    --mc-markdown-paragraph-color: #575042;
-    --mc-line-number-color: #9ca3af;
-    --text-secondary: #6b7280;
-}
-
-@media (prefers-color-scheme: light) {
-    :root {
-        --mc-cell-background: #F4EEE7;
-    }
-}
-
-@media (prefers-color-scheme: dark) {
-    :root {
-        --mc-cell-background: #0B1118;
-    }
-}
-
 body {
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background-color: var(--mc-background);
-    color: var(--mc-text-color);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: #ffffff;
+    color: #1f2937;
     line-height: 1.6;
     overflow-x: hidden;
 }
@@ -158,8 +108,7 @@ body {
 }
 
 @keyframes pulse {
-    0%,
-    100% {
+    0%, 100% {
         opacity: 1;
     }
     50% {
@@ -173,7 +122,7 @@ body {
 
 /* Notebook Wrapper */
 .notebook-wrapper {
-    max-width: 1100px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 40px 20px;
 }
@@ -207,7 +156,7 @@ body {
 }
 
 .add-cell-line::before {
-    content: "";
+    content: '';
     position: absolute;
     top: -10px;
     left: 0;
@@ -219,7 +168,7 @@ body {
 
 /* Extra padding for top cell hover area */
 .add-line-above::before {
-    height: 40px;
+    height: 28px;
     top: -14px;
     left: 50px;
     right: 50px;
@@ -227,7 +176,7 @@ body {
 
 /* Extended hover area for add-line-below to capture hover below cells */
 .add-line-below::before {
-    content: "";
+    content: '';
     position: absolute;
     top: -8px;
     left: 0;
@@ -238,13 +187,13 @@ body {
 }
 
 .add-cell-line::after {
-    content: "";
+    content: '';
     position: absolute;
-    top: -10px;
+    top: -1px;
     left: 0;
     right: 0;
-    height: 1px;
-    background: #DBC7A8;
+    height: 2px;
+    background: #3b82f6;
     opacity: 0;
     transition: opacity 0.2s ease;
 }
@@ -255,7 +204,7 @@ body {
 
 .add-cell-button {
     position: absolute;
-    top: -27px;
+    top: -10px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -264,7 +213,6 @@ body {
     opacity: 0;
     transition: opacity 0.2s ease;
     pointer-events: auto;
-    z-index: 100;
 }
 
 .add-cell-line:hover .add-cell-button {
@@ -296,7 +244,7 @@ body {
 
 /* Create hover area that includes both button and menu */
 .add-cell-button::after {
-    content: "";
+    content: '';
     position: absolute;
     top: 0;
     left: -20px;
@@ -312,18 +260,16 @@ body {
     gap: 8px;
     padding: 8px 16px;
     border: 1px solid #DBC7A8;
-    background: #fff;
+    background: #F4EEE7;
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
-    border-radius: 8px;
+    border-radius: 6px;
     color: #575042;
-    font-family: 'Fira';
-    letter-spacing: -0.02em;
 }
 
 .cell-type-option:hover {
-    background: #E9E7E3;
+    background: #F4EEE7;
     cursor: pointer;
 }
 
@@ -333,99 +279,26 @@ body {
     margin: 0;
 }
 
-.cell-status-indicator {
-    position: absolute;
-    top: 14px;
-    left: -48px;
-    width: auto; /* allow room for timer */
-    height: 24px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    padding: 0 2px;
-}
-
-.cell-status-indicator .status-placeholder {
-    width: 14px;
-    height: 14px;
-}
-
-.status-indicator {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    font-family: monospace;
-    font-size: 12px;
-    color: inherit;
-    margin-top: -1px;
-}
-
-.status-bracket {
-    opacity: 0.3;
-}
-
-.cell-status-indicator .status-timer {
-    margin-left: 0;
-    font-size: 9px;
-    color: #6b7280;
-    min-width: auto;
-    text-align: center;
-    line-height: 1;
-    white-space: nowrap;
-}
-
 /* Main Cell */
 .cell {
     position: relative;
     margin: 20px 0;
     padding: 0;
-    background: var(--mc-cell-background);
-    border: 2px solid #DBC7A8;
-    border-radius: 0.5px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
     transition: all 0.2s ease;
     overflow: hidden;
 }
 
 .cell:hover {
-    box-shadow: 2px 4px 0 #E2DACC;
+    border-color: #d1d5db;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
 .cell.active {
     border-color: #3b82f6;
     box-shadow: 0 0 0 1px #3b82f6;
-}
-
-/* Markdown display mode - no borders or background */
-.cell.markdown-display-mode {
-    border: none !important;
-    background: transparent !important;
-    margin: 0;
-    padding: 0;
-    box-shadow: none;
-}
-
-.cell.markdown-display-mode:hover {
-    box-shadow: none;
-}
-
-.cell.markdown-display-mode .cell-content {
-    border: none !important;
-    background: transparent !important;
-    padding: 0;
-    margin: 0;
-}
-
-/* Override markdown hover background for display mode */
-.cell.markdown-display-mode .markdown-rendered:hover {
-    background: transparent !important;
-}
-
-/* Ensure markdown renderer has no background and reduced padding in display mode */
-.cell.markdown-display-mode .markdown-rendered {
-    background: transparent !important;
-    padding: 2px 4px !important;
 }
 
 /* Cell Hover Controls */
@@ -448,36 +321,58 @@ body {
     align-items: center;
 }
 
-.cell-button {
-    /* Styling is handled by inline styles in CellButton component */
-}
-
-.cell-actions-right {
+.cell-action {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(255, 255, 255, 0.9);
+    border-radius: 6px;
     display: flex;
-    gap: 4px;
     align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(8px);
 }
 
-/* Legacy cell-action styles removed - now handled by CellButton component */
-
-/* Simple spin animation for loader icon */
-.mc-spin {
-    animation: mc-spin 0.9s linear infinite;
+.cell-action:hover {
+    background: rgba(255, 255, 255, 1);
+    transform: scale(1.05);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
 }
 
-@keyframes mc-spin {
-    0% {
-        transform: rotate(0deg);
-    }
-    100% {
-        transform: rotate(360deg);
-    }
+.cell-action.run-cell-btn:hover {
+    background: #dcfdf4;
+}
+
+.cell-action.delete-cell-btn:hover {
+    background: #fef2f2;
+}
+
+.cell-action.run-cell-btn.stop-mode {
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.cell-action.run-cell-btn.stop-mode:hover {
+    background: rgba(239, 68, 68, 0.2);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.cell-action img {
+    width: 14px;
+    height: 14px;
+    opacity: 0.7;
+}
+
+.cell-action:hover img {
+    opacity: 1;
 }
 
 /* Cell Content */
 .cell-content {
     position: relative;
-    background: var(--mc-cell-background);
 }
 
 .cell-input {
@@ -493,12 +388,12 @@ body {
     border: none;
     outline: none;
     resize: none;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 14px;
     line-height: 1.6;
     padding: 16px 20px;
     background: transparent;
-    color: var(--mc-text-color);
+    color: #1f2937;
     min-height: 100px;
 }
 
@@ -506,34 +401,15 @@ body {
     outline: none;
 }
 
-/* Markdown editor styling - uses Fira font for better readability */
-.markdown-editor-container {
-    /* Inherits from cell-editor-container */
-}
-
-.markdown-editor {
-    font-family: 'Fira', 'CustomFont', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-    /* Keep other properties from .cell-editor */
-}
-
-/* Code editor styling - keeps monospace font */
-.code-editor-container {
-    /* Inherits from cell-editor-container */
-}
-
-.code-editor {
-    /* Inherits monospace font from .cell-editor */
-}
-
 /* CodeMirror Styling */
 .CodeMirror {
     height: auto;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 14px;
     line-height: 1.6;
     border: none;
     background: transparent;
-    color: var(--mc-text-color);
+    color: #1f2937;
 }
 
 .CodeMirror-focused {
@@ -542,10 +418,9 @@ body {
 
 .CodeMirror-scroll {
     /* Content-based sizing - start small and grow with content */
-    min-height: 32px; /* Single line minimum */
+    min-height: 32px;  /* Single line minimum */
     padding: 8px 16px;
     transition: min-height 0.2s ease;
-    background: var(--mc-cell-background);
 }
 
 /* Auto-sizing based on content */
@@ -561,15 +436,15 @@ body {
 
 /* Smart sizing classes applied dynamically */
 .cell.cell-empty .CodeMirror-scroll {
-    min-height: 32px; /* Very compact for empty cells */
+    min-height: 32px;  /* Very compact for empty cells */
 }
 
 .cell.cell-single-line .CodeMirror-scroll {
-    min-height: 40px; /* Slightly more space for single line */
+    min-height: 40px;  /* Slightly more space for single line */
 }
 
 .cell.cell-focused .CodeMirror-scroll {
-    min-height: 48px; /* More space when focused for editing */
+    min-height: 48px;  /* More space when focused for editing */
 }
 
 .CodeMirror-cursor {
@@ -591,14 +466,14 @@ body {
 
 /* Line numbers styling */
 .CodeMirror-linenumbers {
-    background: var(--mc-cell-background);
+    background: #f9fafb;
     border-right: 1px solid #e5e7eb;
     padding-right: 8px;
     min-width: 30px;
 }
 
 .CodeMirror-linenumber {
-    color: var(--mc-line-number-color);
+    color: #9ca3af;
     font-size: 11px;
     text-align: right;
     padding: 0 5px 0 0;
@@ -606,7 +481,7 @@ body {
 }
 
 .CodeMirror-gutters {
-    background: var(--mc-cell-background);
+    background: #f9fafb;
     border-right: 1px solid #e5e7eb;
 }
 
@@ -614,21 +489,21 @@ body {
 .markdown-rendered {
     padding: 8px 16px;
     line-height: 1.7;
-    color: var(--mc-markdown-color);
+    color: #1f2937;
     cursor: pointer;
-    min-height: auto; /* Let content determine height */
+    min-height: auto;  /* Let content determine height */
 }
 
 /* Smart sizing for markdown content */
 .cell.cell-empty .markdown-rendered,
 .cell.cell-empty .text-cell-output {
-    min-height: 24px; /* Very compact for empty markdown */
+    min-height: 24px;  /* Very compact for empty markdown */
     padding: 4px 12px;
 }
 
 .cell.cell-single-line .markdown-rendered,
 .cell.cell-single-line .text-cell-output {
-    min-height: 32px; /* Single line markdown */
+    min-height: 32px;  /* Single line markdown */
     padding: 6px 14px;
 }
 
@@ -636,48 +511,35 @@ body {
     background: rgba(59, 130, 246, 0.02);
 }
 
-.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3,
+.markdown-rendered h1, .markdown-rendered h2, .markdown-rendered h3, 
 .markdown-rendered h4, .markdown-rendered h5, .markdown-rendered h6 {
-    margin: 0px 0 0px 0;
+    margin: 16px 0 8px 0;
     font-weight: 600;
-    color: var(--mc-markdown-heading-color);
-    font-family: 'Tiempos', serif;
+    color: #111827;
 }
 
-.markdown-rendered h1 {
-    font-size: 1.5em;
-}
-.markdown-rendered h2 {
-    font-size: 1.3em;
-}
-.markdown-rendered h3 {
-    font-size: 1.1em;
-}
+.markdown-rendered h1 { font-size: 1.5em; }
+.markdown-rendered h2 { font-size: 1.3em; }
+.markdown-rendered h3 { font-size: 1.1em; }
 
 .markdown-rendered p {
     margin: 8px 0;
-    font-family: 'Fira', monospace;
-    letter-spacing: -0.02em;
-    color: var(--mc-markdown-paragraph-color);
 }
 
-.markdown-rendered ul,
-.markdown-rendered ol {
+.markdown-rendered ul, .markdown-rendered ol {
     margin: 8px 0;
     padding-left: 20px;
 }
 
 .markdown-rendered li {
     margin: 4px 0;
-    font-family: 'Fira', sans-serif;
-    color: var(--mc-markdown-paragraph-color);
 }
 
 .markdown-rendered code {
     background: #f3f4f6;
     padding: 2px 4px;
     border-radius: 3px;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 0.9em;
 }
 
@@ -692,22 +554,19 @@ body {
 .markdown-rendered pre code {
     background: none;
     padding: 0;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
 }
 
 .markdown-rendered blockquote {
     border-left: 3px solid #d1d5db;
     padding-left: 12px;
     margin: 12px 0;
-    color: var(--mc-markdown-paragraph-color);
+    color: #6b7280;
     font-style: italic;
-    font-family: 'Fira', sans-serif;
 }
 
 .markdown-rendered a {
-    color: var(--mc-markdown-paragraph-color);
+    color: #3b82f6;
     text-decoration: none;
-    font-family: 'Fira', sans-serif;
 }
 
 .markdown-rendered a:hover {
@@ -733,7 +592,7 @@ body {
 }
 
 .execution-count {
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 10px;
     color: #9ca3af;
 }
@@ -786,7 +645,7 @@ body {
     padding: 12px 16px;
     margin: 8px 0;
     border-radius: 6px;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -805,12 +664,12 @@ body {
 }
 
 .output-result {
-    background: var(--mc-cell-background);
+    background: #ffffff;
     padding: 12px 16px;
     margin: 8px 0;
     border-radius: 6px;
     border: 1px solid #e5e7eb;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -823,7 +682,7 @@ body {
     margin: 8px 0;
     border-radius: 6px;
     border: 1px solid #fecaca;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
@@ -840,19 +699,13 @@ body {
 }
 
 .cell.executing .execution-count::after {
-    content: " •";
+    content: ' •';
     animation: blink 1s infinite;
 }
 
 @keyframes blink {
-    0%,
-    50% {
-        opacity: 1;
-    }
-    51%,
-    100% {
-        opacity: 0.3;
-    }
+    0%, 50% { opacity: 1; }
+    51%, 100% { opacity: 0.3; }
 }
 
 /* Drag and Drop */
@@ -871,11 +724,11 @@ body {
         padding: 20px 10px;
         max-width: 100%;
     }
-
+    
     .execution-indicator {
         display: none;
     }
-
+    
     .cell-hover-controls {
         position: relative;
         top: auto;
@@ -961,20 +814,6 @@ body {
     visibility: visible;
 }
 
-.sidebar-icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    color: #4b5563;
-}
-
-.sidebar-icon-image {
-    width: 18px;
-    height: 18px;
-}
-
 /* Main content adjustment */
 .main-content {
     flex: 1;
@@ -986,23 +825,18 @@ body {
     position: fixed;
     left: 60px;
     top: 0;
-    width: min(480px, calc(100vw - 60px));
+    width: 400px;
     height: 100vh;
-    background: var(--mc-background);
+    background: white;
     border-right: 1px solid #e2e8f0;
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
     z-index: 40;
-    display: flex;
-    flex-direction: column;
+    overflow-y: auto;
 }
 
 /* Popup Content */
 .popup-content {
-    flex: 1;
-    padding: 24px;
-    display: flex;
-    flex-direction: column;
-    min-height: 0; /* Allow children to scroll within fixed-height overlay */
+    padding: 20px;
 }
 
 .popup-header {
@@ -1041,170 +875,29 @@ body {
     font-size: 14px;
 }
 
-.file-browser {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-height: 0;
-    background: var(--mc-background);
-}
-
-.file-toolbar {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    margin: 10px 0; /* even spacing above and below */
-}
-
-.file-toolbar-btn {
-    background: var(--mc-cell-background);
-    color: var(--mc-text-color);
-    border: 1px solid #e5e7eb;
-    padding: 6px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    cursor: pointer;
-    transition:
-        background-color 0.2s ease,
-        color 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-}
-
-/* Icon-only variant (bordered, compact) */
-.file-toolbar-btn.icon {
-    border: 1px solid #e5e7eb;
-    background: var(--mc-cell-background);
-    padding: 6px;
-}
-
-.file-toolbar-btn.icon:hover {
-    background: #f3f4f6;
-}
-
-.file-toolbar-btn:hover:not(:disabled) {
-    background: #e5e7eb;
-}
-
-.file-toolbar-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-.file-path-header {
-    padding: 8px 0;
-    margin-bottom: 12px;
-    font-size: 12px;
-    color: #6b7280;
-    border-bottom: 1px solid #e5e7eb;
-}
-
-.file-path-label {
-    font-weight: 600;
-    color: #4b5563;
-}
-
-.popup-body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    min-height: 0; /* Critical for inner scroll areas in flex layouts */
-}
-
-.file-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-}
-
 .file-item {
     display: flex;
     align-items: center;
-    padding: 8px 10px;
-    border-radius: 6px;
+    padding: 4px 8px;
+    margin: 2px 0;
+    border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.2s ease;
-    border: 1px solid transparent;
-}
-
-.file-item.directory .file-icon {
-    filter: hue-rotate(200deg);
 }
 
 .file-item:hover {
     background: #f3f4f6;
-    border-color: #e5e7eb;
 }
 
 .file-icon {
-    width: 18px;
-    height: 18px;
-    margin-right: 10px;
-    color: #4b5563;
-}
-
-.file-meta {
-    display: flex;
-    flex-direction: column;
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    opacity: 0.7;
 }
 
 .file-name {
-    font-weight: 500;
-    color: var(--mc-text-color);
-}
-
-.file-details {
-    font-size: 11px;
-    color: #6b7280;
-}
-
-.file-preview {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    overflow: hidden;
-}
-
-.file-preview-header {
-    padding: 12px 16px;
-    background: #f9fafb;
-    border-bottom: 1px solid #e5e7eb;
-}
-
-.file-preview-body {
-    padding: 16px;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    background: var(--mc-background);
-    color: var(--mc-markdown-color);
-    border-radius: 0 0 8px 8px;
-}
-
-.file-preview-loading {
-    color: #94a3b8;
-    font-size: 13px;
-}
-
-.file-preview-content {
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    font-size: 13px;
-    white-space: pre-wrap;
-    word-break: break-word;
-    color: var(--mc-markdown-color);
-}
-
-.file-tree.empty {
-    color: #6b7280;
-    font-style: italic;
-    padding: 8px;
+    color: #374151;
 }
 
 /* Python Environment Styles */
@@ -1257,10 +950,11 @@ body {
     font-weight: 500;
 }
 
+/* Settings Editor Styles */
 .settings-editor {
     width: 100%;
     height: 400px;
-    font-family: 'Fira', 'SF Mono', Monaco, monospace;
+    font-family: 'SF Mono', Monaco, monospace;
     font-size: 13px;
     border: 1px solid #e5e7eb;
     border-radius: 6px;
@@ -1308,56 +1002,6 @@ body {
 /* Metrics Popup Styles */
 .metrics-container {
     font-size: 14px;
-}
-
-.metrics-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-}
-
-.metric-panel {
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    background: var(--mc-cell-background);
-}
-
-.metric-panel-header {
-    padding: 8px 12px;
-    border-bottom: 1px solid #e5e7eb;
-}
-
-.metric-panel-title {
-    font-size: 12px;
-    color: #6b7280;
-    font-weight: 600;
-}
-
-.metric-panel-body {
-    padding: 10px 12px;
-}
-
-.metric-big-value .value {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--mc-text-color);
-}
-
-.metric-big-value .subtitle {
-    font-size: 12px;
-    color: #6b7280;
-}
-
-.mini-chart {
-    margin-top: 6px;
-}
-
-.metrics-footer {
-    margin-top: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    color: #6b7280;
 }
 
 .metrics-placeholder {
@@ -1409,129 +1053,4 @@ body {
     font-style: italic;
     color: #9ca3af;
     font-size: 14px;
-}
-
-/* Packages Popup Styles */
-.packages-container {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    height: 100%;
-}
-
-.packages-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-}
-
-.packages-search {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1;
-    background: var(--mc-cell-background);
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    padding: 8px 10px;
-}
-
-.packages-search-input {
-    flex: 1;
-    border: none;
-    outline: none;
-    background: transparent;
-    font-size: 14px;
-    color: var(--mc-text-color);
-}
-
-.packages-search-icon {
-    color: #6b7280;
-}
-
-.packages-subtext {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: #6b7280;
-}
-
-.packages-table {
-    display: flex;
-    flex-direction: column;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    overflow: hidden;
-    background: var(--mc-cell-background);
-}
-
-.packages-table-header {
-    display: grid;
-    grid-template-columns: 1fr 140px;
-    gap: 8px;
-    padding: 10px 12px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #6b7280;
-    border-bottom: 1px solid #e5e7eb;
-    background: #f9fafb;
-}
-
-.packages-list {
-    overflow-y: auto;
-    max-height: calc(100vh - 260px);
-}
-
-.package-row {
-    display: grid;
-    grid-template-columns: 1fr 140px;
-    gap: 8px;
-    padding: 10px 12px;
-    border-bottom: 1px solid #f3f4f6;
-}
-
-.package-row:last-child {
-    border-bottom: none;
-}
-
-.package-name {
-    color: var(--mc-text-color);
-}
-
-.package-version {
-    color: #374151;
-}
-
-.file-tree-container {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow-y: auto;
-}
-
-.file-tree {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-}
-
-.file-list {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-}
-
-@font-face {
-  font-family: 'VeraMono';
-  src: url('/fonts/VeraMono.ttf') format('truetype');
-  font-weight: normal;
-  font-style: normal;
-  font-display: swap;
 }

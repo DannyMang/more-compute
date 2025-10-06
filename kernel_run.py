@@ -26,12 +26,6 @@ class NotebookLauncher:
         os.environ["MORECOMPUTE_ROOT"] = str(root_dir.resolve())
         os.environ["MORECOMPUTE_NOTEBOOK_PATH"] = str(self.notebook_path)
         self.settings = self._load_settings(root_dir)
-        try:
-            exec_mode = self.settings.get("execution_mode")
-            if exec_mode in ("inprocess", "process", "zmq"):
-                os.environ["MORECOMPUTE_EXECUTION_MODE"] = exec_mode
-        except Exception:
-            pass
 
     def _load_settings(self, root_dir: Path) -> dict:
         """Load project-level settings from settings.json if present."""
