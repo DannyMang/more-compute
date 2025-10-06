@@ -8,10 +8,10 @@ import asyncio
 from fastapi import WebSocket
 import zmq
 
-from .utils.special_commands import AsyncSpecialCommandHandler
+from ..utils.special_commands import AsyncSpecialCommandHandler
 
 if TYPE_CHECKING:
-    from .utils.error_utils import ErrorUtils
+    from ..utils.error_utils import ErrorUtils
 
 class NextZmqExecutor:
     error_utils: "ErrorUtils"
@@ -77,7 +77,7 @@ class NextZmqExecutor:
             # Keep track of the worker process
             # Redirect stderr to see errors during development
             self.worker_proc = subprocess.Popen(
-                [sys.executable, '-m', 'morecompute.zmq_worker'],
+                [sys.executable, '-m', 'morecompute.execution.worker'],
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=None  # Show errors in terminal

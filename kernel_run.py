@@ -127,7 +127,7 @@ class NotebookLauncher:
         except Exception:
             pass
         try:
-            subprocess.run(["pkill", "-f", "morecompute.zmq_worker"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-f", "morecompute.execution.worker"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             pass
         # Brief pause to let the OS release the port
