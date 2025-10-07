@@ -50,8 +50,9 @@ export interface PackagesResponse {
   packages: PackageInfo[];
 }
 
-export async function fetchInstalledPackages(): Promise<PackageInfo[]> {
-  const response = await fetch(`/api/packages`);
+export async function fetchInstalledPackages(forceRefresh: boolean = false): Promise<PackageInfo[]> {
+  const url = forceRefresh ? `/api/packages?force_refresh=true` : `/api/packages`;
+  const response = await fetch(url);
   if (!response.ok) {
     throw new Error(`Failed to load packages: ${response.status}`);
   }
@@ -114,7 +115,7 @@ export interface PodConfig {
   // Required fields for pod creation
   name: string;
   cloudId: string;
-  gpuType: string;  // Note: API uses gpuType, not gpuName
+  gpuType: string;
   socket: string;
   gpuCount: number;
 
@@ -262,7 +263,9 @@ export async function fetchGpuConfig(): Promise<{ configured: boolean }> {
   return response.json();
 }
 
-export async function setGpuApiKey(apiKey: string): Promise<{ configured: boolean; message: string }> {
+export async function setGpuApiKey(
+  apiKey: string,
+): Promise<{ configured: boolean; message: string }> {
   const response = await fetch("/api/gpu/config", {
     method: "POST",
     headers: {
@@ -373,7 +376,9 @@ export async function deleteGpuPod(podId: string): Promise<DeletePodResponse> {
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Failed to delete GPU pod: ${response.status} - ${errorText}`);
+    throw new Error(
+      `Failed to delete GPU pod: ${response.status} - ${errorText}`,
+    );
   }
 
   return response.json();
@@ -409,7 +414,9 @@ export interface PodConnectionStatus {
   executor_attached?: boolean;
 }
 
-export async function connectToPod(podId: string): Promise<PodConnectionResponse> {
+export async function connectToPod(
+  podId: string,
+): Promise<PodConnectionResponse> {
   const response = await fetch(`/api/gpu/pods/${podId}/connect`, {
     method: "POST",
   });
@@ -421,7 +428,10 @@ export async function connectToPod(podId: string): Promise<PodConnectionResponse
   return response.json();
 }
 
-export async function disconnectFromPod(): Promise<{ status: string; messages: string[] }> {
+export async function disconnectFromPod(): Promise<{
+  status: string;
+  messages: string[];
+}> {
   const response = await fetch("/api/gpu/pods/disconnect", {
     method: "POST",
   });

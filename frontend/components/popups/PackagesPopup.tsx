@@ -20,7 +20,7 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
 
   useEffect(() => {
     loadPackages();
-    const handler = () => loadPackages();
+    const handler = () => loadPackages(true);  // Force refresh when packages updated
     if (typeof window !== 'undefined') {
       window.addEventListener('mc:packages-updated', handler as EventListener);
     }
@@ -31,8 +31,8 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
     };
   }, []);
 
-  const getPackages = async (): Promise<Package[]> => {
-    const pkgs = await fetchInstalledPackages();
+  const getPackages = async (forceRefresh: boolean = false): Promise<Package[]> => {
+    const pkgs = await fetchInstalledPackages(forceRefresh);
     const seen = new Set<string>();
     const out: Package[] = [];
     for (const p of pkgs) {
@@ -50,11 +50,11 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
     return out;
   };
 
-  const loadPackages = async () => {
+  const loadPackages = async (forceRefresh: boolean = false) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getPackages();
+      const data = await getPackages(forceRefresh);
       setPackages(data);
     } catch (err) {
       setError('Failed to load packages');

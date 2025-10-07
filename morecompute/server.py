@@ -38,6 +38,8 @@ def resolve_path(requested_path: str) -> Path:
 app = FastAPI()
 gpu_cache = TTLCache(maxsize=50, ttl = 60)
 pod_cache = TTLCache(maxsize = 100, ttl = 300)
+packages_cache = TTLCache(maxsize=1, ttl=300)  # 5 minutes cache for packages
+environments_cache = TTLCache(maxsize=1, ttl=300)  # 5 minutes cache for environments
 
 # Mount assets directory for icons, images, etc.
 if ASSETS_DIR.exists():
@@ -74,8 +76,18 @@ pod_manager: PodKernelManager | None = None
 
 
 @app.get("/api/packages")
-async def list_installed_packages():
-    """Return installed packages for the current Python runtime."""
+async def list_installed_packages(force_refresh: bool = False):
+    """
+    Return installed packages for the current Python runtime.
+    Args:
+        force_refresh: If True, bypass cache and fetch fresh data
+    """
+    cache_key = "packages_list"
+
+    # Check cache first unless force refresh is requested
+    if not force_refresh and cache_key in packages_cache:
+        return packages_cache[cache_key]
+
     try:
         packages = []
         for dist in importlib_metadata.distributions():
@@ -84,7 +96,10 @@ async def list_installed_packages():
             if name and version:
                 packages.append({"name": str(name), "version": str(version)})
         packages.sort(key=lambda p: p["name"].lower())
-        return {"packages": packages}
+
+        result = {"packages": packages}
+        packages_cache[cache_key] = result
+        return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to list packages: {exc}")
 
@@ -97,23 +112,33 @@ async def get_metrics():
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {exc}")
 
 @app.get("/api/environments")
-async def get_environments(full:  bool = True):
+async def get_environments(full: bool = True, force_refresh: bool = False):
     """
     Return available Python environments.
     Args:
         full: If True (default), performs comprehensive scan (conda, system, venv).
               Takes a few seconds but finds all environments.
+        force_refresh: If True, bypass cache and fetch fresh data
     """
+    cache_key = f"environments_{full}"
+
+    # Check cache first unless force refresh is requested
+    if not force_refresh and cache_key in environments_cache:
+        return environments_cache[cache_key]
+
     try:
         detector = PythonEnvironmentDetector()
         environments = detector.detect_all_environments()
         current_env = detector.get_current_environment()
 
-        return {
+        result = {
             "status": "success",
             "environments": environments,
             "current": current_env
         }
+
+        environments_cache[cache_key] = result  # Cache the result
+        return result
 
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to detect environments: {exc}")
