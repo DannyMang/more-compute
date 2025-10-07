@@ -1,3 +1,4 @@
+from cachetools import TTLCache
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
@@ -10,9 +11,11 @@ import textwrap
 
 from .notebook import Notebook
 from .execution import NextZmqExecutor
-from .utils.pyEnv import PythonEnvironmentDetector
-from .utils.systemEnv import DeviceMetrics
+from .utils.python_environment_util import PythonEnvironmentDetector
+from .utils.system_environment_util import DeviceMetrics
 from .utils.error_utils import ErrorUtils
+from .utils.cache_util import make_cache_key
+from .utils.notebook_util import coerce_cell_source
 from .services.prime_intellect import PrimeIntellectService, CreatePodRequest, PodResponse
 from .services.pod_manager import PodKernelManager
 
@@ -33,6 +36,8 @@ def resolve_path(requested_path: str) -> Path:
 
 
 app = FastAPI()
+gpu_cache = TTLCache(maxsize=50, ttl = 60)
+pod_cache = TTLCache(maxsize = 100, ttl = 300)
 
 # Mount assets directory for icons, images, etc.
 if ASSETS_DIR.exists():
@@ -66,34 +71,6 @@ if not prime_api_key:
 
 prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
 pod_manager: PodKernelManager | None = None
-
-
-def _coerce_cell_source(value):
-    if value is None:
-        return ''
-    if isinstance(value, str):
-        return value
-    if isinstance(value, (bytes, bytearray)):
-        try:
-            return value.decode('utf-8')  # type: ignore[arg-type]
-        except Exception:
-            return value.decode('utf-8', errors='ignore')  # type: ignore[arg-type]
-    if isinstance(value, list):
-        parts = []
-        for item in value:
-            if item is None:
-                continue
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, (bytes, bytearray)):
-                try:
-                    parts.append(item.decode('utf-8'))  # type: ignore[arg-type]
-                except Exception:
-                    parts.append(item.decode('utf-8', errors='ignore'))  # type: ignore[arg-type]
-            else:
-                parts.append(str(item))
-        return ''.join(parts)
-    return str(value)
 
 
 @app.get("/api/packages")
@@ -272,7 +249,7 @@ class WebSocketManager:
             await self._send_error(websocket, "Invalid cell index.")
             return
 
-        source = _coerce_cell_source(self.notebook.cells[cell_index].get('source', ''))
+        source = coerce_cell_source(self.notebook.cells[cell_index].get('source', ''))
 
         await websocket.send_json({
             "type": "execution_start",
@@ -433,7 +410,6 @@ async def set_gpu_config(request: Request):
     try:
         body = await request.json()
         api_key = body.get("api_key", "").strip()
-
         if not api_key:
             raise HTTPException(status_code=400, detail="API key is required")
 
@@ -447,15 +423,11 @@ async def set_gpu_config(request: Request):
 
         # Remove any existing PRIME_INTELLECT_API_KEY lines
         new_lines = [line for line in existing_lines if not line.strip().startswith("PRIME_INTELLECT_API_KEY=")]
-
         # Add the new API key
         new_lines.append(f"PRIME_INTELLECT_API_KEY={api_key}\n")
-
         # Write back to .env
         with env_path.open("w", encoding="utf-8") as f:
             f.writelines(new_lines)
-
-        # Reinitialize the Prime Intellect service
         prime_intellect = PrimeIntellectService(api_key=api_key)
 
         return {"configured": True, "message": "API key saved successfully"}
@@ -476,16 +448,43 @@ async def get_gpu_availability(
     """Get available GPU resources from Prime Intellect."""
     if not prime_intellect:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
-    return await prime_intellect.get_gpu_availability(regions, gpu_count, gpu_type, security)
 
+    cache_key = make_cache_key(
+        "gpu_avail",
+        regions = regions,
+        gpu_count = gpu_count,
+        gpu_type = gpu_type,
+        security=security
+    )
+
+    if cache_key in gpu_cache:
+        return gpu_cache[cache_key]
+
+    #cache miss
+    result = await prime_intellect.get_gpu_availability(regions, gpu_count, gpu_type, security)
+    gpu_cache[cache_key] = result
+    return result
 
 @app.get("/api/gpu/pods")
 async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int = 0):
     """Get list of user's GPU pods."""
     if not prime_intellect:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
-    return await prime_intellect.get_pods(status, limit, offset)
 
+    cache_key = make_cache_key(
+        "gpu_pod",
+        status=status,
+        limit=limit,
+        offset=offset
+    )
+
+    if cache_key in pod_cache:
+        return pod_cache[cache_key]
+
+    # Cache miss: fetch from API
+    result = await prime_intellect.get_pods(status, limit, offset)
+    pod_cache[cache_key] = result
+    return result
 
 @app.post("/api/gpu/pods")
 async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
@@ -499,6 +498,8 @@ async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
     try:
         result = await prime_intellect.create_pod(pod_request)
         print(f"[CREATE POD] Success: {result}", file=sys.stderr, flush=True)
+        pod_cache.clear()
+
         return result
     except HTTPException as e:
         if e.status_code == 402:
@@ -514,9 +515,6 @@ async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
         else:
             print(f"[CREATE POD] Error: {e}", file=sys.stderr, flush=True)
             raise
-    except Exception as e:
-        print(f"[CREATE POD] Error: {e}", file=sys.stderr, flush=True)
-        raise
 
 
 @app.get("/api/gpu/pods/{pod_id}")
@@ -524,7 +522,15 @@ async def get_gpu_pod(pod_id: str) -> PodResponse:
     """Get details of a specific GPU pod."""
     if not prime_intellect:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
-    return await prime_intellect.get_pod(pod_id)
+
+    cache_key = make_cache_key("gpu_pod_detail", pod_id=pod_id)
+
+    if cache_key in pod_cache:
+        return pod_cache[cache_key]
+
+    result = await prime_intellect.get_pod(pod_id)
+    pod_cache[cache_key] = result
+    return result
 
 
 @app.delete("/api/gpu/pods/{pod_id}")
@@ -532,7 +538,10 @@ async def delete_gpu_pod(pod_id: str):
     """Delete a GPU pod."""
     if not prime_intellect:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
-    return await prime_intellect.delete_pod(pod_id)
+
+    result = await prime_intellect.delete_pod(pod_id)
+    pod_cache.clear()
+    return result
 
 
 @app.post("/api/gpu/pods/{pod_id}/connect")
