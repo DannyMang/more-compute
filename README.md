@@ -1,4 +1,4 @@
-#more-compute
+# more-compute
 An interactive notebook environment similar to Marimo and Google Colab that runs locally.
 
 For references:
