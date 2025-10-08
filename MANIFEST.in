@@ -1,2 +1,5 @@
 include README.md
 recursive-include morecompute/static *
+recursive-include frontend *
+prune frontend/node_modules
+prune frontend/.next

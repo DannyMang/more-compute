@@ -5,14 +5,17 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="more-compute",
-    version="0.1.0",
+    version="0.1.3",
     author="MoreCompute Team",
     author_email="hello@morecompute.dev",
     description="An interactive notebook environment for local and GPU computing",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/DannyMang/MORECOMPUTE",
-    packages=find_packages(),
+    packages=find_packages(include=["morecompute*", "frontend*"]),
+    package_data={
+        "frontend": ["**/*"],
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",

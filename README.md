@@ -16,7 +16,7 @@ pip install -e .
 
 ## Installation
 
-### Recommended: Using uv (fastest, auto-handles PATH)
+### Recommended: Using uv
 ```bash
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -28,7 +28,7 @@ uv tool install more-compute
 ### Alternative: Using pip
 ```bash
 pip install more-compute
-# If "command not found", run: python3 -m kernel_run new
+# you have to add to path manually
 ```
 
 ## Usage

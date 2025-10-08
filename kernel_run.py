@@ -223,6 +223,12 @@ class NotebookLauncher:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Launch the MoreCompute notebook")
     parser.add_argument(
+        "--version",
+        "-v",
+        action="version",
+        version="%(prog)s 0.1.3",
+    )
+    parser.add_argument(
         "notebook_path",
         nargs="?",
         default=None,

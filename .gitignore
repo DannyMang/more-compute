@@ -49,9 +49,10 @@ Thumbs.db
 # Logs
 *.log
 
-# TypeScript
+# TypeScript/Next.js
 node_modules/
 *.tsbuildinfo
+.next/
 
 # Temporary files
 *.tmp
