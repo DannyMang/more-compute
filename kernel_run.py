@@ -11,6 +11,7 @@ import webbrowser
 from pathlib import Path
 
 from morecompute.notebook import Notebook
+from morecompute.__version__ import __version__
 
 DEFAULT_NOTEBOOK_NAME = "notebook.ipynb"
 
@@ -226,7 +227,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--version",
         "-v",
         action="version",
-        version="%(prog)s 0.1.3",
+        version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
         "notebook_path",

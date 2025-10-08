@@ -1,11 +1,17 @@
 from setuptools import setup, find_packages
+from pathlib import Path
+
+# Read version from single source
+version = {}
+with open(Path(__file__).parent / "morecompute" / "__version__.py") as f:
+    exec(f.read(), version)
 
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
 
 setup(
     name="more-compute",
-    version="0.1.3",
+    version=version["__version__"],
     author="MoreCompute Team",
     author_email="hello@morecompute.dev",
     description="An interactive notebook environment for local and GPU computing",
