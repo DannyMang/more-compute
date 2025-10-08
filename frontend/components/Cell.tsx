@@ -131,6 +131,7 @@ export const Cell: React.FC<CellProps> = ({
 
   const handleExecute = () => {
     if (cell.cell_type === 'markdown') {
+      onExecute(indexRef.current);  // Call onExecute for save logic
       setIsEditing(false);
     } else {
       if (isExecuting) {

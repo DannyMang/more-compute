@@ -9,7 +9,6 @@ import signal
 import threading
 import webbrowser
 from pathlib import Path
-import json
 
 from morecompute.notebook import Notebook
 
@@ -25,18 +24,6 @@ class NotebookLauncher:
         root_dir = notebook_path.parent if notebook_path.parent != Path('') else Path.cwd()
         os.environ["MORECOMPUTE_ROOT"] = str(root_dir.resolve())
         os.environ["MORECOMPUTE_NOTEBOOK_PATH"] = str(self.notebook_path)
-        self.settings = self._load_settings(root_dir)
-
-    def _load_settings(self, root_dir: Path) -> dict:
-        """Load project-level settings from settings.json if present."""
-        try:
-            settings_path = (root_dir / "settings.json")
-            if settings_path.exists():
-                with settings_path.open("r", encoding="utf-8") as f:
-                    return json.load(f) or {}
-        except Exception:
-            pass
-        return {}
 
     def start_backend(self):
         """Start the FastAPI backend server"""
@@ -59,7 +46,6 @@ class NotebookLauncher:
             enable_reload = (
                 self.debug
                 or os.getenv("MORECOMPUTE_RELOAD", "0") == "1"
-                or bool(self.settings.get("backend_autoreload", False))
             )
             if enable_reload:
                 # Limit reload scope to backend code and exclude large/changing artifacts
@@ -268,8 +254,13 @@ def ensure_notebook_exists(notebook_path: Path):
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
-
     raw_notebook_path = args.notebook_path
+
+    if raw_notebook_path == "new":
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        raw_notebook_path = f"notebook_{timestamp}.ipynb"
+        print(f"Creating new notebook: {raw_notebook_path}")
 
     notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
     if raw_notebook_path is None:

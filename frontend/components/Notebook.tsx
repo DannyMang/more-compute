@@ -388,6 +388,36 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
     return () => ws.disconnect();
   }, [notebookName, handleKernelStatusUpdate, handleNotebookLoaded, handleNotebookUpdate, handleExecutionStart, handleStreamOutput, handleExecuteResult, handleExecutionComplete, handleExecutionError]);
 
+  // Simplified save management - only save on Ctrl+S or Run
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+
+  // Simple save function (defined BEFORE cell actions that use it)
+  const saveNotebook = useCallback(() => {
+    setSaveState('saving');
+    wsRef.current?.saveNotebook();
+
+    // Show "Saving..." for 500ms, then "Saved" for 2 seconds
+    setTimeout(() => {
+      setSaveState('saved');
+      setTimeout(() => {
+        setSaveState('idle');
+      }, 2000);
+    }, 500);
+  }, []);
+
+  // Keyboard shortcut (Cmd+S / Ctrl+S)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault();
+        saveNotebook();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [saveNotebook]);
+
   // --- Cell Actions ---
 
   const executeCell = useCallback((index: number) => {
@@ -395,12 +425,16 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
     if (!cell) return;
 
     if (cell.cell_type === 'markdown') {
+      // Save before rendering markdown
+      saveNotebook();
       // Markdown rendering is handled locally in Cell.tsx now
       return;
     }
-    
+
+    // Save before executing code
+    saveNotebook();
     wsRef.current?.executeCell(index, cell.source);
-  }, [cells]);
+  }, [cells, saveNotebook]);
 
   const interruptCell = useCallback((index: number) => {
     wsRef.current?.interruptKernel(index);
@@ -427,14 +461,37 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
     }
   };
 
-  const saveNotebook = () => {
-    wsRef.current?.saveNotebook();
-  };
-
   // --- Render ---
 
   return (
     <>
+      {/* Save Status Indicator - show saving and saved states */}
+      {saveState !== 'idle' && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            right: '20px',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontWeight: 500,
+            backgroundColor: saveState === 'saved' ? '#10b98114' : '#3b82f614',
+            color: saveState === 'saved' ? '#10b981' : '#3b82f6',
+            border: `1px solid ${saveState === 'saved' ? '#10b981' : '#3b82f6'}`,
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            zIndex: 1000,
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            animation: 'fadeIn 0.2s ease',
+          }}
+        >
+          {saveState === 'saving' && '⟳ Saving...'}
+          {saveState === 'saved' && '✓ Saved'}
+        </div>
+      )}
+
       {cells.map((cell, index) => (
         <CellComponent
           key={cell.id}
@@ -450,7 +507,7 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
           onAddCell={addCell}
         />
       ))}
-      
+
       {cells.length === 0 && (
         <div id="empty-state" className="empty-state">
             <div className="add-cell-line" data-position="0">

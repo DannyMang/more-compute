@@ -1,3 +1,2 @@
 include README.md
 recursive-include morecompute/static *
-recursive-include morecompute/templates *

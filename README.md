@@ -16,31 +16,44 @@ pip install -e .
 
 ## Installation
 
+### Recommended: Using uv (fastest, auto-handles PATH)
 ```bash
-(NOT IMPLEMENTED YET, TO-DO SET UP ON PyPi)
-pip install morecompute
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install more-compute
+uv tool install more-compute
+```
+
+### Alternative: Using pip
+```bash
+pip install more-compute
+# If "command not found", run: python3 -m kernel_run new
 ```
 
 ## Usage
 
 ### Create a new notebook
 ```bash
-kernel_run new
+more-compute new
 ```
-or
+This creates a timestamped notebook like `notebook_20241007_153302.ipynb`
+
+Or run directly:
 ```bash
 python3 kernel_run.py new
 ```
 
 ### Open an existing notebook
 ```bash
-kernel_run your_notebook.py
-# or
-python3 kernel_run.py your_notebook.py
-...
-kernel_run your_notebook.ipynb
-# or
-python3 kernel_run.py your_notebook.py
+# Open a specific notebook
+more-compute your_notebook.ipynb
+
+# Or run directly
+python3 kernel_run.py your_notebook.ipynb
+
+# If no path provided, opens default notebook
+more-compute
 ```
 
 ## Features

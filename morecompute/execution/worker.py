@@ -200,6 +200,11 @@ def worker_main():
                         if first_word in statement_keywords:
                             is_statement = True
 
+                        # Don't eval function calls - they were already executed by exec()
+                        # This prevents double execution of code like: what()
+                        if '(' in last and ')' in last:
+                            is_statement = True
+
                         if not is_statement:
                             try:
                                 res = eval(last, g, l)
