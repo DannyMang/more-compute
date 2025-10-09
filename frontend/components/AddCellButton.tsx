@@ -23,7 +23,6 @@ export const AddCellButton: React.FC<AddCellButtonProps> = ({ onAddCell }) => {
           onClick={(e) => handleAdd('code', e)}
         >
           <CodeIcon className="w-4 h-4" />
-          <span>Code</span>
         </button>
         <button
           type="button"
@@ -32,7 +31,6 @@ export const AddCellButton: React.FC<AddCellButtonProps> = ({ onAddCell }) => {
           onClick={(e) => handleAdd('markdown', e)}
         >
           <TextIcon className="w-4 h-4" />
-          <span>Text</span>
         </button>
       </div>
     </div>
