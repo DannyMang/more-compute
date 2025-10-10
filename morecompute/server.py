@@ -18,6 +18,7 @@ from .utils.cache_util import make_cache_key
 from .utils.notebook_util import coerce_cell_source
 from .services.prime_intellect import PrimeIntellectService, CreatePodRequest, PodResponse
 from .services.pod_manager import PodKernelManager
+from .services.data_manager import DataManager
 
 
 BASE_DIR = Path(os.getenv("MORECOMPUTE_ROOT", Path.cwd())).resolve()
@@ -73,6 +74,9 @@ if not prime_api_key:
 
 prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
 pod_manager: PodKernelManager | None = None
+
+# Initialize DataManager with Prime Intellect integration
+data_manager = DataManager(prime_intellect=prime_intellect)
 
 
 @app.get("/api/packages")
@@ -639,3 +643,174 @@ async def get_pod_connection_status():
         return {"connected": False, "pod": None}
 
     return await pod_manager.get_status()
+
+
+# Dataset Management API
+@app.get("/api/datasets/info")
+async def get_dataset_info(name: str, config: str | None = None):
+    """
+    Get dataset metadata without downloading.
+
+    Args:
+        name: HuggingFace dataset name (e.g., "openai/gsm8k")
+        config: Optional dataset configuration
+
+    Returns:
+        Dataset metadata including size, splits, features
+    """
+    try:
+        info = data_manager.get_dataset_info(name, config)
+        return {
+            "name": info.name,
+            "size_gb": info.size_gb,
+            "splits": info.splits,
+            "features": info.features
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to get dataset info: {exc}")
+
+
+@app.post("/api/datasets/check")
+async def check_dataset_load(request: Request):
+    """
+    Check if dataset can be loaded and get recommendations.
+
+    Body:
+        name: Dataset name
+        config: Optional configuration
+        split: Optional split
+        auto_stream_threshold_gb: Threshold for auto-streaming (default: 10)
+
+    Returns:
+        Dict with action, recommendation, import_code, alternatives
+    """
+    try:
+        body = await request.json()
+        name = body.get("name")
+        config = body.get("config")
+        split = body.get("split")
+        threshold = body.get("auto_stream_threshold_gb", 10.0)
+
+        if not name:
+            raise HTTPException(status_code=400, detail="Dataset name is required")
+
+        result = await data_manager.load_smart(
+            dataset_name=name,
+            config=config,
+            split=split,
+            auto_stream_threshold_gb=threshold
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to check dataset: {exc}")
+
+
+@app.get("/api/datasets/cache")
+async def list_cached_datasets():
+    """
+    List all cached datasets.
+
+    Returns:
+        List of cached datasets with name, size, path
+    """
+    try:
+        datasets = data_manager.list_cached_datasets()
+        cache_size = data_manager.get_cache_size()
+        return {
+            "datasets": datasets,
+            "total_cache_size_gb": cache_size,
+            "max_cache_size_gb": data_manager.max_cache_size_gb
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to list cache: {exc}")
+
+
+@app.delete("/api/datasets/cache/{dataset_id}")
+async def clear_dataset_cache(dataset_id: str):
+    """
+    Clear specific dataset from cache.
+
+    Args:
+        dataset_id: Dataset identifier (or "all" to clear everything)
+    """
+    try:
+        if dataset_id == "all":
+            result = data_manager.clear_cache(None)
+        else:
+            result = data_manager.clear_cache(dataset_id)
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {exc}")
+
+
+@app.post("/api/datasets/disk/create")
+async def create_dataset_disk(request: Request):
+    """
+    Create disk for large dataset via Prime Intellect.
+
+    Body:
+        pod_id: Pod to attach disk to
+        disk_name: Human-readable name for the disk
+        size_gb: Disk size in GB
+        provider_type: Cloud provider (default: "runpod")
+
+    Returns:
+        Dict with disk_id, mount_path, instructions
+    """
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API not configured")
+
+    try:
+        body = await request.json()
+        pod_id = body.get("pod_id")
+        disk_name = body.get("disk_name")
+        size_gb = body.get("size_gb")
+        provider_type = body.get("provider_type", "runpod")
+
+        if not pod_id or not disk_name or not size_gb:
+            raise HTTPException(status_code=400, detail="pod_id, disk_name, and size_gb are required")
+
+        result = await data_manager.create_and_attach_disk(
+            pod_id=pod_id,
+            disk_name=disk_name,
+            size_gb=int(size_gb),
+            provider_type=provider_type
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create disk: {exc}")
+
+
+@app.get("/api/datasets/subset")
+async def get_subset_code(
+    name: str,
+    num_samples: int = 1000,
+    split: str = "train",
+    config: str | None = None
+):
+    """
+    Get code to load a dataset subset for testing.
+
+    Args:
+        name: Dataset name
+        num_samples: Number of samples to load (default: 1000)
+        split: Which split to use (default: "train")
+        config: Optional configuration
+
+    Returns:
+        Dict with import_code and recommendation
+    """
+    try:
+        result = data_manager.load_subset(
+            dataset_name=name,
+            num_samples=num_samples,
+            split=split,
+            config=config
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate subset code: {exc}")
