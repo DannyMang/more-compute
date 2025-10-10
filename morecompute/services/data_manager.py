@@ -10,11 +10,11 @@ class DatasetInfo:
     """
     container for dataset metadata
     """
-    def __init__(self, name:str, size_gb: float | None, splits: dict, features: dict):
+    def __init__(self, name: str, size_gb: float | None = None, splits: dict | None = None, features: dict | None = None):
         self.name = name
         self.size_gb = size_gb
-        self.splits = splits
-        self.features=features
+        self.splits = splits if splits is not None else {}
+        self.features = features if features is not None else {}
 
 class DataManager:
     """
@@ -65,12 +65,7 @@ class DataManager:
             )
         except Exception as e:
             #fallback to return unknown size
-            return DatasetInfo(
-                name=dataset_name,
-                size_gb=None,
-                splits={},
-                features={}
-            )
+            return DatasetInfo(name=dataset_name)
 
     def check_environment(self) -> dict[str, object]:
         """

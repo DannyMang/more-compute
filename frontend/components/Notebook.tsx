@@ -284,13 +284,30 @@ interface NotebookProps {
   notebookName?: string;
 }
 
+// Deletion queue for undo functionality
+interface DeletedCell {
+  cell: Cell;
+  index: number;
+  timestamp: number;
+}
+
 export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) => {
   const [state, dispatch] = useReducer(notebookReducer, initialState);
   const { cells, executingCells } = state;
-  
+
   const [currentCellIndex, setCurrentCellIndex] = useState<number | null>(null);
   const [kernelStatus, setKernelStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const wsRef = useRef<WebSocketService | null>(null);
+
+  // Deletion queue for undo functionality (lasts entire session, cleared on close)
+  const deletionQueueRef = useRef<DeletedCell[]>([]);
+  const [showUndoHint, setShowUndoHint] = useState(false);
+
+  // DEBUG: Verify new code is loaded
+  useEffect(() => {
+    console.log('✅ NEW NOTEBOOK CODE LOADED - Undo functionality available');
+    console.log('Deletion queue initialized:', deletionQueueRef.current);
+  }, []);
 
   useEffect(() => {
     const body = document.body;
@@ -405,18 +422,49 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
     }, 500);
   }, []);
 
-  // Keyboard shortcut (Cmd+S / Ctrl+S)
+  // Undo delete function (defined BEFORE keyboard shortcut that uses it)
+  const undoDelete = useCallback(() => {
+    const deletedCell = deletionQueueRef.current.shift(); // Get most recent deletion
+    if (!deletedCell) {
+      console.log('No deletions to undo');
+      return;
+    }
+
+    // Hide undo hint when user actually undoes
+    setShowUndoHint(false);
+
+    // Add the cell back at its original index with its original source
+    wsRef.current?.addCell(deletedCell.index, deletedCell.cell.cell_type, deletedCell.cell.source);
+  }, []);
+
+  // Keyboard shortcuts (Cmd+S / Ctrl+S for save, Ctrl+Z for undo)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 's') {
         e.preventDefault();
+        e.stopPropagation();
         saveNotebook();
+      }
+      // Only intercept Ctrl+Z for cell deletion undo (not editor undo)
+      // Check if we have deletions in queue and we're not focused in an editor
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+        const hasDeletions = deletionQueueRef.current.length > 0;
+        const target = e.target as HTMLElement;
+        const isInEditor = target.closest('.cm-editor') || target.tagName === 'TEXTAREA' || target.tagName === 'INPUT';
+
+        // If we have deletions and NOT in an editor, intercept for cell undo
+        if (hasDeletions && !isInEditor) {
+          e.preventDefault();
+          e.stopPropagation();
+          undoDelete();
+        }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [saveNotebook]);
+    // Use capture phase to intercept before CodeMirror
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [saveNotebook, undoDelete]);
 
   // --- Cell Actions ---
 
@@ -441,8 +489,25 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
   }, []);
 
   const deleteCell = useCallback((index: number) => {
+    const cell = cells[index];
+    if (!cell) return;
+
+    // Add to deletion queue before deleting
+    const deletedCell: DeletedCell = {
+      cell: { ...cell },
+      index,
+      timestamp: Date.now(),
+    };
+
+    // Add to front of queue (most recent first)
+    deletionQueueRef.current.unshift(deletedCell);
+
+    // Show undo hint
+    setShowUndoHint(true);
+    setTimeout(() => setShowUndoHint(false), 5000); // Hide after 5 seconds
+
     wsRef.current?.deleteCell(index);
-  }, []);
+  }, [cells]);
 
   const updateCell = useCallback((index: number, source: string) => {
     dispatch({ type: 'UPDATE_CELL_SOURCE', payload: { cell_index: index, source } });
@@ -489,6 +554,32 @@ export const Notebook: React.FC<NotebookProps> = ({ notebookName = 'default' }) 
         >
           {saveState === 'saving' && '⟳ Saving...'}
           {saveState === 'saved' && '✓ Saved'}
+        </div>
+      )}
+
+      {/* Undo Hint - show when cells are deleted */}
+      {showUndoHint && (
+        <div
+          style={{
+            position: 'fixed',
+            bottom: '20px',
+            left: '20px',
+            padding: '8px 14px',
+            borderRadius: '8px',
+            fontSize: '12px',
+            fontWeight: 500,
+            backgroundColor: '#f59e0b14',
+            color: '#f59e0b',
+            border: '1px solid #f59e0b',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            zIndex: 1000,
+            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.1)',
+            animation: 'fadeIn 0.2s ease',
+          }}
+        >
+          Cell deleted. Press {navigator.platform.includes('Mac') ? '⌘Z' : 'Ctrl+Z'} to undo
         </div>
       )}
 

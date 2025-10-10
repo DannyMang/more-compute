@@ -3,6 +3,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPExcept
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 import os
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 import importlib.metadata as importlib_metadata
@@ -77,6 +78,9 @@ pod_manager: PodKernelManager | None = None
 
 # Initialize DataManager with Prime Intellect integration
 data_manager = DataManager(prime_intellect=prime_intellect)
+
+# Pod monitoring tasks - track background status monitoring
+pod_monitoring_tasks: dict[str, asyncio.Task] = {}
 
 
 @app.get("/api/packages")
@@ -237,6 +241,14 @@ class WebSocketManager:
                 "type": "notebook_updated",
                 "data": updated_data
             })
+
+    async def broadcast_pod_update(self, message: dict):
+        """Broadcast pod status updates to all connected clients."""
+        for client in self.clients:
+            try:
+                await client.send_json(message)
+            except Exception:
+                pass
 
     async def handle_message_loop(self, websocket: WebSocket):
         """Main loop to handle incoming WebSocket messages."""
@@ -515,6 +527,59 @@ async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int 
     pod_cache[cache_key] = result
     return result
 
+
+# Pod monitoring function
+async def monitor_pod_status(pod_id: str):
+    """
+    Monitor pod status and push updates via WebSocket.
+    Runs until pod reaches terminal state (ACTIVE, ERROR, TERMINATED).
+    """
+    import sys
+    print(f"[POD MONITOR] Starting monitoring for pod {pod_id}", file=sys.stderr, flush=True)
+
+    try:
+        while True:
+            try:
+                # Direct API call - bypasses cache for real-time status
+                pod = await prime_intellect.get_pod(pod_id)
+
+                print(f"[POD MONITOR] Pod {pod_id} status: {pod.status}", file=sys.stderr, flush=True)
+
+                # Clear pod cache to force fresh data on next API request
+                pod_cache.clear()
+
+                # Broadcast status update to all connected WebSocket clients
+                await manager.broadcast_pod_update({
+                    "type": "pod_status_update",
+                    "data": {
+                        "pod_id": pod_id,
+                        "name": pod.name,
+                        "status": pod.status,
+                        "ssh_connection": pod.sshConnection,
+                        "ip": pod.ip,
+                        "gpu_name": pod.gpuName,
+                        "price_hr": pod.priceHr
+                    }
+                })
+
+                # Stop monitoring when pod reaches terminal state
+                if pod.status in ["ACTIVE", "ERROR", "TERMINATED"]:
+                    print(f"[POD MONITOR] Pod {pod_id} reached terminal state: {pod.status}", file=sys.stderr, flush=True)
+                    break
+
+                # Check every 5 seconds
+                await asyncio.sleep(5)
+
+            except Exception as e:
+                print(f"[POD MONITOR] Error checking pod {pod_id}: {e}", file=sys.stderr, flush=True)
+                await asyncio.sleep(5)
+
+    finally:
+        # Clean up task from tracking dict
+        pod_monitoring_tasks.pop(pod_id, None)
+        print(f"[POD MONITOR] Stopped monitoring pod {pod_id}", file=sys.stderr, flush=True)
+
+
 @app.post("/api/gpu/pods")
 async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
     """Create a new GPU pod."""
@@ -528,6 +593,9 @@ async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
         result = await prime_intellect.create_pod(pod_request)
         print(f"[CREATE POD] Success: {result}", file=sys.stderr, flush=True)
         pod_cache.clear()
+        task = asyncio.create_task(monitor_pod_status(result.id))
+        pod_monitoring_tasks[result.id] = task
+        print(f"[CREATE POD] Started monitoring task for pod {result.id}", file=sys.stderr, flush=True)
 
         return result
     except HTTPException as e:

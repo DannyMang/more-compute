@@ -34,6 +34,7 @@ interface GPUPod {
   gpuType: string;
   region: string;
   costPerHour: number;
+  sshConnection: string | null;
 }
 
 interface ComputePopupProps {
@@ -97,14 +98,80 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     };
     checkApiConfig();
 
-    // Poll pod list every 10 seconds if configured
-    const pollInterval = setInterval(async () => {
-      if (apiConfigured) {
-        await loadGPUPods();
-      }
-    }, 10000);
+    // Connect to WebSocket for real-time pod status updates
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const ws = new WebSocket(wsUrl);
 
-    return () => clearInterval(pollInterval);
+    ws.onopen = () => {
+      console.log("WebSocket connected for pod status updates");
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === "pod_status_update" && message.data) {
+          const podData = message.data;
+
+          // Map API status to UI status
+          // Pod must be ACTIVE *and* have SSH connection info to be "running"
+          let uiStatus: "running" | "stopped" | "starting" = "stopped";
+          if (podData.status === "ACTIVE" && podData.ssh_connection) {
+            uiStatus = "running";
+          } else if (podData.status === "ACTIVE" || podData.status === "PROVISIONING" || podData.status === "PENDING") {
+            uiStatus = "starting";
+          }
+
+          // Update pod in the list
+          setGpuPods((prevPods) => {
+            const existingPodIndex = prevPods.findIndex((p) => p.id === podData.pod_id);
+
+            if (existingPodIndex >= 0) {
+              // Update existing pod
+              const updatedPods = [...prevPods];
+              updatedPods[existingPodIndex] = {
+                id: podData.pod_id,
+                name: podData.name,
+                status: uiStatus,
+                gpuType: podData.gpu_name,
+                region: prevPods[existingPodIndex].region, // Keep existing region
+                costPerHour: podData.price_hr,
+                sshConnection: podData.ssh_connection || null,
+              };
+              return updatedPods;
+            } else {
+              // Add new pod if not in list
+              return [
+                ...prevPods,
+                {
+                  id: podData.pod_id,
+                  name: podData.name,
+                  status: uiStatus,
+                  gpuType: podData.gpu_name,
+                  region: "Unknown",
+                  costPerHour: podData.price_hr,
+                  sshConnection: podData.ssh_connection || null,
+                },
+              ];
+            }
+          });
+        }
+      } catch (err) {
+        console.error("Failed to parse WebSocket message:", err);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error("WebSocket error:", error);
+    };
+
+    ws.onclose = () => {
+      console.log("WebSocket disconnected");
+    };
+
+    return () => {
+      ws.close();
+    };
   }, [apiConfigured]);
 
   const loadGPUPods = async (params?: PodsListParams) => {
@@ -113,10 +180,11 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       const response = await fetchGpuPods(params || { limit: 100 });
       const pods = (response.data || []).map((pod: PodResponse) => {
         // Map API status to UI status
+        // Pod must be ACTIVE *and* have SSH connection info to be "running"
         let uiStatus: "running" | "stopped" | "starting" = "stopped";
-        if (pod.status === "ACTIVE") {
+        if (pod.status === "ACTIVE" && pod.sshConnection) {
           uiStatus = "running";
-        } else if (pod.status === "PROVISIONING" || pod.status === "PENDING") {
+        } else if (pod.status === "ACTIVE" || pod.status === "PROVISIONING" || pod.status === "PENDING") {
           uiStatus = "starting";
         }
 
@@ -127,6 +195,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
           gpuType: pod.gpuName,
           region: "Unknown", //look at later
           costPerHour: pod.priceHr,
+          sshConnection: pod.sshConnection,
         };
       });
       setGpuPods(pods);
