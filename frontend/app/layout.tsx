@@ -5,7 +5,6 @@ import Script from "next/script";
 import Sidebar from "@/components/Sidebar";
 import FolderPopup from "@/components/popups/FolderPopup";
 import PackagesPopup from "@/components/popups/PackagesPopup";
-import PythonPopup from "@/components/popups/PythonPopup";
 import ComputePopup from "@/components/popups/ComputePopup";
 import MetricsPopup from "@/components/popups/MetricsPopup";
 import SettingsPopup from "@/components/popups/SettingsPopup";
@@ -17,17 +16,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   const [appSettings, setAppSettings] = useState({});
-  const [pythonEnvironment, setPythonEnvironment] = useState(null);
   const [activePopup, setActivePopup] = useState<string | null>(null);
 
   const handleSettingsChange = (settings: any) => {
     console.log("Settings updated:", settings);
     setAppSettings(settings);
-  };
-
-  const handleEnvironmentSwitch = (env: any) => {
-    console.log("Switching to environment:", env);
-    setPythonEnvironment(env);
   };
 
   const togglePopup = (popupType: string) => {
@@ -47,13 +40,6 @@ export default function RootLayout({
         return <FolderPopup {...props} />;
       case "packages":
         return <PackagesPopup {...props} />;
-      case "python":
-        return (
-          <PythonPopup
-            {...props}
-            onEnvironmentSwitch={handleEnvironmentSwitch}
-          />
-        );
       case "compute":
         return <ComputePopup {...props} />;
       case "metrics":
@@ -73,8 +59,6 @@ export default function RootLayout({
         return "Files";
       case "packages":
         return "Packages";
-      case "python":
-        return "Python Environment";
       case "compute":
         return "Compute Resources";
       case "metrics":
