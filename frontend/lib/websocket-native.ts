@@ -158,11 +158,12 @@ export class WebSocketService {
   }
 
   // Cell operations
-  addCell(index: number, cellType: 'code' | 'markdown', source: string = '') {
+  addCell(index: number, cellType: 'code' | 'markdown', source: string = '', fullCell?: any) {
     this.send('add_cell', {
       index,
       cell_type: cellType,
       source,
+      full_cell: fullCell,
     });
   }
 

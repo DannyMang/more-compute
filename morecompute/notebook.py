@@ -18,8 +18,19 @@ class Notebook:
     def get_notebook_data(self) -> Dict[str, Any]:
         return {"cells": self.cells, "metadata": self.metadata, "file_path": self.file_path}
 
-    def add_cell(self, index: int, cell_type: str = 'code', source: str = ''):
-        new_cell = {'id': self._generate_cell_id(), 'cell_type': cell_type, 'source': source, 'outputs': []}
+    def add_cell(self, index: int, cell_type: str = 'code', source: str = '', full_cell: dict = None):
+        if full_cell:
+            new_cell = {
+                'id': full_cell.get('id', self._generate_cell_id()),
+                'cell_type': full_cell.get('cell_type', cell_type),
+                'source': full_cell.get('source', source),
+                'outputs': full_cell.get('outputs', []),
+                'execution_count': full_cell.get('execution_count'),
+                'metadata': full_cell.get('metadata', {}),
+            }
+        else:
+            # Normal new cell creation
+            new_cell = {'id': self._generate_cell_id(), 'cell_type': cell_type, 'source': source, 'outputs': []}
         self.cells.insert(index, new_cell)
 
     def delete_cell(self, index: int):
@@ -72,7 +83,7 @@ class Notebook:
         path_to_save = file_path or self.file_path
         if not path_to_save:
             raise ValueError("No file path specified for saving.")
-        
+
         with open(path_to_save, 'w') as f:
             f.write(self.to_json())
         self.file_path = path_to_save

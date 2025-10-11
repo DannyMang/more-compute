@@ -1,106 +1,14 @@
-from pydantic import BaseModel
-from datetime import datetime
 import httpx
 from fastapi import HTTPException
 
-#helper methods for https://docs.primeintellect.ai/api-reference/
+from ..models.api_models import (
+    CreatePodRequest,
+    CreateDiskRequest,
+    PodResponse,
+    DiskResponse,
+)
 
-class EnvVar(BaseModel):
-    key: str
-    value: str
-
-class PodConfig(BaseModel):
-    # Required fields
-    name: str
-    cloudId: str
-    gpuType: str
-    socket: str
-    gpuCount: int = 1
-
-    # Optional
-    diskSize: int | None = None
-    vcpus: int | None = None
-    memory: int | None = None
-    maxPrice: float | None = None
-    image: str | None = None
-    customTemplateId: str | None = None
-    dataCenterId: str | None = None
-    country: str | None = None
-    security: str | None = None
-    envVars: list[EnvVar] | None = None
-    jupyterPassword: str | None = None
-    autoRestart: bool | None = None
-
-
-class ProviderConfig(BaseModel):
-    type: str = "runpod"
-
-
-class TeamConfig(BaseModel):
-    teamId: str | None = None
-
-
-class CreatePodRequest(BaseModel):
-    pod: PodConfig
-    provider: ProviderConfig
-    team: TeamConfig | None = None
-
-
-class DiskConfig(BaseModel):
-    name: str
-    size: int  # Size in GB
-    cloudId: str | None = None
-    dataCenterId: str | None = None
-    country: str | None = None
-
-
-class CreateDiskRequest(BaseModel):
-    disk: DiskConfig
-    provider: ProviderConfig
-    team: TeamConfig | None = None
-
-
-class DiskResponse(BaseModel):
-    id: str
-    name: str
-    remoteId: str
-    providerType: str
-    status: str
-    size: int
-    createdAt: datetime
-    updatedAt: datetime
-    terminatedAt: datetime | None
-    priceHr: float | None
-    stoppedPriceHr: float | None
-    provisioningPriceHr: float | None
-    userId: str | None
-    teamId: str | None
-    walletId: str | None
-    pods: list[str]
-    clusters: list[str]
-    info: dict[str, object] | None
-
-
-class PodResponse(BaseModel):
-    id: str
-    userId: str
-    teamId: str | None
-    name: str
-    status: str
-    gpuName: str
-    gpuCount: int
-    priceHr: float
-    sshConnection: str | None
-    ip: str | None
-    createdAt: datetime
-    updatedAt: datetime
-
-
-class AvailabilityQuery(BaseModel):
-    regions: list[str] | None = None
-    gpu_count: int | None = None
-    gpu_type: str | None = None
-    security: str | None = None
+# Helper methods for https://docs.primeintellect.ai/api-reference/
 
 
 class PrimeIntellectService:

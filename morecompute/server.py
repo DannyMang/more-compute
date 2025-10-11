@@ -17,9 +17,19 @@ from .utils.system_environment_util import DeviceMetrics
 from .utils.error_utils import ErrorUtils
 from .utils.cache_util import make_cache_key
 from .utils.notebook_util import coerce_cell_source
-from .services.prime_intellect import PrimeIntellectService, CreatePodRequest, PodResponse
+from .utils.config_util import load_api_key_from_env, save_api_key_to_env
+from .utils.zmq_util import reconnect_zmq_sockets, reset_to_local_zmq
+from .services.prime_intellect import PrimeIntellectService
 from .services.pod_manager import PodKernelManager
 from .services.data_manager import DataManager
+from .services.pod_monitor import PodMonitor
+from .models.api_models import (
+    ApiKeyRequest,
+    ApiKeyResponse,
+    ConfigStatusResponse,
+    CreatePodRequest,
+    PodResponse,
+)
 
 
 BASE_DIR = Path(os.getenv("MORECOMPUTE_ROOT", Path.cwd())).resolve()
@@ -47,7 +57,6 @@ environments_cache = TTLCache(maxsize=1, ttl=300)  # 5 minutes cache for environ
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
-# Global instances for the application state
 notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
 if notebook_path_env:
     notebook = Notebook(file_path=notebook_path_env)
@@ -56,31 +65,17 @@ else:
 error_utils = ErrorUtils()
 executor = NextZmqExecutor(error_utils=error_utils)
 metrics = DeviceMetrics()
-
-# Initialize Prime Intellect service if API key is provided
-# Check environment variable first, then .env file (commonly gitignored)
-prime_api_key = os.getenv("PRIME_INTELLECT_API_KEY")
-if not prime_api_key:
-    env_path = BASE_DIR / ".env"
-    if env_path.exists():
-        try:
-            with env_path.open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("PRIME_INTELLECT_API_KEY="):
-                        prime_api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        break
-        except Exception:
-            pass
-
+prime_api_key = load_api_key_from_env("PRIME_INTELLECT_API_KEY", BASE_DIR / ".env")
 prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
 pod_manager: PodKernelManager | None = None
-
-# Initialize DataManager with Prime Intellect integration
 data_manager = DataManager(prime_intellect=prime_intellect)
-
-# Pod monitoring tasks - track background status monitoring
-pod_monitoring_tasks: dict[str, asyncio.Task] = {}
+pod_monitor: PodMonitor | None = None
+if prime_intellect:
+    pod_monitor = PodMonitor(
+        prime_intellect=prime_intellect,
+        pod_cache=pod_cache,
+        update_callback=lambda msg: manager.broadcast_pod_update(msg)
+    )
 
 
 @app.get("/api/packages")
@@ -335,7 +330,15 @@ class WebSocketManager:
     async def _handle_add_cell(self, websocket: WebSocket, data: dict):
         index = data.get('index', len(self.notebook.cells))
         cell_type = data.get('cell_type', 'code')
-        self.notebook.add_cell(index=index, cell_type=cell_type)
+        source = data.get('source', '')
+        full_cell = data.get('full_cell')
+
+        if full_cell:
+            # Restore full cell data (for undo functionality)
+            self.notebook.add_cell(index=index, cell_type=cell_type, source=source, full_cell=full_cell)
+        else:
+            # Normal add cell
+            self.notebook.add_cell(index=index, cell_type=cell_type, source=source)
         await self.broadcast_notebook_update()
 
     async def _handle_delete_cell(self, websocket: WebSocket, data: dict):
@@ -436,45 +439,35 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.handle_message_loop(websocket)
 
 
-#gpu connection api
-@app.get("/api/gpu/config")
-async def get_gpu_config():
+# GPU connection API
+@app.get("/api/gpu/config", response_model=ConfigStatusResponse)
+async def get_gpu_config() -> ConfigStatusResponse:
     """Check if Prime Intellect API is configured."""
-    return {"configured": prime_intellect is not None}
+    return ConfigStatusResponse(configured=prime_intellect is not None)
 
 
-@app.post("/api/gpu/config")
-async def set_gpu_config(request: Request):
-    """Save Prime Intellect API key to .env file (commonly gitignored) and reinitialize service."""
-    global prime_intellect
+@app.post("/api/gpu/config", response_model=ApiKeyResponse)
+async def set_gpu_config(request: ApiKeyRequest) -> ApiKeyResponse:
+    """Save Prime Intellect API key to .env file and reinitialize service."""
+    global prime_intellect, pod_monitor
+
+    if not request.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key is required")
 
     try:
-        body = await request.json()
-        api_key = body.get("api_key", "").strip()
-        if not api_key:
-            raise HTTPException(status_code=400, detail="API key is required")
+        save_api_key_to_env("PRIME_INTELLECT_API_KEY", request.api_key, BASE_DIR / ".env")
+        prime_intellect = PrimeIntellectService(api_key=request.api_key)
+        if prime_intellect:
+            pod_monitor = PodMonitor(
+                prime_intellect=prime_intellect,
+                pod_cache=pod_cache,
+                update_callback=lambda msg: manager.broadcast_pod_update(msg)
+            )
 
-        env_path = BASE_DIR / ".env"
+        return ApiKeyResponse(configured=True, message="API key saved successfully")
 
-        # Read existing .env content
-        existing_lines = []
-        if env_path.exists():
-            with env_path.open("r", encoding="utf-8") as f:
-                existing_lines = f.readlines()
-
-        # Remove any existing PRIME_INTELLECT_API_KEY lines
-        new_lines = [line for line in existing_lines if not line.strip().startswith("PRIME_INTELLECT_API_KEY=")]
-        # Add the new API key
-        new_lines.append(f"PRIME_INTELLECT_API_KEY={api_key}\n")
-        # Write back to .env
-        with env_path.open("w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-        prime_intellect = PrimeIntellectService(api_key=api_key)
-
-        return {"configured": True, "message": "API key saved successfully"}
-
-    except HTTPException:
-        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to save API key: {exc}")
 
@@ -528,83 +521,33 @@ async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int 
     return result
 
 
-# Pod monitoring function
-async def monitor_pod_status(pod_id: str):
-    """
-    Monitor pod status and push updates via WebSocket.
-    Runs until pod reaches terminal state (ACTIVE, ERROR, TERMINATED).
-    """
-    import sys
-    print(f"[POD MONITOR] Starting monitoring for pod {pod_id}", file=sys.stderr, flush=True)
-
-    try:
-        while True:
-            try:
-                # Direct API call - bypasses cache for real-time status
-                pod = await prime_intellect.get_pod(pod_id)
-
-                print(f"[POD MONITOR] Pod {pod_id} status: {pod.status}", file=sys.stderr, flush=True)
-
-                # Clear pod cache to force fresh data on next API request
-                pod_cache.clear()
-
-                # Broadcast status update to all connected WebSocket clients
-                await manager.broadcast_pod_update({
-                    "type": "pod_status_update",
-                    "data": {
-                        "pod_id": pod_id,
-                        "name": pod.name,
-                        "status": pod.status,
-                        "ssh_connection": pod.sshConnection,
-                        "ip": pod.ip,
-                        "gpu_name": pod.gpuName,
-                        "price_hr": pod.priceHr
-                    }
-                })
-
-                # Stop monitoring when pod reaches terminal state
-                if pod.status in ["ACTIVE", "ERROR", "TERMINATED"]:
-                    print(f"[POD MONITOR] Pod {pod_id} reached terminal state: {pod.status}", file=sys.stderr, flush=True)
-                    break
-
-                # Check every 5 seconds
-                await asyncio.sleep(5)
-
-            except Exception as e:
-                print(f"[POD MONITOR] Error checking pod {pod_id}: {e}", file=sys.stderr, flush=True)
-                await asyncio.sleep(5)
-
-    finally:
-        # Clean up task from tracking dict
-        pod_monitoring_tasks.pop(pod_id, None)
-        print(f"[POD MONITOR] Stopped monitoring pod {pod_id}", file=sys.stderr, flush=True)
-
-
 @app.post("/api/gpu/pods")
 async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
     """Create a new GPU pod."""
     import sys
-    print(f"[CREATE POD] Received request: {pod_request.model_dump()}", file=sys.stderr, flush=True)
 
-    if not prime_intellect:
+    if not prime_intellect or not pod_monitor:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+
+    print(f"[CREATE POD] Received request: {pod_request.model_dump()}", file=sys.stderr, flush=True)
 
     try:
         result = await prime_intellect.create_pod(pod_request)
         print(f"[CREATE POD] Success: {result}", file=sys.stderr, flush=True)
+
+        # Clear cache and start monitoring
         pod_cache.clear()
-        task = asyncio.create_task(monitor_pod_status(result.id))
-        pod_monitoring_tasks[result.id] = task
-        print(f"[CREATE POD] Started monitoring task for pod {result.id}", file=sys.stderr, flush=True)
+        await pod_monitor.start_monitoring(result.id)
 
         return result
+
     except HTTPException as e:
         if e.status_code == 402:
             raise HTTPException(
                 status_code=402,
                 detail="Insufficient funds in your Prime Intellect wallet. Please add credits at https://app.primeintellect.ai/dashboard/billing"
             )
-        elif e.status_code == 401 or e.status_code == 403:
+        elif e.status_code in (401, 403):
             raise HTTPException(
                 status_code=e.status_code,
                 detail="Authentication failed. Please check your Prime Intellect API key."
@@ -648,10 +591,11 @@ async def connect_to_pod(pod_id: str):
 
     if not prime_intellect:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+
     if pod_manager is None:
         pod_manager = PodKernelManager(pi_service=prime_intellect)
 
-    # Disconnect from any existing pod first, may need to fix later for multi-pod
+    # Disconnect from any existing pod first
     if pod_manager.pod is not None:
         await pod_manager.disconnect()
 
@@ -661,18 +605,11 @@ async def connect_to_pod(pod_id: str):
     if result.get("status") == "ok":
         pod_manager.attach_executor(executor)
         addresses = pod_manager.get_executor_addresses()
-        executor.cmd_addr = addresses["cmd_addr"]
-        executor.pub_addr = addresses["pub_addr"]
-
-        # Reconnect executor sockets to tunneled ports
-        executor.req.close(0)  # type: ignore[reportAttributeAccessIssue]
-        executor.req = executor.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-        executor.req.connect(executor.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
-
-        executor.sub.close(0)  # type: ignore[reportAttributeAccessIssue]
-        executor.sub = executor.ctx.socket(zmq.SUB)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-        executor.sub.connect(executor.pub_addr)  # type: ignore[reportAttributeAccessIssue]
-        executor.sub.setsockopt_string(zmq.SUBSCRIBE, '')  # type: ignore[reportAttributeAccessIssue]
+        reconnect_zmq_sockets(
+            executor,
+            cmd_addr=addresses["cmd_addr"],
+            pub_addr=addresses["pub_addr"]
+        )
 
     return result
 
@@ -688,18 +625,7 @@ async def disconnect_from_pod():
     result = await pod_manager.disconnect()
 
     # Reset executor to local addresses
-    executor.cmd_addr = os.getenv('MC_ZMQ_CMD_ADDR', 'tcp://127.0.0.1:5555')
-    executor.pub_addr = os.getenv('MC_ZMQ_PUB_ADDR', 'tcp://127.0.0.1:5556')
-
-    # Reconnect to local worker
-    executor.req.close(0)  # type: ignore[reportAttributeAccessIssue]
-    executor.req = executor.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-    executor.req.connect(executor.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
-
-    executor.sub.close(0)  # type: ignore[reportAttributeAccessIssue]
-    executor.sub = executor.ctx.socket(zmq.SUB)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-    executor.sub.connect(executor.pub_addr)  # type: ignore[reportAttributeAccessIssue]
-    executor.sub.setsockopt_string(zmq.SUBSCRIBE, '')  # type: ignore[reportAttributeAccessIssue]
+    reset_to_local_zmq(executor)
 
     return result
 
