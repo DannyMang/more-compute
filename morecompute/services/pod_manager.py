@@ -144,12 +144,16 @@ class PodKernelManager:
         print(f"[POD MANAGER] Parsed SSH host: {ssh_host}, port: {ssh_port}", file=sys.stderr, flush=True)
 
         #deploy worker code to pod
+        print(f"[POD MANAGER] Deploying worker code to pod...", file=sys.stderr, flush=True)
         deploy_result = await self._deploy_worker(ssh_host, ssh_port)
+        print(f"[POD MANAGER] Deploy result: {deploy_result}", file=sys.stderr, flush=True)
         if deploy_result.get("status") ==  "error":
             return deploy_result
 
         #create ssh tunnel for ZMQ ports
+        print(f"[POD MANAGER] Creating SSH tunnel...", file=sys.stderr, flush=True)
         tunnel_result = await self._create_ssh_tunnel(ssh_host, ssh_port)
+        print(f"[POD MANAGER] Tunnel result: {tunnel_result}", file=sys.stderr, flush=True)
         if tunnel_result.get("status") ==  "error":
             return tunnel_result
 
@@ -158,6 +162,11 @@ class PodKernelManager:
         if worker_result.get("status") ==  "error":
             await self.disconnect()
             return worker_result
+
+        # Note: Worker may take a few seconds to start and install matplotlib
+        # The connection should work even if verification fails
+        print(f"[POD MANAGER] Remote worker is starting (matplotlib install may take a few seconds)", file=sys.stderr, flush=True)
+        print(f"[POD MANAGER] Connection established - try running code in ~5 seconds", file=sys.stderr, flush=True)
 
         return {
             "status": "ok",
@@ -253,7 +262,7 @@ class PodKernelManager:
                 (
                     "cd /tmp && "
                     "tar -xzf morecompute.tar.gz && "
-                    "pip install --quiet pyzmq && "
+                    "pip install --quiet pyzmq matplotlib && "
                     "echo 'Deployment complete'"
                 )
             ])
@@ -315,19 +324,22 @@ class PodKernelManager:
 
             self.ssh_tunnel_proc = subprocess.Popen(
                 tunnel_cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
 
             # Wait briefly for tunnel to establish
             await asyncio.sleep(2)
 
+            # Check if process is still running
             if self.ssh_tunnel_proc.poll() is not None:
+                # Process died, get error output
+                stdout, stderr = self.ssh_tunnel_proc.communicate()
+                error_msg = stderr.decode('utf-8') if stderr else "No error output"
                 return {
                     "status": "error",
-                    "message": "SSH tunnel failed to establish"
+                    "message": f"SSH tunnel failed to establish: {error_msg}"
                 }
-
             return {
                 "status": "ok",
                 "message": "SSH tunnel created",
@@ -335,6 +347,7 @@ class PodKernelManager:
             }
 
         except Exception as e:
+            print(f"[POD MANAGER] Exception creating tunnel: {e}", file=sys.stderr, flush=True)
             return {
                 "status": "error",
                 "message": f"Tunnel creation error: {str(e)}"
@@ -352,7 +365,10 @@ class PodKernelManager:
             dict with worker start status
         """
         try:
+            print(f"[POD MANAGER] Starting remote worker on {ssh_host}:{ssh_port}", file=sys.stderr, flush=True)
+
             # Start worker in background on remote pod
+            # Use 'python3' instead of sys.executable since remote pod may have different Python path
             ssh_key = self._get_ssh_key()
             worker_cmd = ["ssh", "-p", ssh_port]
 
@@ -369,8 +385,7 @@ class PodKernelManager:
                     f"cd /tmp && "
                     f"export MC_ZMQ_CMD_ADDR=tcp://0.0.0.0:{self.remote_cmd_port} && "
                     f"export MC_ZMQ_PUB_ADDR=tcp://0.0.0.0:{self.remote_pub_port} && "
-                    f"export PYTHONPATH=/tmp:$PYTHONPATH && "
-                    f"nohup {sys.executable} -m morecompute.execution.worker "
+                    f"nohup python3 /tmp/morecompute/execution/worker.py "
                     f"> /tmp/worker.log 2>&1 & "
                     f"echo $!"
                 )
@@ -390,9 +405,12 @@ class PodKernelManager:
                 }
 
             remote_pid = result.stdout.strip()
+            print(f"[POD MANAGER] Remote worker PID: {remote_pid}", file=sys.stderr, flush=True)
 
             # Wait for worker to be ready
             await asyncio.sleep(2)
+
+            print(f"[POD MANAGER] Remote worker should be ready now", file=sys.stderr, flush=True)
 
             return {
                 "status": "ok",

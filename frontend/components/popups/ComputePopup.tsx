@@ -116,7 +116,9 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
           // Map API status to UI status
           // Pod must be ACTIVE *and* have SSH connection info to be "running"
           let uiStatus: "running" | "stopped" | "starting" = "stopped";
-          if (podData.status === "ACTIVE" && podData.ssh_connection) {
+          const isFullyReady = podData.status === "ACTIVE" && podData.ssh_connection;
+
+          if (isFullyReady) {
             uiStatus = "running";
           } else if (podData.status === "ACTIVE" || podData.status === "PROVISIONING" || podData.status === "PENDING") {
             uiStatus = "starting";
@@ -129,6 +131,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
             if (existingPodIndex >= 0) {
               // Update existing pod
               const updatedPods = [...prevPods];
+              const wasStarting = prevPods[existingPodIndex].status === "starting";
+
               updatedPods[existingPodIndex] = {
                 id: podData.pod_id,
                 name: podData.name,
@@ -138,6 +142,15 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                 costPerHour: podData.price_hr,
                 sshConnection: podData.ssh_connection || null,
               };
+
+              // Auto-connect if pod just became ready (was starting, now running)
+              if (wasStarting && isFullyReady) {
+                console.log(`[AUTO-CONNECT] Pod ${podData.pod_id} is ready, auto-connecting...`);
+                setTimeout(() => {
+                  handleConnectToPod(podData.pod_id);
+                }, 1000);
+              }
+
               return updatedPods;
             } else {
               // Add new pod if not in list
@@ -482,7 +495,9 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               Compute profile
             </h3>
             <span className="runtime-cost" style={{ fontSize: "11px" }}>
-              $0.00 / hour
+              {connectedPodId
+                ? `$${(gpuPods.find((p) => p.id === connectedPodId)?.costPerHour || 0).toFixed(2)} / hour`
+                : "$0.00 / hour"}
             </span>
           </div>
 

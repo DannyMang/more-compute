@@ -25,6 +25,14 @@ def reconnect_zmq_sockets(
     executor.cmd_addr = final_cmd_addr
     executor.pub_addr = final_pub_addr
 
+    # Mark as remote if using non-default ports (tunneled addresses)
+    # Default local ports are 5555/5556, tunneled ports are typically 15555/15556
+    # # is there a better way to do this?
+    if ':15555' in final_cmd_addr or ':15556' in final_pub_addr:
+        executor.is_remote = True
+    else:
+        executor.is_remote = False
+
     # Reconnect command socket (REQ)
     executor.req.close(0)  # type: ignore[reportAttributeAccessIssue]
     executor.req = executor.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
@@ -44,4 +52,5 @@ def reset_to_local_zmq(executor: any) -> None:
     Args:
         executor: Executor instance to reset
     """
+    executor.is_remote = False
     reconnect_zmq_sockets(executor)

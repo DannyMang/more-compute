@@ -639,6 +639,41 @@ async def get_pod_connection_status():
     return await pod_manager.get_status()
 
 
+@app.get("/api/gpu/pods/worker-logs")
+async def get_worker_logs():
+    """Fetch worker logs from connected pod."""
+    import subprocess
+
+    if not pod_manager or not pod_manager.pod:
+        raise HTTPException(status_code=400, detail="Not connected to any pod")
+
+    ssh_parts = pod_manager.pod.sshConnection.split()
+    host_part = next((p for p in ssh_parts if "@" in p), None)
+    if not host_part:
+        raise HTTPException(status_code=500, detail="Invalid SSH connection")
+
+    ssh_host = host_part.split("@")[1]
+    ssh_port = ssh_parts[ssh_parts.index("-p") + 1] if "-p" in ssh_parts else "22"
+
+    ssh_key = pod_manager._get_ssh_key()
+    cmd = ["ssh", "-p", ssh_port]
+    if ssh_key:
+        cmd.extend(["-i", ssh_key])
+    cmd.extend([
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "BatchMode=yes",
+        f"root@{ssh_host}",
+        "cat /tmp/worker.log 2>&1 || echo 'No worker log found'"
+    ])
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        return {"logs": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")
+
+
 # Dataset Management API
 @app.get("/api/datasets/info")
 async def get_dataset_info(name: str, config: str | None = None):

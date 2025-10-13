@@ -14,7 +14,6 @@ PodUpdateCallback = Callable[[dict], Awaitable[None]]
 class PodMonitor:
     """Monitors GPU pod status and broadcasts updates."""
 
-    TERMINAL_STATES = {"ACTIVE", "ERROR", "TERMINATED"}
     POLL_INTERVAL_SECONDS = 5
 
     def __init__(
@@ -104,10 +103,19 @@ class PodMonitor:
                         }
                     })
 
-                    # Stop if terminal state reached
-                    if pod.status in self.TERMINAL_STATES:
+                    # Stop monitoring if ERROR or TERMINATED
+                    if pod.status in {"ERROR", "TERMINATED"}:
                         print(
                             f"[POD MONITOR] Pod {pod_id} reached terminal state: {pod.status}",
+                            file=sys.stderr,
+                            flush=True
+                        )
+                        break
+
+                    # If ACTIVE and has SSH connection, pod is fully ready - stop monitoring
+                    if pod.status == "ACTIVE" and pod.sshConnection:
+                        print(
+                            f"[POD MONITOR] Pod {pod_id} is ACTIVE with SSH connection: {pod.sshConnection}",
                             file=sys.stderr,
                             flush=True
                         )

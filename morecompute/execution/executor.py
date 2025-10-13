@@ -26,6 +26,7 @@ class NextZmqExecutor:
     ctx: object  # zmq.Context - untyped due to zmq type limitations
     req: object  # zmq.Socket - untyped due to zmq type limitations
     sub: object  # zmq.Socket - untyped due to zmq type limitations
+    is_remote: bool  # Flag to track if connected to remote worker
 
     def __init__(self, error_utils: "ErrorUtils", cmd_addr: str | None = None, pub_addr: str | None = None, interrupt_timeout: float = 0.5) -> None:
         self.error_utils = error_utils
@@ -37,6 +38,7 @@ class NextZmqExecutor:
         self.worker_proc = None
         self.interrupted_cell = None
         self.special_handler = None
+        self.is_remote = False  # Start with local worker
         self._ensure_special_handler()
         self.ctx = zmq.Context.instance()  # type: ignore[reportUnknownMemberType]
         self.req = self.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
@@ -51,6 +53,11 @@ class NextZmqExecutor:
             self.special_handler = AsyncSpecialCommandHandler({"__name__": "__main__"})
 
     def _ensure_worker(self) -> None:
+        """Ensure a worker is available. If connected to remote pod, skip local worker spawn."""
+        # If we're connected to a remote worker, don't try to spawn local worker
+        if self.is_remote:
+            return
+
         # Use a temporary REQ socket for probing to avoid locking self.req's state
         tmp = self.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
         tmp.setsockopt(zmq.LINGER, 0)  # type: ignore[reportAttributeAccessIssue]
@@ -107,7 +114,6 @@ class NextZmqExecutor:
         raise RuntimeError('Failed to start/connect ZMQ worker')
 
     async def execute_cell(self, cell_index: int, source_code: str, websocket: WebSocket | None = None) -> dict[str, object]:
-        import sys
         self._ensure_special_handler()
         handler = self.special_handler
         normalized_source = source_code
