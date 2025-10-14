@@ -7,7 +7,8 @@ import os
 def reconnect_zmq_sockets(
     executor: any,
     cmd_addr: str | None = None,
-    pub_addr: str | None = None
+    pub_addr: str | None = None,
+    is_remote: bool = False
 ) -> None:
     """
     Reconnect ZMQ executor sockets to new addresses.
@@ -16,6 +17,7 @@ def reconnect_zmq_sockets(
         executor: Executor instance with ZMQ sockets
         cmd_addr: Command socket address (defaults to local)
         pub_addr: Publish socket address (defaults to local)
+        is_remote: True if connecting to remote worker, False for local
     """
     # Use provided addresses or fall back to defaults
     final_cmd_addr = cmd_addr or os.getenv('MC_ZMQ_CMD_ADDR', 'tcp://127.0.0.1:5555')
@@ -24,14 +26,7 @@ def reconnect_zmq_sockets(
     # Update executor addresses
     executor.cmd_addr = final_cmd_addr
     executor.pub_addr = final_pub_addr
-
-    # Mark as remote if using non-default ports (tunneled addresses)
-    # Default local ports are 5555/5556, tunneled ports are typically 15555/15556
-    # # is there a better way to do this?
-    if ':15555' in final_cmd_addr or ':15556' in final_pub_addr:
-        executor.is_remote = True
-    else:
-        executor.is_remote = False
+    executor.is_remote = is_remote
 
     # Reconnect command socket (REQ)
     executor.req.close(0)  # type: ignore[reportAttributeAccessIssue]

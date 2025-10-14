@@ -120,25 +120,30 @@ class NextZmqExecutor:
         if handler is not None:
             normalized_source = handler._coerce_source_to_text(source_code)  # type: ignore[reportPrivateUsage]
             if handler.is_special_command(normalized_source):
-                execution_count = getattr(self, 'execution_count', 0) + 1
-                self.execution_count = execution_count
-                start_time = time.time()
-                result: dict[str, object] = {
-                    'outputs': [],
-                    'error': None,
-                    'status': 'ok',
-                    'execution_count': execution_count,
-                    'execution_time': None,
-                }
-                if websocket:
-                    await websocket.send_json({'type': 'execution_start', 'data': {'cell_index': cell_index, 'execution_count': execution_count}})
-                result = await handler.execute_special_command(
-                    normalized_source, result, start_time, execution_count, websocket, cell_index
-                )
-                result['execution_time'] = f"{(time.time()-start_time)*1000:.1f}ms"
-                if websocket:
-                    await websocket.send_json({'type': 'execution_complete', 'data': {'cell_index': cell_index, 'result': result}})
-                return result
+                # If connected to remote pod, send special commands to remote worker
+                # Otherwise they execute locally which gives wrong results
+                if not self.is_remote:
+                    # Execute special command locally
+                    execution_count = getattr(self, 'execution_count', 0) + 1
+                    self.execution_count = execution_count
+                    start_time = time.time()
+                    result: dict[str, object] = {
+                        'outputs': [],
+                        'error': None,
+                        'status': 'ok',
+                        'execution_count': execution_count,
+                        'execution_time': None,
+                    }
+                    if websocket:
+                        await websocket.send_json({'type': 'execution_start', 'data': {'cell_index': cell_index, 'execution_count': execution_count}})
+                    result = await handler.execute_special_command(
+                        normalized_source, result, start_time, execution_count, websocket, cell_index
+                    )
+                    result['execution_time'] = f"{(time.time()-start_time)*1000:.1f}ms"
+                    if websocket:
+                        await websocket.send_json({'type': 'execution_complete', 'data': {'cell_index': cell_index, 'result': result}})
+                    return result
+                # For remote execution, fall through to send via ZMQ
 
         execution_count = getattr(self, 'execution_count', 0) + 1
         self.execution_count = execution_count

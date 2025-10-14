@@ -60,6 +60,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [connectingPodId, setConnectingPodId] = useState<string | null>(null);
   const [connectedPodId, setConnectedPodId] = useState<string | null>(null);
   const [deletingPodId, setDeletingPodId] = useState<string | null>(null);
+  const [connectionHealth, setConnectionHealth] = useState<"healthy" | "unhealthy" | "unknown">("unknown");
 
   // Filter popup state
   const [showFilterPopup, setShowFilterPopup] = useState(false);
@@ -77,6 +78,39 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     message: "",
   });
 
+  // Health check effect - runs every 10 seconds when connected
+  useEffect(() => {
+    if (!connectedPodId) {
+      setConnectionHealth("unknown");
+      return;
+    }
+
+    const checkConnectionHealth = async () => {
+      try {
+        const status: PodConnectionStatus = await getPodConnectionStatus();
+        if (status.connected && status.pod?.id === connectedPodId) {
+          setConnectionHealth("healthy");
+        } else {
+          setConnectionHealth("unhealthy");
+          // Auto-disconnect if connection is dead
+          setConnectedPodId(null);
+          setKernelStatus(false);
+        }
+      } catch (err) {
+        console.error("Connection health check failed:", err);
+        setConnectionHealth("unhealthy");
+      }
+    };
+
+    // Initial check
+    checkConnectionHealth();
+
+    // Set up periodic health checks
+    const interval = setInterval(checkConnectionHealth, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [connectedPodId]);
+
   useEffect(() => {
     const checkApiConfig = async () => {
       try {
@@ -89,6 +123,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
           if (status.connected && status.pod) {
             setConnectedPodId(status.pod.id);
             setKernelStatus(true); // Kernel is running when connected to pod
+            setConnectionHealth("healthy");
           }
         }
       } catch (err) {
@@ -99,8 +134,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     checkApiConfig();
 
     // Connect to WebSocket for real-time pod status updates
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const wsUrl = `${protocol}//${window.location.host}/ws`;
+    const wsUrl = 'ws://127.0.0.1:8000/ws';
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
@@ -323,11 +357,13 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
 
   const handleConnectToPod = async (podId: string) => {
     setConnectingPodId(podId);
+    setConnectionHealth("unknown"); // Reset health status during connection
     try {
       const result = await connectToPod(podId);
       if (result.status === "ok") {
         setConnectedPodId(podId);
         setKernelStatus(true); // Mark kernel as running
+        setConnectionHealth("healthy"); // Mark connection as healthy
         setErrorModal({
           isOpen: true,
           title: "✓ Connected!",
@@ -337,6 +373,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       } else {
         // Show detailed error message from backend
         let errorMsg = result.message || "Connection failed";
+        setConnectionHealth("unhealthy");
 
         // Check for SSH key issues
         if (
@@ -350,6 +387,18 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
             actionLabel: "Add SSH Key",
             actionUrl: "https://app.primeintellect.ai/dashboard/tokens",
           });
+        } else if (errorMsg.includes("not ready yet") || errorMsg.includes("provisioning")) {
+          setErrorModal({
+            isOpen: true,
+            title: "Pod Not Ready",
+            message: "Pod is still starting up. Please wait a minute and try connecting again.",
+          });
+        } else if (errorMsg.includes("tunnel") || errorMsg.includes("SSH")) {
+          setErrorModal({
+            isOpen: true,
+            title: "Connection Failed",
+            message: `${errorMsg}\n\nTroubleshooting:\n• Check your SSH key is added to Prime Intellect\n• Verify the pod is running\n• Check your network connection`,
+          });
         } else {
           setErrorModal({
             isOpen: true,
@@ -361,10 +410,12 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to connect to pod";
+      setConnectionHealth("unhealthy");
+
       setErrorModal({
         isOpen: true,
         title: "Connection Error",
-        message: errorMsg,
+        message: `${errorMsg}\n\nThis could be due to:\n• Network connectivity issues\n• Pod may have stopped running\n• SSH tunnel creation failed`,
       });
     } finally {
       setConnectingPodId(null);
@@ -376,6 +427,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       await disconnectFromPod();
       setConnectedPodId(null);
       setKernelStatus(false); // Mark kernel as not running
+      setConnectionHealth("unknown"); // Reset health status
       alert("Disconnected from pod");
     } catch (err) {
       const errorMsg =
@@ -396,6 +448,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         await disconnectFromPod();
         setConnectedPodId(null);
         setKernelStatus(false);
+        setConnectionHealth("unknown");
       }
 
       await deleteGpuPod(podId);
@@ -471,6 +524,33 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               >
                 {kernelStatus ? "running" : "not running"}
               </span>
+              {connectedPodId && (
+                <span
+                  style={{
+                    marginLeft: "8px",
+                    fontSize: "10px",
+                    color:
+                      connectionHealth === "healthy"
+                        ? "var(--success)"
+                        : connectionHealth === "unhealthy"
+                          ? "var(--error-color)"
+                          : "var(--text-secondary)",
+                  }}
+                  title={
+                    connectionHealth === "healthy"
+                      ? "Connection healthy"
+                      : connectionHealth === "unhealthy"
+                        ? "Connection lost"
+                        : "Checking connection..."
+                  }
+                >
+                  {connectionHealth === "healthy"
+                    ? "● Connected"
+                    : connectionHealth === "unhealthy"
+                      ? "● Disconnected"
+                      : "○ Checking..."}
+                </span>
+              )}
             </h3>
             <button
               className="runtime-btn runtime-btn-secondary"

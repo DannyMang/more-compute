@@ -96,6 +96,23 @@ class PodKernelManager:
         """
         import sys
 
+        # Check if already connected to this pod
+        if self.pod and self.pod.id == pod_id:
+            # Check if tunnel is still alive
+            if self.ssh_tunnel_proc and self.ssh_tunnel_proc.poll() is None:
+                return {
+                    "status": "ok",
+                    "message": f"Already connected to pod {pod_id}"
+                }
+            # Tunnel died, clean up and reconnect
+            print(f"[POD MANAGER] Existing tunnel dead, reconnecting...", file=sys.stderr, flush=True)
+            await self.disconnect()
+
+        # If connected to different pod, disconnect first
+        if self.pod and self.pod.id != pod_id:
+            print(f"[POD MANAGER] Disconnecting from {self.pod.id} to connect to {pod_id}", file=sys.stderr, flush=True)
+            await self.disconnect()
+
         self.pod = await self.pi_service.get_pod(pod_id)
 
         print(f"[POD MANAGER] Pod status: {self.pod.status}", file=sys.stderr, flush=True)
@@ -332,6 +349,11 @@ class PodKernelManager:
             await asyncio.sleep(2)
 
             # Check if process is still running
+            if self.ssh_tunnel_proc is None:
+                return {
+                    "status": "error",
+                    "message": "SSH tunnel process is None"
+                }
             if self.ssh_tunnel_proc.poll() is not None:
                 # Process died, get error output
                 stdout, stderr = self.ssh_tunnel_proc.communicate()
