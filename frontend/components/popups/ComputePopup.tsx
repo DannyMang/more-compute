@@ -26,6 +26,7 @@ import {
 } from "@/lib/api";
 import ErrorModal from "@/components/ErrorModal";
 import FilterPopup from "./FilterPopup";
+import { usePodWebSocket } from "@/contexts/PodWebSocketContext";
 
 interface GPUPod {
   id: string;
@@ -42,7 +43,17 @@ interface ComputePopupProps {
 }
 
 const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
-  const [gpuPods, setGpuPods] = useState<GPUPod[]>([]);
+  const {
+    gpuPods,
+    setPods,
+    registerAutoConnect,
+    connectionState,
+    setConnectionState,
+    connectingPodId,
+    setConnectingPodId,
+    connectedPodId,
+    setConnectedPodId,
+  } = usePodWebSocket();
   const [loading, setLoading] = useState(false);
   const [kernelStatus, setKernelStatus] = useState(false);
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null);
@@ -57,8 +68,6 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [filters, setFilters] = useState<GpuAvailabilityParams>({});
   const [creatingPodId, setCreatingPodId] = useState<string | null>(null);
   const [podCreationError, setPodCreationError] = useState<string | null>(null);
-  const [connectingPodId, setConnectingPodId] = useState<string | null>(null);
-  const [connectedPodId, setConnectedPodId] = useState<string | null>(null);
   const [deletingPodId, setDeletingPodId] = useState<string | null>(null);
   const [connectionHealth, setConnectionHealth] = useState<"healthy" | "unhealthy" | "unknown">("unknown");
 
@@ -132,94 +141,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       }
     };
     checkApiConfig();
-
-    // Connect to WebSocket for real-time pod status updates
-    const wsUrl = 'ws://127.0.0.1:8000/ws';
-    const ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-      console.log("WebSocket connected for pod status updates");
-    };
-
-    ws.onmessage = (event) => {
-      try {
-        const message = JSON.parse(event.data);
-        if (message.type === "pod_status_update" && message.data) {
-          const podData = message.data;
-
-          // Map API status to UI status
-          // Pod must be ACTIVE *and* have SSH connection info to be "running"
-          let uiStatus: "running" | "stopped" | "starting" = "stopped";
-          const isFullyReady = podData.status === "ACTIVE" && podData.ssh_connection;
-
-          if (isFullyReady) {
-            uiStatus = "running";
-          } else if (podData.status === "ACTIVE" || podData.status === "PROVISIONING" || podData.status === "PENDING") {
-            uiStatus = "starting";
-          }
-
-          // Update pod in the list
-          setGpuPods((prevPods) => {
-            const existingPodIndex = prevPods.findIndex((p) => p.id === podData.pod_id);
-
-            if (existingPodIndex >= 0) {
-              // Update existing pod
-              const updatedPods = [...prevPods];
-              const wasStarting = prevPods[existingPodIndex].status === "starting";
-
-              updatedPods[existingPodIndex] = {
-                id: podData.pod_id,
-                name: podData.name,
-                status: uiStatus,
-                gpuType: podData.gpu_name,
-                region: prevPods[existingPodIndex].region, // Keep existing region
-                costPerHour: podData.price_hr,
-                sshConnection: podData.ssh_connection || null,
-              };
-
-              // Auto-connect if pod just became ready (was starting, now running)
-              if (wasStarting && isFullyReady) {
-                console.log(`[AUTO-CONNECT] Pod ${podData.pod_id} is ready, auto-connecting...`);
-                setTimeout(() => {
-                  handleConnectToPod(podData.pod_id);
-                }, 1000);
-              }
-
-              return updatedPods;
-            } else {
-              // Add new pod if not in list
-              return [
-                ...prevPods,
-                {
-                  id: podData.pod_id,
-                  name: podData.name,
-                  status: uiStatus,
-                  gpuType: podData.gpu_name,
-                  region: "Unknown",
-                  costPerHour: podData.price_hr,
-                  sshConnection: podData.ssh_connection || null,
-                },
-              ];
-            }
-          });
-        }
-      } catch (err) {
-        console.error("Failed to parse WebSocket message:", err);
-      }
-    };
-
-    ws.onerror = (error) => {
-      console.error("WebSocket error:", error);
-    };
-
-    ws.onclose = () => {
-      console.log("WebSocket disconnected");
-    };
-
-    return () => {
-      ws.close();
-    };
-  }, [apiConfigured]);
+  }, []);
 
   const loadGPUPods = async (params?: PodsListParams) => {
     setLoading(true);
@@ -245,7 +167,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
           sshConnection: pod.sshConnection,
         };
       });
-      setGpuPods(pods);
+      setPods(pods);
     } catch (err) {
       console.error("Failed to load GPU pods:", err);
     } finally {
@@ -303,6 +225,13 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
 
       const newPod = await createGpuPod(podRequest);
 
+      // Register auto-connect callback for when pod becomes ready
+      registerAutoConnect(newPod.id, handleConnectToPod);
+
+      // Set provisioning state for the banner
+      setConnectingPodId(newPod.id);
+      setConnectionState("provisioning"); // Show "PROVISIONING" banner
+
       // Refresh the pods list
       await loadGPUPods();
 
@@ -356,48 +285,116 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   };
 
   const handleConnectToPod = async (podId: string) => {
+    // Prevent double-connecting
+    if (connectingPodId === podId || connectedPodId === podId) {
+      console.log(`[CONNECT] Already connecting/connected to pod ${podId}, skipping`);
+      return;
+    }
+
     setConnectingPodId(podId);
+    setConnectionState("deploying"); // Show "Deploying worker..." banner
     setConnectionHealth("unknown"); // Reset health status during connection
     try {
+      // Initiate connection (now returns immediately with "connecting" status)
       const result = await connectToPod(podId);
-      if (result.status === "ok") {
+
+      if (result.status === "connecting") {
+        console.log("[CONNECT] Connection initiated, polling for completion...");
+
+        // Poll connection status until it's connected or fails
+        const maxAttempts = 30; // 30 seconds max
+        let attempts = 0;
+        let isComplete = false; // Track if polling is complete to prevent race conditions
+
+        const pollInterval = setInterval(async () => {
+          if (isComplete) return; // Skip if already completed
+          attempts++;
+
+          try {
+            const status: PodConnectionStatus = await getPodConnectionStatus();
+
+            if (status.connected && status.pod?.id === podId && !isComplete) {
+              // Successfully connected!
+              isComplete = true;
+              clearInterval(pollInterval);
+
+              setConnectedPodId(podId);
+              setKernelStatus(true);
+              setConnectionHealth("healthy");
+              setConnectingPodId(null);
+              setConnectionState("connected"); // Show "Connected!" banner
+
+              setErrorModal({
+                isOpen: true,
+                title: "✓ Connected!",
+                message: "Successfully connected to GPU pod. You can now run code on the remote GPU.",
+              });
+
+              // Hide the connected banner after 3 seconds
+              setTimeout(() => {
+                setConnectionState(null);
+              }, 3000);
+            } else if (attempts >= maxAttempts && !isComplete) {
+              // Timeout
+              clearInterval(pollInterval);
+              setConnectionHealth("unhealthy");
+              setConnectingPodId(null);
+              setConnectionState(null); // Hide banner on failure
+
+              setErrorModal({
+                isOpen: true,
+                title: "Connection Timeout",
+                message: "Connection took too long. The pod may not be ready yet. Check the pod status and try again.",
+              });
+            }
+          } catch (err) {
+            // Error during polling
+            clearInterval(pollInterval);
+            setConnectionHealth("unhealthy");
+            setConnectingPodId(null);
+            setConnectionState(null); // Hide banner on error
+
+            setErrorModal({
+              isOpen: true,
+              title: "Connection Failed",
+              message: "Failed to establish connection. Please try again.",
+            });
+          }
+        }, 1000); // Poll every second
+
+      } else if (result.status === "ok") {
+        // Immediate success (backwards compatible)
         setConnectedPodId(podId);
-        setKernelStatus(true); // Mark kernel as running
-        setConnectionHealth("healthy"); // Mark connection as healthy
+        setKernelStatus(true);
+        setConnectionHealth("healthy");
+        setConnectingPodId(null);
+        setConnectionState("connected"); // Show "Connected!" banner
+
         setErrorModal({
           isOpen: true,
           title: "✓ Connected!",
-          message:
-            "Successfully connected to GPU pod. You can now run code on the remote GPU.",
+          message: "Successfully connected to GPU pod. You can now run code on the remote GPU.",
         });
-      } else {
-        // Show detailed error message from backend
-        let errorMsg = result.message || "Connection failed";
-        setConnectionHealth("unhealthy");
 
-        // Check for SSH key issues
-        if (
-          errorMsg.includes("SSH authentication") ||
-          errorMsg.includes("SSH public key")
-        ) {
+        // Hide the connected banner after 3 seconds
+        setTimeout(() => {
+          setConnectionState(null);
+        }, 3000);
+      } else {
+        // Error
+        setConnectionHealth("unhealthy");
+        setConnectingPodId(null);
+        setConnectionState(null); // Hide banner on error
+
+        let errorMsg = result.message || "Connection failed";
+
+        if (errorMsg.includes("SSH authentication") || errorMsg.includes("SSH public key")) {
           setErrorModal({
             isOpen: true,
             title: "SSH Key Required",
             message: errorMsg,
             actionLabel: "Add SSH Key",
             actionUrl: "https://app.primeintellect.ai/dashboard/tokens",
-          });
-        } else if (errorMsg.includes("not ready yet") || errorMsg.includes("provisioning")) {
-          setErrorModal({
-            isOpen: true,
-            title: "Pod Not Ready",
-            message: "Pod is still starting up. Please wait a minute and try connecting again.",
-          });
-        } else if (errorMsg.includes("tunnel") || errorMsg.includes("SSH")) {
-          setErrorModal({
-            isOpen: true,
-            title: "Connection Failed",
-            message: `${errorMsg}\n\nTroubleshooting:\n• Check your SSH key is added to Prime Intellect\n• Verify the pod is running\n• Check your network connection`,
           });
         } else {
           setErrorModal({
@@ -408,17 +405,16 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         }
       }
     } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to connect to pod";
+      const errorMsg = err instanceof Error ? err.message : "Failed to connect to pod";
       setConnectionHealth("unhealthy");
+      setConnectingPodId(null);
+      setConnectionState(null); // Hide banner on error
 
       setErrorModal({
         isOpen: true,
         title: "Connection Error",
         message: `${errorMsg}\n\nThis could be due to:\n• Network connectivity issues\n• Pod may have stopped running\n• SSH tunnel creation failed`,
       });
-    } finally {
-      setConnectingPodId(null);
     }
   };
 
@@ -428,6 +424,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       setConnectedPodId(null);
       setKernelStatus(false); // Mark kernel as not running
       setConnectionHealth("unknown"); // Reset health status
+      setConnectionState(null); // Hide banner
       alert("Disconnected from pod");
     } catch (err) {
       const errorMsg =
@@ -449,6 +446,12 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         setConnectedPodId(null);
         setKernelStatus(false);
         setConnectionHealth("unknown");
+      }
+
+      // Clear connection state if deleting the connecting pod
+      if (connectingPodId === podId) {
+        setConnectingPodId(null);
+        setConnectionState(null);
       }
 
       await deleteGpuPod(podId);

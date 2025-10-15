@@ -70,6 +70,66 @@ body {
     display: flex;
 }
 
+/* Connection Status Banner */
+.connection-banner {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    padding: 6px 16px;
+    border-radius: 20px;
+    animation: fadeIn 0.3s ease-out;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(8px);
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.connection-banner.provisioning {
+    background: rgba(251, 191, 36, 0.95);
+    color: #78350f;
+}
+
+.connection-banner.deploying {
+    background: rgba(251, 191, 36, 0.95);
+    color: #78350f;
+}
+
+.connection-banner.connected {
+    background: rgba(16, 185, 129, 0.95);
+    color: #064e3b;
+}
+
+.connection-message {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.connection-status-text {
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.connection-subtitle {
+    display: none;
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
 /* Kernel Status Banner */
 .kernel-banner {
     position: fixed;

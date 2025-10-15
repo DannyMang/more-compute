@@ -584,6 +584,46 @@ async def delete_gpu_pod(pod_id: str):
     return result
 
 
+async def _connect_to_pod_background(pod_id: str):
+    """Background task to connect to pod without blocking the HTTP response."""
+    global pod_manager
+    import sys
+
+    try:
+        print(f"[CONNECT BACKGROUND] Starting connection to pod {pod_id}", file=sys.stderr, flush=True)
+
+        # Disconnect from any existing pod first
+        # TO-DO have to fix this for multi-gpu
+        if pod_manager and pod_manager.pod is not None:
+            await pod_manager.disconnect()
+
+        result = await pod_manager.connect_to_pod(pod_id)
+
+        if result.get("status") == "ok":
+            pod_manager.attach_executor(executor)
+            addresses = pod_manager.get_executor_addresses()
+            reconnect_zmq_sockets(
+                executor,
+                cmd_addr=addresses["cmd_addr"],
+                pub_addr=addresses["pub_addr"]
+            )
+            print(f"[CONNECT BACKGROUND] Successfully connected to pod {pod_id}", file=sys.stderr, flush=True)
+        else:
+            # Connection failed - clean up
+            print(f"[CONNECT BACKGROUND] Failed to connect: {result}", file=sys.stderr, flush=True)
+            if pod_manager and pod_manager.pod:
+                await pod_manager.disconnect()
+
+    except Exception as e:
+        print(f"[CONNECT BACKGROUND] Error: {e}", file=sys.stderr, flush=True)
+        # Clean up on error
+        if pod_manager and pod_manager.pod:
+            try:
+                await pod_manager.disconnect()
+            except Exception as cleanup_err:
+                print(f"[CONNECT BACKGROUND] Cleanup error: {cleanup_err}", file=sys.stderr, flush=True)
+
+
 @app.post("/api/gpu/pods/{pod_id}/connect")
 async def connect_to_pod(pod_id: str):
     """Connect to a GPU pod and establish SSH tunnel for remote execution."""
@@ -595,23 +635,15 @@ async def connect_to_pod(pod_id: str):
     if pod_manager is None:
         pod_manager = PodKernelManager(pi_service=prime_intellect)
 
-    # Disconnect from any existing pod first
-    if pod_manager.pod is not None:
-        await pod_manager.disconnect()
+    # Start the connection in the background
+    asyncio.create_task(_connect_to_pod_background(pod_id))
 
-    # Connect to the new pod
-    result = await pod_manager.connect_to_pod(pod_id)
-
-    if result.get("status") == "ok":
-        pod_manager.attach_executor(executor)
-        addresses = pod_manager.get_executor_addresses()
-        reconnect_zmq_sockets(
-            executor,
-            cmd_addr=addresses["cmd_addr"],
-            pub_addr=addresses["pub_addr"]
-        )
-
-    return result
+    # Return immediately with a "connecting" status
+    return {
+        "status": "connecting",
+        "message": "Connection initiated. Check status endpoint for updates.",
+        "pod_id": pod_id
+    }
 
 
 @app.post("/api/gpu/pods/disconnect")

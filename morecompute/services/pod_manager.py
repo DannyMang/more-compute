@@ -403,13 +403,14 @@ class PodKernelManager:
                 "-o", "BatchMode=yes",
                 "-o", "ConnectTimeout=10",
                 f"root@{ssh_host}",
+                "sh", "-c",
                 (
-                    f"cd /tmp && "
-                    f"export MC_ZMQ_CMD_ADDR=tcp://0.0.0.0:{self.remote_cmd_port} && "
-                    f"export MC_ZMQ_PUB_ADDR=tcp://0.0.0.0:{self.remote_pub_port} && "
+                    f"'cd /tmp && "
+                    f"MC_ZMQ_CMD_ADDR=tcp://0.0.0.0:{self.remote_cmd_port} "
+                    f"MC_ZMQ_PUB_ADDR=tcp://0.0.0.0:{self.remote_pub_port} "
                     f"nohup python3 /tmp/morecompute/execution/worker.py "
-                    f"> /tmp/worker.log 2>&1 & "
-                    f"echo $!"
+                    f">/tmp/worker.log 2>&1 </dev/null & "
+                    f"echo $!'"
                 )
             ])
 
@@ -505,7 +506,10 @@ class PodKernelManager:
         returns:
             dict with status information
         """
-        if not self.pod:
+        # Cache pod reference to avoid race condition with disconnect()
+        pod = self.pod
+
+        if not pod:
             return {
                 "connected": False,
                 "pod": None
@@ -518,7 +522,7 @@ class PodKernelManager:
 
         # Get updated pod info
         try:
-            updated_pod = await self.pi_service.get_pod(self.pod.id)
+            updated_pod = await self.pi_service.get_pod(pod.id)
             pod_status = updated_pod.status
         except Exception:
             pod_status = "unknown"
@@ -526,13 +530,13 @@ class PodKernelManager:
         return {
             "connected": True,
             "pod": {
-                "id": self.pod.id,
-                "name": self.pod.name,
+                "id": pod.id,
+                "name": pod.name,
                 "status": pod_status,
-                "gpu_type": self.pod.gpuName,
-                "gpu_count": self.pod.gpuCount,
-                "price_hr": self.pod.priceHr,
-                "ssh_connection": self.pod.sshConnection
+                "gpu_type": pod.gpuName,
+                "gpu_count": pod.gpuCount,
+                "price_hr": pod.priceHr,
+                "ssh_connection": pod.sshConnection
             },
             "tunnel": {
                 "alive": tunnel_alive,
