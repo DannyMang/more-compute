@@ -8,6 +8,7 @@ import time
 import signal
 import threading
 import webbrowser
+import platform
 from pathlib import Path
 
 from morecompute.notebook import Notebook
@@ -22,6 +23,7 @@ class NotebookLauncher:
         self.root_dir = Path(__file__).parent
         self.debug = debug
         self.notebook_path = notebook_path
+        self.is_windows = platform.system() == "Windows"
         root_dir = notebook_path.parent if notebook_path.parent != Path('') else Path.cwd()
         os.environ["MORECOMPUTE_ROOT"] = str(root_dir.resolve())
         os.environ["MORECOMPUTE_NOTEBOOK_PATH"] = str(self.notebook_path)
@@ -78,48 +80,106 @@ class NotebookLauncher:
             sys.exit(1)
 
     def _ensure_port_available(self, port: int) -> None:
+        """Cross-platform port availability check and cleanup"""
         import socket
+
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             try:
                 s.bind(("127.0.0.1", port))
-                return  # free
+                return  # Port is free
             except OSError:
-                pass  # in use
-        # Port is in use - show processes and ask to kill
-        print(f"\nPort {port} appears to be in use.")
+                pass  # Port is in use
+
+        print(f"\nPort {port} is currently in use.")
         pids = []
+
         try:
-            out = subprocess.check_output(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"]).decode("utf-8", errors="ignore")
-            print(out)
-            for line in out.splitlines()[1:]:
-                parts = line.split()
-                if len(parts) > 1 and parts[1].isdigit():
-                    pids.append(int(parts[1]))
-        except Exception:
-            print("Could not list processes with lsof. You may need to free the port manually.")
-        resp = input(f"Kill processes on port {port} and continue? [y/N]: ").strip().lower()
+            if self.is_windows:
+                # Windows: Use netstat
+                out = subprocess.check_output(
+                    ["netstat", "-ano"],
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                for line in out.splitlines():
+                    if f":{port}" in line and "LISTENING" in line:
+                        parts = line.split()
+                        if parts and parts[-1].isdigit():
+                            pid = int(parts[-1])
+                            if pid not in pids:
+                                pids.append(pid)
+                                # Get process name
+                                try:
+                                    proc_out = subprocess.check_output(
+                                        ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                                        text=True,
+                                        encoding='utf-8',
+                                        errors='replace'
+                                    )
+                                    print(f"  PID {pid}: {proc_out.split(',')[0].strip('\"')}")
+                                except Exception:
+                                    print(f"  PID {pid}")
+            else:
+                # Unix: Use lsof
+                out = subprocess.check_output(
+                    ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                    text=True,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+                print(out)
+                for line in out.splitlines()[1:]:
+                    parts = line.split()
+                    if len(parts) > 1 and parts[1].isdigit():
+                        pids.append(int(parts[1]))
+        except Exception as e:
+            print(f"Could not list processes: {e}")
+
+        if not pids:
+            print(f"Could not find process using port {port}.")
+            print("Please free the port manually or set MORECOMPUTE_PORT to a different port.")
+            sys.exit(1)
+
+        resp = input(f"Kill process(es) on port {port} and continue? [y/N]: ").strip().lower()
         if resp != "y":
             print("Aborting. Set MORECOMPUTE_PORT to a different port to override.")
             sys.exit(1)
-        # Attempt to kill
+
+        # Kill processes
         for pid in pids:
             try:
-                os.kill(pid, 9)
+                if self.is_windows:
+                    subprocess.run(
+                        ["taskkill", "/F", "/PID", str(pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        encoding='utf-8',
+                        errors='replace'
+                    )
+                else:
+                    os.kill(pid, signal.SIGKILL)
+            except Exception as e:
+                print(f"Failed to kill PID {pid}: {e}")
+
+        # Fallback: kill known patterns (Unix only)
+        if not self.is_windows:
+            try:
+                subprocess.run(["pkill", "-f", "uvicorn .*morecompute.server:app"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
-        # Fallback: kill known patterns
-        try:
-            subprocess.run(["pkill", "-f", "uvicorn .*morecompute.server:app"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-        try:
-            subprocess.run(["pkill", "-f", "morecompute.execution.worker"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-        # Brief pause to let the OS release the port
-        time.sleep(0.5)
-        # Poll until it binds
+            try:
+                subprocess.run(["pkill", "-f", "morecompute.execution.worker"],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+        # Windows needs more time to release ports
+        time.sleep(1.0 if self.is_windows else 0.5)
+
+        # Poll until port is available
         start = time.time()
         while time.time() - start < 5.0:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s2:
@@ -129,6 +189,7 @@ class NotebookLauncher:
                     return
                 except OSError:
                     time.sleep(0.25)
+
         print(f"Port {port} still busy. Please free it or set MORECOMPUTE_PORT to another port.")
         sys.exit(1)
 
@@ -137,25 +198,51 @@ class NotebookLauncher:
         try:
             frontend_dir = self.root_dir / "frontend"
 
+            # Use Windows-specific npm command
+            npm_cmd = "npm.cmd" if self.is_windows else "npm"
+
+            # Verify npm exists
+            try:
+                subprocess.run(
+                    [npm_cmd, "--version"],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    shell=self.is_windows,
+                    encoding='utf-8',
+                    errors='replace'
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError):
+                print("\nError: npm not found. Please install Node.js from https://nodejs.org/")
+                print("After installation, restart your terminal and try again.")
+                self.cleanup()
+                sys.exit(1)
+
             # Check if node_modules exists
             if not (frontend_dir / "node_modules").exists():
                 print("Installing dependencies...")
                 subprocess.run(
-                    ["npm", "install"],
+                    [npm_cmd, "install"],
                     cwd=frontend_dir,
                     check=True,
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
+                    shell=self.is_windows,
+                    encoding='utf-8',
+                    errors='replace'
                 )
 
             fe_stdout = None if self.debug else subprocess.DEVNULL
             fe_stderr = None if self.debug else subprocess.DEVNULL
 
             self.frontend_process = subprocess.Popen(
-                ["npm", "run", "dev"],
+                [npm_cmd, "run", "dev"],
                 cwd=frontend_dir,
                 stdout=fe_stdout,
-                stderr=fe_stderr
+                stderr=fe_stderr,
+                shell=self.is_windows,  # CRITICAL for Windows
+                encoding='utf-8',
+                errors='replace'
             )
 
             # Wait a bit then open browser
@@ -170,18 +257,40 @@ class NotebookLauncher:
     def cleanup(self):
         """Clean up processes on exit"""
         if self.frontend_process:
-            self.frontend_process.terminate()
             try:
-                self.frontend_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.frontend_process.kill()
+                if self.is_windows:
+                    # Windows: Use taskkill for more reliable cleanup
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(self.frontend_process.pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                else:
+                    self.frontend_process.terminate()
+                    try:
+                        self.frontend_process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        self.frontend_process.kill()
+            except Exception:
+                pass
 
         if self.backend_process:
-            self.backend_process.terminate()
             try:
-                self.backend_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.backend_process.kill()
+                if self.is_windows:
+                    # Windows: Use taskkill for more reliable cleanup
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(self.backend_process.pid)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                else:
+                    self.backend_process.terminate()
+                    try:
+                        self.backend_process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        self.backend_process.kill()
+            except Exception:
+                pass
 
     def run(self):
         """Main run method"""
@@ -194,8 +303,13 @@ class NotebookLauncher:
             self.cleanup()
             sys.exit(0)
 
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        # Windows signal handling is different
+        if not self.is_windows:
+            signal.signal(signal.SIGINT, signal_handler)
+            signal.signal(signal.SIGTERM, signal_handler)
+        else:
+            # Windows only supports SIGINT and SIGBREAK
+            signal.signal(signal.SIGINT, signal_handler)
 
         # Start services
         self.start_backend()
