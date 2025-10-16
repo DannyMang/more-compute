@@ -118,7 +118,8 @@ class NotebookLauncher:
                                         encoding='utf-8',
                                         errors='replace'
                                     )
-                                    print(f"  PID {pid}: {proc_out.split(',')[0].strip('\"')}")
+                                    proc_name = proc_out.split(',')[0].strip('"')
+                                    print(f"  PID {pid}: {proc_name}")
                                 except Exception:
                                     print(f"  PID {pid}")
             else:
