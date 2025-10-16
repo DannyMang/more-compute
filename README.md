@@ -1,4 +1,7 @@
 # more-compute
+
+- windows support coming soon
+
 An interactive notebook environment similar to Marimo and Google Colab that runs locally.
 
 ## Installation
