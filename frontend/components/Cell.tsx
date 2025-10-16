@@ -42,20 +42,28 @@ export const Cell: React.FC<CellProps> = ({
   onSetActive,
   onAddCell,
 }) => {
+  // ============================================================================
+  // REFS
+  // ============================================================================
   const editorRef = useRef<HTMLTextAreaElement>(null);
-  const codeMirrorInstance = useRef<any>(null);
-  // Keep a ref to the latest index to avoid stale closures in event handlers
+  const codeMirrorInstance = useRef(null);
+  const wasEditingMarkdown = useRef(false);
   const indexRef = useRef<number>(index);
-  useEffect(() => {
-    indexRef.current = index;
-  }, [index]);
+  const intervalRef = useRef(null);
 
-  // Execution timer (shows while running and persists final duration afterwards)
-  const intervalRef = useRef<any>(null);
+  // ============================================================================
+  // STATE
+  // ============================================================================
+  const [isEditing, setIsEditing] = useState(
+    () => cell.cell_type === "code" || !cell.source?.trim()
+  );
   const [elapsedLabel, setElapsedLabel] = useState<string | null>(
-    cell.execution_time ?? null,
+    cell.execution_time ?? null
   );
 
+  // ============================================================================
+  // UTILITIES
+  // ============================================================================
   const formatMs = (ms: number): string => {
     if (ms < 1000) return `${ms.toFixed(0)}ms`;
     if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
@@ -67,92 +75,23 @@ export const Cell: React.FC<CellProps> = ({
 
   const parseExecTime = (s?: string | null): number | null => {
     if (!s) return null;
-    // Accept "123.4ms" or "1.2s"
     if (s.endsWith("ms")) return parseFloat(s.replace("ms", ""));
     if (s.endsWith("s")) return parseFloat(s.replace("s", "")) * 1000;
     return null;
   };
 
-  useEffect(() => {
-    if (isExecuting) {
-      const start = Date.now();
-      setElapsedLabel("0ms");
-      if (intervalRef.current) clearInterval(intervalRef.current);
-      intervalRef.current = setInterval(() => {
-        setElapsedLabel(formatMs(Date.now() - start));
-      }, 100);
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-      // Persist final time from cell.execution_time if available
-      const ms = parseExecTime(cell.execution_time as any);
-      if (ms != null) setElapsedLabel(formatMs(ms));
-    }
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, [isExecuting, cell.execution_time]);
-  const [isEditing, setIsEditing] = useState(
-    () => cell.cell_type === "code" || !cell.source?.trim(),
-  );
-
-  // Determine if this is a markdown cell with content in display mode
+  // ============================================================================
+  // COMPUTED VALUES
+  // ============================================================================
   const isMarkdownWithContent =
     cell.cell_type === "markdown" && !isEditing && cell.source?.trim();
 
-  useEffect(() => {
-    if (isEditing) {
-      if (
-        !codeMirrorInstance.current &&
-        editorRef.current &&
-        typeof CodeMirror !== "undefined"
-      ) {
-        const editor = CodeMirror.fromTextArea(editorRef.current, {
-          mode: cell.cell_type === "code" ? "python" : "text/plain",
-          lineNumbers: cell.cell_type === "code",
-          theme: "default",
-          lineWrapping: true,
-          placeholder:
-            cell.cell_type === "code" ? "Enter code..." : "Enter markdown...",
-        });
-        codeMirrorInstance.current = editor;
-
-        editor.on("change", (instance: any) =>
-          onUpdate(indexRef.current, instance.getValue()),
-        );
-        editor.on("focus", () => onSetActive(indexRef.current));
-        editor.on("blur", () => {
-          if (cell.cell_type === "markdown" && cell.source?.trim()) {
-            setIsEditing(false);
-          }
-        });
-        editor.on("keydown", (instance: any, event: KeyboardEvent) => {
-          if (event.shiftKey && event.key === "Enter") {
-            event.preventDefault();
-            handleExecute();
-          }
-        });
-
-        if (editor.getValue() !== cell.source) {
-          editor.setValue(cell.source);
-        }
-      }
-    } else {
-      if (codeMirrorInstance.current) {
-        codeMirrorInstance.current.toTextArea();
-        codeMirrorInstance.current = null;
-      }
-    }
-  }, [isEditing, cell.source]);
-
+  // ============================================================================
+  // HANDLERS
+  // ============================================================================
   const handleExecute = () => {
     if (cell.cell_type === "markdown") {
-      onExecute(indexRef.current); // Call onExecute for save logic
+      onExecute(indexRef.current);
       setIsEditing(false);
     } else {
       if (isExecuting) {
@@ -175,7 +114,6 @@ export const Cell: React.FC<CellProps> = ({
       const fixedCode = await fixIndentation(cell.source);
       onUpdate(indexRef.current, fixedCode);
 
-      // Update CodeMirror if it's initialized
       if (codeMirrorInstance.current) {
         codeMirrorInstance.current.setValue(fixedCode);
       }
@@ -184,8 +122,121 @@ export const Cell: React.FC<CellProps> = ({
     }
   };
 
+  // ============================================================================
+  // EFFECTS
+  // ============================================================================
+
+  // Keep indexRef in sync
+  useEffect(() => {
+    indexRef.current = index;
+  }, [index]);
+
+  // Execution timer
+  useEffect(() => {
+    if (isExecuting) {
+      const start = Date.now();
+      setElapsedLabel("0ms");
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = setInterval(() => {
+        setElapsedLabel(formatMs(Date.now() - start));
+      }, 100);
+    } else {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      const ms = parseExecTime(cell.execution_time as any);
+      if (ms != null) setElapsedLabel(formatMs(ms));
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [isExecuting, cell.execution_time]);
+
+  // Track when user is editing markdown (for auto-save on click away)
+  useEffect(() => {
+    if (isActive && cell.cell_type === "markdown" && isEditing) {
+      wasEditingMarkdown.current = true;
+    }
+  }, [isActive, cell.cell_type]);
+
+  // Auto-save markdown when user clicks away
+  useEffect(() => {
+    if (
+      !isActive &&
+      wasEditingMarkdown.current &&
+      cell.cell_type === "markdown"
+    ) {
+      if (cell.source?.trim()) {
+        onExecute(indexRef.current);
+        setIsEditing(false);
+      }
+      wasEditingMarkdown.current = false;
+    }
+  }, [isActive, cell.cell_type]);
+
+  // CodeMirror editor initialization and cleanup
+  useEffect(() => {
+    if (isEditing) {
+      if (
+        !codeMirrorInstance.current &&
+        editorRef.current &&
+        typeof CodeMirror !== "undefined"
+      ) {
+        const editor = CodeMirror.fromTextArea(editorRef.current, {
+          mode: cell.cell_type === "code" ? "python" : "text/plain",
+          lineNumbers: cell.cell_type === "code",
+          theme: "default",
+          lineWrapping: true,
+          placeholder:
+            cell.cell_type === "code" ? "Enter code..." : "Enter markdown...",
+        });
+        codeMirrorInstance.current = editor;
+
+        editor.on("change", (instance: any) =>
+          onUpdate(indexRef.current, instance.getValue())
+        );
+        editor.on("focus", () => onSetActive(indexRef.current));
+        editor.on("blur", () => {
+          if (cell.cell_type === "markdown") {
+            if (cell.source?.trim()) {
+              // Auto-save on blur
+              onExecute(indexRef.current);
+              setIsEditing(false);
+            }
+            // If empty, stay in editing mode but mark as no longer editing
+            wasEditingMarkdown.current = false;
+          }
+        });
+        editor.on("keydown", (instance: any, event: KeyboardEvent) => {
+          if (event.shiftKey && event.key === "Enter") {
+            event.preventDefault();
+            handleExecute();
+          }
+        });
+
+        if (editor.getValue() !== cell.source) {
+          editor.setValue(cell.source);
+        }
+      }
+    } else {
+      if (codeMirrorInstance.current) {
+        codeMirrorInstance.current.toTextArea();
+        codeMirrorInstance.current = null;
+      }
+    }
+  }, [isEditing, cell.source]);
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
   return (
     <div className="cell-wrapper">
+      {/* Status Indicator */}
       {!isMarkdownWithContent && (
         <div className="cell-status-indicator">
           <span className="status-indicator">
@@ -214,17 +265,18 @@ export const Cell: React.FC<CellProps> = ({
           )}
         </div>
       )}
+
+      {/* Add Cell Above Button */}
       <div className="add-cell-line add-line-above">
-        <AddCellButton
-          onAddCell={(type) => onAddCell(type, indexRef.current)}
-        />
+        <AddCellButton onAddCell={(type) => onAddCell(type, indexRef.current)} />
       </div>
 
+      {/* Main Cell Container */}
       <div
         className={`cell ${isActive ? "active" : ""} ${isExecuting ? "executing" : ""} ${isMarkdownWithContent ? "markdown-display-mode" : ""}`}
         data-cell-index={index}
       >
-        {/* Only show hover controls for non-markdown-display cells */}
+        {/* Hover Controls */}
         {!isMarkdownWithContent && (
           <div className="cell-hover-controls">
             <div className="cell-actions-right">
@@ -253,6 +305,7 @@ export const Cell: React.FC<CellProps> = ({
           </div>
         )}
 
+        {/* Cell Content */}
         <div
           className={`cell-content ${isMarkdownWithContent ? "cursor-pointer" : ""}`}
           onClick={handleCellClick}
@@ -283,6 +336,7 @@ export const Cell: React.FC<CellProps> = ({
         </div>
       </div>
 
+      {/* Add Cell Below Button */}
       <div className="add-cell-line add-line-below">
         <AddCellButton
           onAddCell={(type) => onAddCell(type, indexRef.current + 1)}
