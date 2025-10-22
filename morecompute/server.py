@@ -3,6 +3,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPExcept
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 import os
+import sys
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from .services.prime_intellect import PrimeIntellectService
 from .services.pod_manager import PodKernelManager
 from .services.data_manager import DataManager
 from .services.pod_monitor import PodMonitor
+from .services.lsp_service import LSPService
 from .models.api_models import (
     ApiKeyRequest,
     ApiKeyResponse,
@@ -76,6 +78,34 @@ if prime_intellect:
         pod_cache=pod_cache,
         update_callback=lambda msg: manager.broadcast_pod_update(msg)
     )
+
+# LSP service for Python autocomplete
+lsp_service: LSPService | None = None
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    global lsp_service
+    try:
+        lsp_service = LSPService(workspace_root=BASE_DIR)
+        await lsp_service.start()
+        print("[LSP] Pyright language server started successfully", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"[LSP] Failed to start language server: {e}", file=sys.stderr, flush=True)
+        lsp_service = None
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup services on shutdown."""
+    global lsp_service
+    if lsp_service:
+        try:
+            await lsp_service.shutdown()
+            print("[LSP] Language server shutdown complete", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[LSP] Error during shutdown: {e}", file=sys.stderr, flush=True)
 
 
 @app.get("/api/packages")
@@ -184,6 +214,80 @@ async def fix_indentation(request: Request):
         return {"fixed_code": fixed_code}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to fix indentation: {exc}")
+
+
+@app.post("/api/lsp/completions")
+async def get_lsp_completions(request: Request):
+    """
+    Get LSP code completions for Python.
+
+    Body:
+        cell_id: Unique cell identifier
+        source: Full source code of the cell
+        line: Line number (0-indexed)
+        character: Character position in line
+
+    Returns:
+        List of completion items with label, kind, detail, documentation
+    """
+    if not lsp_service:
+        raise HTTPException(status_code=503, detail="LSP service not available")
+
+    try:
+        body = await request.json()
+        cell_id = body.get("cell_id", "0")
+        source = body.get("source", "")
+        line = body.get("line", 0)
+        character = body.get("character", 0)
+
+        completions = await lsp_service.get_completions(
+            cell_id=str(cell_id),
+            source=source,
+            line=line,
+            character=character
+        )
+
+        return {"completions": completions}
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LSP completion error: {exc}")
+
+
+@app.post("/api/lsp/hover")
+async def get_lsp_hover(request: Request):
+    """
+    Get hover information for Python code.
+
+    Body:
+        cell_id: Unique cell identifier
+        source: Full source code of the cell
+        line: Line number (0-indexed)
+        character: Character position in line
+
+    Returns:
+        Hover information with documentation
+    """
+    if not lsp_service:
+        raise HTTPException(status_code=503, detail="LSP service not available")
+
+    try:
+        body = await request.json()
+        cell_id = body.get("cell_id", "0")
+        source = body.get("source", "")
+        line = body.get("line", 0)
+        character = body.get("character", 0)
+
+        hover_info = await lsp_service.get_hover(
+            cell_id=str(cell_id),
+            source=source,
+            line=line,
+            character=character
+        )
+
+        return {"hover": hover_info}
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LSP hover error: {exc}")
 
 
 @app.get("/api/file")

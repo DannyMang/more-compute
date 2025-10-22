@@ -445,7 +445,13 @@ body {
     border: 2px solid #DBC7A8;
     border-radius: 0.5px;
     transition: all 0.2s ease;
-    overflow: hidden;
+    overflow: visible;
+    z-index: 1; /* Create stacking context but keep low */
+}
+
+/* Active cell should be above others to show autocomplete */
+.cell.active {
+    z-index: 10;
 }
 
 .cell:hover {
@@ -455,6 +461,7 @@ body {
 .cell.active {
     border-color: #3b82f6;
     box-shadow: 0 0 0 1px #3b82f6;
+    z-index: 10 !important; /* Ensure active cell and its widgets appear above others */
 }
 
 /* Markdown display mode - no borders or background */
@@ -1594,4 +1601,133 @@ body {
   font-weight: normal;
   font-style: normal;
   font-display: swap;
+}
+
+/* Monaco Editor Styling - Match CodeMirror */
+.monaco-editor-container {
+  position: relative;
+  min-height: 100px;
+  border-radius: 4px;
+  overflow: visible !important;
+  z-index: auto;
+}
+
+.monaco-editor-container.code-editor-container {
+  min-height: 100px;
+}
+
+.monaco-editor-container.markdown-editor-container {
+  min-height: 60px;
+}
+
+/* Monaco editor wrapper - transparent like CodeMirror */
+.monaco-editor {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+.monaco-editor .overflow-guard {
+  border-radius: 0px !important;
+}
+
+/* Match CodeMirror background */
+.monaco-editor .monaco-editor-background,
+.monaco-editor .inputarea.ime-input {
+  background: transparent !important;
+}
+
+/* Monaco line numbers - match CodeMirror styling */
+.monaco-editor .margin {
+  background: var(--mc-cell-background) !important;
+}
+
+.monaco-editor .line-numbers {
+  color: var(--mc-line-number-color) !important;
+  font-size: 11px !important;
+  font-family: 'Fira', 'SF Mono', Monaco, monospace;
+}
+
+.monaco-editor .margin-view-overlays {
+  background: var(--mc-cell-background) !important;
+  border-right: 1px solid #e5e7eb !important;
+}
+
+/* Remove all line highlights */
+.monaco-editor .current-line,
+.monaco-editor .current-line-exact {
+  background: transparent !important;
+  border: none !important;
+}
+
+.monaco-editor .view-overlays .current-line {
+  background: transparent !important;
+}
+
+/* Monaco editor scrollbar styling */
+.monaco-editor .monaco-scrollable-element > .scrollbar {
+  background: transparent;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Monaco suggestion widget styling */
+.monaco-editor .suggest-widget {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 6px !important;
+  z-index: 1000 !important; /* High z-index within active cell's stacking context */
+  pointer-events: auto !important;
+  position: absolute !important; /* Position within cell, not fixed */
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+  padding: 6px 8px !important;
+  min-height: 28px !important;
+}
+
+/* The theme colors handle foreground/background, but ensure hover works */
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row:hover {
+  cursor: pointer !important;
+}
+
+/* Monaco hover widget styling */
+.monaco-editor .monaco-hover {
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 6px !important;
+  background: white !important;
+  z-index: 100000 !important;
+}
+
+/* Monaco parameter hints */
+.monaco-editor .parameter-hints-widget {
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 6px !important;
+  z-index: 100000 !important;
+}
+
+/* Ensure cell content doesn't clip widgets */
+.cell-content {
+  overflow: visible !important;
+}
+
+/* Ensure Monaco renders properly in cells - match CodeMirror padding */
+.cell .monaco-editor-container {
+  background: transparent;
+  padding: 0;
+}
+
+/* Monaco padding is handled via editor options - no CSS padding needed */
+
+/* Fix cell input padding for Monaco */
+.cell-input {
+  padding: 0 !important;
+  overflow: visible;
 }

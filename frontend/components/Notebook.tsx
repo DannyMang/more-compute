@@ -7,7 +7,7 @@ import React, {
   useCallback,
   useReducer,
 } from "react";
-import { Cell as CellComponent } from "./Cell";
+import dynamic from "next/dynamic";
 import {
   Cell,
   Output,
@@ -18,6 +18,27 @@ import {
 import { WebSocketService } from "@/lib/websocket-native";
 import AddCellButton from "./AddCellButton";
 import { loadSettings, applyTheme } from "@/lib/settings";
+
+// Dynamically import MonacoCell to avoid SSR issues with Monaco Editor
+const CellComponent = dynamic(() => import("./MonacoCell").then(mod => ({ default: mod.MonacoCell })), {
+  ssr: false,
+  loading: () => (
+    <div style={{
+      height: "150px",
+      background: "var(--mc-cell-background)",
+      border: "2px solid #DBC7A8",
+      borderRadius: "0.5px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: "#6b7280",
+      fontSize: "14px",
+      margin: "20px 0"
+    }}>
+      Loading Monaco editor...
+    </div>
+  )
+});
 
 // --- State Management with useReducer ---
 
@@ -682,6 +703,7 @@ export const Notebook: React.FC<NotebookProps> = ({
         </div>
       )}
 
+      {/* Cell List */}
       {cells.map((cell, index) => (
         <CellComponent
           key={cell.id}
