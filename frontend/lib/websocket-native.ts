@@ -96,6 +96,9 @@ export class WebSocketService {
           window.dispatchEvent(new CustomEvent('mc:packages-updated', { detail: messageData }));
         } catch {}
         break;
+      case 'notebook_saved':
+        this.emit('notebook_saved', messageData);
+        break;
       case 'error':
         this.emit('error', messageData);
         break;
@@ -175,6 +178,13 @@ export class WebSocketService {
     this.send('update_cell', {
       cell_index: cellIndex,
       source,
+    });
+  }
+
+  moveCell(fromIndex: number, toIndex: number) {
+    this.send('move_cell', {
+      from_index: fromIndex,
+      to_index: toIndex,
     });
   }
 

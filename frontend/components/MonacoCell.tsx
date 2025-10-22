@@ -12,7 +12,8 @@ import {
   UpdateIcon,
   LinkBreak2Icon,
   PlayIcon,
-  RowSpacingIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
 } from "@radix-ui/react-icons";
 import { Check, X } from "lucide-react";
 import { fixIndentation } from "@/lib/api";
@@ -20,6 +21,7 @@ import { fixIndentation } from "@/lib/api";
 interface CellProps {
   cell: CellType;
   index: number;
+  totalCells: number;
   isActive: boolean;
   isExecuting: boolean;
   onExecute: (index: number) => void;
@@ -28,6 +30,8 @@ interface CellProps {
   onUpdate: (index: number, source: string) => void;
   onSetActive: (index: number) => void;
   onAddCell: (type: "code" | "markdown", index: number) => void;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
 }
 
 // Global registry of cell editors for LSP
@@ -187,6 +191,7 @@ function mapCompletionKind(
 export const MonacoCell: React.FC<CellProps> = ({
   cell,
   index,
+  totalCells,
   isActive,
   isExecuting,
   onExecute,
@@ -195,6 +200,8 @@ export const MonacoCell: React.FC<CellProps> = ({
   onUpdate,
   onSetActive,
   onAddCell,
+  onMoveUp,
+  onMoveDown,
 }) => {
   // ============================================================================
   // REFS & STATE
@@ -205,6 +212,7 @@ export const MonacoCell: React.FC<CellProps> = ({
   const indexRef = useRef<number>(index);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const disposablesRef = useRef<monaco.IDisposable[]>([]);
+  const isUnmountingRef = useRef(false);
 
   const [isEditing, setIsEditing] = useState(
     () => cell.cell_type === "code" || !cell.source?.trim()
@@ -276,6 +284,18 @@ export const MonacoCell: React.FC<CellProps> = ({
   // ============================================================================
   // MONACO SETUP
   // ============================================================================
+  const handleEditorWillMount = (monacoInstance: Monaco) => {
+    // Clean up any previous editor instance before mounting new one
+    if (editorRef.current) {
+      try {
+        editorRef.current.dispose();
+      } catch (e) {
+        // Ignore
+      }
+      editorRef.current = null;
+    }
+  };
+
   const handleEditorDidMount = (
     editor: monaco.editor.IStandaloneCodeEditor,
     monacoInstance: Monaco
@@ -319,7 +339,9 @@ export const MonacoCell: React.FC<CellProps> = ({
 
     // Handle content changes
     const changeDisposable = editor.onDidChangeModelContent(() => {
-      onUpdate(indexRef.current, editor.getValue());
+      if (!isUnmountingRef.current) {
+        onUpdate(indexRef.current, editor.getValue());
+      }
     });
 
     // Handle Shift+Enter to execute
@@ -333,11 +355,13 @@ export const MonacoCell: React.FC<CellProps> = ({
     // Markdown blur behavior
     if (cell.cell_type === "markdown") {
       const blurDisposable = editor.onDidBlurEditorText(() => {
-        if (cell.source?.trim()) {
-          onExecute(indexRef.current);
-          setIsEditing(false);
+        if (!isUnmountingRef.current) {
+          if (cell.source?.trim()) {
+            onExecute(indexRef.current);
+            setIsEditing(false);
+          }
+          wasEditingMarkdown.current = false;
         }
-        wasEditingMarkdown.current = false;
       });
       disposablesRef.current.push(blurDisposable);
     }
@@ -406,7 +430,32 @@ export const MonacoCell: React.FC<CellProps> = ({
 
   // Cleanup
   useEffect(() => {
+    // Reset unmounting flag on mount
+    isUnmountingRef.current = false;
+
     return () => {
+      // Set unmounting flag to prevent async operations
+      isUnmountingRef.current = true;
+
+      // Dispose the editor instance first
+      if (editorRef.current) {
+        try {
+          const model = editorRef.current.getModel();
+
+          // Stop any pending operations
+          if (editorRef.current) {
+            editorRef.current.dispose();
+          }
+
+          if (model && !model.isDisposed()) {
+            model.dispose();
+          }
+        } catch (e) {
+          // Silently ignore errors during cleanup
+        }
+        editorRef.current = null;
+      }
+
       // Remove editor from global registry
       if (cell.cell_type === "code") {
         cellEditors.delete(cell.id);
@@ -415,7 +464,11 @@ export const MonacoCell: React.FC<CellProps> = ({
       // Dispose all Monaco disposables
       disposablesRef.current.forEach((d) => {
         if (d && typeof d.dispose === 'function') {
-          d.dispose();
+          try {
+            d.dispose();
+          } catch (e) {
+            // Silently ignore errors during cleanup
+          }
         }
       });
       disposablesRef.current = [];
@@ -488,8 +541,22 @@ export const MonacoCell: React.FC<CellProps> = ({
                 isLoading={isExecuting}
               />
               <CellButton
-                icon={<RowSpacingIcon className="w-6 h-6" />}
-                title="Drag to reorder"
+                icon={<ChevronUpIcon className="w-6 h-6" />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveUp(indexRef.current);
+                }}
+                title="Move cell up"
+                disabled={index === 0}
+              />
+              <CellButton
+                icon={<ChevronDownIcon className="w-6 h-6" />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveDown(indexRef.current);
+                }}
+                title="Move cell down"
+                disabled={index === totalCells - 1}
               />
               <CellButton
                 icon={<LinkBreak2Icon className="w-5 h-5" />}
@@ -514,11 +581,13 @@ export const MonacoCell: React.FC<CellProps> = ({
                 className={`monaco-editor-container ${cell.cell_type === "markdown" ? "markdown-editor-container" : "code-editor-container"}`}
               >
                 <Editor
+                  key={`${cell.id}-${index}`}
                   height={Math.max((cell.source.split('\n').length * 19) + 40, 100)}
                   defaultLanguage={
                     cell.cell_type === "code" ? "python" : "markdown"
                   }
                   defaultValue={cell.source}
+                  beforeMount={handleEditorWillMount}
                   onMount={handleEditorDidMount}
                   options={{
                     minimap: { enabled: false },

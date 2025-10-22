@@ -370,6 +370,7 @@ class WebSocketManager:
             "add_cell": self._handle_add_cell,
             "delete_cell": self._handle_delete_cell,
             "update_cell": self._handle_update_cell,
+            "move_cell": self._handle_move_cell,
             "interrupt_kernel": self._handle_interrupt_kernel,
             "reset_kernel": self._handle_reset_kernel,
             "load_notebook": self._handle_load_notebook,
@@ -459,6 +460,17 @@ class WebSocketManager:
             #self.notebook.save_to_file()
             #to -do?
 
+    async def _handle_move_cell(self, websocket: WebSocket, data: dict):
+        from_index = data.get('from_index')
+        to_index = data.get('to_index')
+        if from_index is not None and to_index is not None:
+            self.notebook.move_cell(from_index, to_index)
+            # Save the notebook after moving cells
+            try:
+                self.notebook.save_to_file()
+            except Exception as e:
+                print(f"Warning: Failed to save notebook after moving cell: {e}", file=sys.stderr)
+            await self.broadcast_notebook_update()
 
     async def _handle_load_notebook(self, websocket: WebSocket, data: dict):
         # In a real app, this would load from a file path in `data`

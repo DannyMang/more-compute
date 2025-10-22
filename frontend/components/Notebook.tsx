@@ -634,6 +634,22 @@ export const Notebook: React.FC<NotebookProps> = ({
     [],
   );
 
+  const moveUp = useCallback((index: number) => {
+    if (index > 0) {
+      wsRef.current?.moveCell(index, index - 1);
+      // Save after moving
+      saveNotebook();
+    }
+  }, [saveNotebook]);
+
+  const moveDown = useCallback((index: number) => {
+    if (index < cells.length - 1) {
+      wsRef.current?.moveCell(index, index + 1);
+      // Save after moving
+      saveNotebook();
+    }
+  }, [cells.length, saveNotebook]);
+
   const resetKernel = () => {
     if (
       confirm(
@@ -709,6 +725,7 @@ export const Notebook: React.FC<NotebookProps> = ({
           key={cell.id}
           cell={cell}
           index={index}
+          totalCells={cells.length}
           isActive={currentCellIndex === index}
           isExecuting={executingCells.has(index)}
           onExecute={executeCell}
@@ -717,6 +734,8 @@ export const Notebook: React.FC<NotebookProps> = ({
           onUpdate={updateCell}
           onSetActive={setCurrentCellIndex}
           onAddCell={addCell}
+          onMoveUp={moveUp}
+          onMoveDown={moveDown}
         />
       ))}
 

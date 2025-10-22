@@ -60,6 +60,11 @@ class Notebook:
         if 0 <= index < len(self.cells):
             self.cells[index]['source'] = source
 
+    def move_cell(self, from_index: int, to_index: int):
+        if 0 <= from_index < len(self.cells) and 0 <= to_index < len(self.cells):
+            cell = self.cells.pop(from_index)
+            self.cells.insert(to_index, cell)
+
     def clear_all_outputs(self):
         for cell in self.cells:
             # Only clear outputs for code cells

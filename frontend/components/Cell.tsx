@@ -10,7 +10,8 @@ import {
   UpdateIcon,
   LinkBreak2Icon,
   PlayIcon,
-  RowSpacingIcon,
+  ChevronUpIcon,
+  ChevronDownIcon,
 } from "@radix-ui/react-icons";
 import { Check, X } from "lucide-react";
 import { fixIndentation } from "@/lib/api";
@@ -20,6 +21,7 @@ declare const CodeMirror: any;
 interface CellProps {
   cell: CellType;
   index: number;
+  totalCells: number;
   isActive: boolean;
   isExecuting: boolean;
   onExecute: (index: number) => void;
@@ -28,11 +30,14 @@ interface CellProps {
   onUpdate: (index: number, source: string) => void;
   onSetActive: (index: number) => void;
   onAddCell: (type: "code" | "markdown", index: number) => void;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
 }
 
 export const Cell: React.FC<CellProps> = ({
   cell,
   index,
+  totalCells,
   isActive,
   isExecuting,
   onExecute,
@@ -41,6 +46,8 @@ export const Cell: React.FC<CellProps> = ({
   onUpdate,
   onSetActive,
   onAddCell,
+  onMoveUp,
+  onMoveDown,
 }) => {
   // ============================================================================
   // REFS
@@ -290,8 +297,22 @@ export const Cell: React.FC<CellProps> = ({
                 isLoading={isExecuting}
               />
               <CellButton
-                icon={<RowSpacingIcon className="w-6 h-6" />}
-                title="Drag to reorder"
+                icon={<ChevronUpIcon className="w-6 h-6" />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveUp(indexRef.current);
+                }}
+                title="Move cell up"
+                disabled={index === 0}
+              />
+              <CellButton
+                icon={<ChevronDownIcon className="w-6 h-6" />}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveDown(indexRef.current);
+                }}
+                title="Move cell down"
+                disabled={index === totalCells - 1}
               />
               <CellButton
                 icon={<LinkBreak2Icon className="w-5 h-5" />}
