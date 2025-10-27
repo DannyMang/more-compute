@@ -127,6 +127,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         setApiConfigured(config.configured);
         if (config.configured) {
           await loadGPUPods();
+          // Load available GPUs automatically
+          await loadAvailableGPUs();
           // Check if already connected to a pod
           const status: PodConnectionStatus = await getPodConnectionStatus();
           if (status.connected && status.pod) {
@@ -507,7 +509,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         {/* Kernel Status Section */}
         <section
           className="runtime-section"
-          style={{ padding: "6px 12px", marginBottom: "16px" }}
+          style={{ padding: "16px 20px" }}
         >
           <div
             style={{
@@ -516,86 +518,78 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               alignItems: "center",
             }}
           >
-            <h3 className="runtime-section-title" style={{ fontSize: "12px" }}>
-              Kernel:{" "}
-              <span
-                className={
-                  kernelStatus
-                    ? "kernel-status-active"
-                    : "kernel-status-inactive"
-                }
-              >
-                {kernelStatus ? "running" : "not running"}
-              </span>
-              {connectedPodId && (
-                <span
-                  style={{
-                    marginLeft: "8px",
-                    fontSize: "10px",
-                    color:
-                      connectionHealth === "healthy"
-                        ? "var(--success)"
-                        : connectionHealth === "unhealthy"
-                          ? "var(--error-color)"
-                          : "var(--text-secondary)",
-                  }}
-                  title={
-                    connectionHealth === "healthy"
-                      ? "Connection healthy"
-                      : connectionHealth === "unhealthy"
-                        ? "Connection lost"
-                        : "Checking connection..."
-                  }
-                >
-                  {connectionHealth === "healthy"
-                    ? "● Connected"
-                    : connectionHealth === "unhealthy"
-                      ? "● Disconnected"
-                      : "○ Checking..."}
-                </span>
-              )}
-            </h3>
-            <button
-              className="runtime-btn runtime-btn-secondary"
-              style={{ fontSize: "11px", padding: "3px 8px" }}
-            >
-              Stop kernel
-            </button>
+            <div>
+              <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: "4px" }}>
+                The kernel is currently: {kernelStatus ? "Running" : "Stopped"}
+              </div>
+            </div>
           </div>
         </section>
 
+        {/* Divider */}
+        <div style={{
+          height: "1px",
+          backgroundColor: "rgba(128, 128, 128, 0.2)",
+          margin: "0 16px"
+        }} />
+
         {/* Compute Profile Section */}
-        <section className="runtime-section" style={{ padding: "6px 12px" }}>
+        <section className="runtime-section" style={{ padding: "12px 16px" }}>
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: "3px",
             }}
           >
-            <h3 className="runtime-section-title" style={{ fontSize: "12px" }}>
-              Compute profile
+            <h3 className="runtime-section-title" style={{ fontSize: "12px", fontWeight: 500 }}>
+              Compute Profile
             </h3>
-            <span className="runtime-cost" style={{ fontSize: "11px" }}>
+            <span className="runtime-cost" style={{ fontSize: "12px", fontWeight: 500 }}>
               {connectedPodId
                 ? `$${(gpuPods.find((p) => p.id === connectedPodId)?.costPerHour || 0).toFixed(2)} / hour`
                 : "$0.00 / hour"}
             </span>
           </div>
+        </section>
+
+        {/* Divider */}
+        <div style={{
+          height: "1px",
+          backgroundColor: "rgba(128, 128, 128, 0.2)",
+          margin: "0 16px"
+        }} />
 
           {/* GPU Pods Section */}
-          <div className="runtime-subsection" style={{ marginTop: "30px" }}>
+          <section className="runtime-section" style={{ padding: "12px 16px" }}>
             <div
-              className="runtime-subsection-header"
-              style={{ marginBottom: "4px" }}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px"
+              }}
             >
-              <h4
-                className="runtime-subsection-title"
-                style={{ fontSize: "11px" }}
-              >
+              <h3 className="runtime-section-title" style={{ fontSize: "12px", fontWeight: 500 }}>
                 Remote GPU Pods
-              </h4>
+              </h3>
+              {apiConfigured && (
+                <button
+                  className="runtime-btn runtime-btn-secondary"
+                  onClick={handleConnectToPrimeIntellect}
+                  style={{
+                    fontSize: "11px",
+                    padding: "6px 12px",
+                    backgroundColor: "#000",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer"
+                  }}
+                >
+                  Manage
+                </button>
+              )}
             </div>
 
             {apiConfigured === false ? (
@@ -618,8 +612,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     onKeyPress={(e) => e.key === "Enter" && handleSaveApiKey()}
                     style={{
                       width: "100%",
-                      padding: "4px 6px",
-                      borderRadius: "3px",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
                       border: "1px solid var(--border-color)",
                       backgroundColor: "var(--background)",
                       color: "var(--text)",
@@ -644,14 +638,31 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     className="runtime-btn runtime-btn-primary"
                     onClick={handleSaveApiKey}
                     disabled={saving}
-                    style={{ flex: 1, fontSize: "11px", padding: "4px 8px" }}
+                    style={{
+                      flex: 1,
+                      fontSize: "11px",
+                      padding: "6px 12px",
+                      backgroundColor: "#000",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer"
+                    }}
                   >
                     {saving ? "Saving..." : "Save"}
                   </button>
                   <button
                     className="runtime-btn runtime-btn-secondary"
                     onClick={handleConnectToPrimeIntellect}
-                    style={{ fontSize: "11px", padding: "4px 8px" }}
+                    style={{
+                      fontSize: "11px",
+                      padding: "6px 12px",
+                      backgroundColor: "#000",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer"
+                    }}
                   >
                     <ExternalLink size={10} style={{ marginRight: "3px" }} />
                     Get Key
@@ -659,185 +670,110 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                 </div>
               </div>
             ) : loading || apiConfigured === null ? (
-              <div className="runtime-empty-state" style={{ padding: "6px" }}>
-                <p style={{ color: "var(--text-secondary)", fontSize: "10px" }}>
-                  Loading...
-                </p>
+              <div style={{ padding: "8px 0", color: "var(--text-secondary)", fontSize: "11px" }}>
+                Loading...
               </div>
-            ) : gpuPods.length === 0 ? (
-              <div className="runtime-empty-state" style={{ padding: "6px" }}>
-                <p
-                  style={{
-                    marginBottom: "4px",
-                    color: "var(--text-secondary)",
-                    fontSize: "10px",
-                  }}
-                >
-                  No GPU pods. Browse GPUs to create.
-                </p>
-                <div style={{ display: "flex", gap: "4px", width: "100%" }}>
-                  <button
-                    className="runtime-btn runtime-btn-primary"
-                    onClick={() => {
-                      setShowBrowseGPUs(!showBrowseGPUs);
-                      if (!showBrowseGPUs && availableGPUs.length === 0) {
-                        loadAvailableGPUs();
-                      }
-                    }}
-                    style={{ flex: 1, fontSize: "11px", padding: "4px 8px" }}
-                  >
-                    <Search size={10} style={{ marginRight: "3px" }} />
-                    Browse GPUs
-                  </button>
-                  <button
-                    className="runtime-btn runtime-btn-secondary"
-                    onClick={handleConnectToPrimeIntellect}
-                    style={{ fontSize: "11px", padding: "4px 8px" }}
-                  >
-                    <ExternalLink size={10} style={{ marginRight: "3px" }} />
-                    Manage
-                  </button>
-                </div>
+            ) : !connectedPodId ? (
+              <div style={{ padding: "8px 0", color: "var(--text-secondary)", fontSize: "11px" }}>
+                Currently not connected to any.
               </div>
             ) : (
-              <>
-                <div className="runtime-gpu-list">
-                  {gpuPods.map((pod) => (
-                    <div key={pod.id} className="runtime-gpu-item">
-                      <div className="runtime-gpu-info">
-                        <div className="runtime-gpu-header">
-                          <span className="runtime-gpu-name">{pod.name}</span>
-                          <span
-                            className={`runtime-status-badge runtime-status-${pod.status}`}
-                          >
-                            <Activity size={10} />
-                            {pod.status}
-                          </span>
+              gpuPods
+                .filter((pod) => pod.id === connectedPodId)
+                .map((pod) => (
+                  <div key={pod.id} style={{ padding: "8px 0" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                      <div>
+                        <div style={{ fontSize: "11px", marginBottom: "4px" }}>
+                          <span style={{ fontWeight: 500 }}>{pod.name}</span>
                         </div>
-                        <div className="runtime-gpu-details">
-                          <span className="runtime-gpu-type">
-                            {pod.gpuType}
-                          </span>
-                          <span className="runtime-gpu-region">
-                            {pod.region}
-                          </span>
-                          <span className="runtime-gpu-cost">
-                            ${pod.costPerHour.toFixed(2)}/hour
-                          </span>
+                        <div style={{ fontSize: "10px", color: "var(--text-secondary)" }}>
+                          {pod.gpuType} • ${pod.costPerHour.toFixed(2)}/hour
                         </div>
                       </div>
-                      <div style={{ display: "flex", gap: "4px" }}>
-                        {pod.status === "running" ? (
-                          connectedPodId === pod.id ? (
-                            <button
-                              className="runtime-btn runtime-btn-sm"
-                              onClick={handleDisconnect}
-                              style={{
-                                fontSize: "11px",
-                                padding: "4px 8px",
-                                backgroundColor: "var(--success)",
-                              }}
-                            >
-                              Disconnect
-                            </button>
-                          ) : (
-                            <button
-                              className="runtime-btn runtime-btn-sm"
-                              onClick={() => handleConnectToPod(pod.id)}
-                              disabled={connectingPodId === pod.id}
-                              style={{ fontSize: "11px", padding: "4px 8px" }}
-                            >
-                              {connectingPodId === pod.id
-                                ? "Connecting..."
-                                : "Connect"}
-                            </button>
-                          )
-                        ) : (
-                          <button
-                            className="runtime-btn runtime-btn-sm runtime-btn-secondary"
-                            style={{ fontSize: "11px", padding: "4px 8px" }}
-                            disabled
-                          >
-                            {pod.status === "starting"
-                              ? "Starting..."
-                              : "Stopped"}
-                          </button>
-                        )}
+                      <div style={{ display: "flex", gap: "6px" }}>
                         <button
-                          className="runtime-btn runtime-btn-sm"
+                          className="runtime-btn runtime-btn-secondary"
+                          onClick={handleDisconnect}
+                          style={{
+                            fontSize: "10px",
+                            padding: "6px 12px",
+                            backgroundColor: "#000",
+                            color: "white",
+                            border: "none",
+                            borderRadius: "8px",
+                            cursor: "pointer"
+                          }}
+                        >
+                          Disconnect
+                        </button>
+                        <button
+                          className="runtime-btn runtime-btn-secondary"
                           onClick={() => handleDeletePod(pod.id, pod.name)}
                           disabled={deletingPodId === pod.id}
                           style={{
-                            fontSize: "11px",
-                            padding: "4px 8px",
-                            backgroundColor: "var(--error-color)",
+                            fontSize: "10px",
+                            padding: "6px 12px",
+                            backgroundColor: "#dc2626",
                             color: "white",
+                            border: "none",
+                            borderRadius: "8px",
+                            cursor: "pointer"
                           }}
                         >
-                          {deletingPodId === pod.id ? "..." : "×"}
+                          {deletingPodId === pod.id ? "..." : "Terminate"}
                         </button>
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: "4px" }}>
-                  <button
-                    className="runtime-btn runtime-btn-link"
-                    onClick={() => loadGPUPods()}
-                    style={{ fontSize: "12px", padding: "6px 8px", flex: 1 }}
-                  >
-                    Refresh
-                  </button>
-                  <button
-                    className="runtime-btn runtime-btn-link"
-                    onClick={() => {
-                      setShowBrowseGPUs(!showBrowseGPUs);
-                      if (!showBrowseGPUs && availableGPUs.length === 0) {
-                        loadAvailableGPUs();
-                      }
-                    }}
-                    style={{ fontSize: "12px", padding: "6px 8px", flex: 1 }}
-                  >
-                    <Plus size={12} style={{ marginRight: "4px" }} />
-                    Browse GPUs
-                  </button>
-                </div>
-              </>
+                  </div>
+                ))
             )}
-          </div>
+          </section>
+
+        {/* Divider */}
+        <div style={{
+          height: "1px",
+          backgroundColor: "rgba(128, 128, 128, 0.2)",
+          margin: "0 16px"
+        }} />
 
           {/* Browse Available GPUs Section */}
-          {apiConfigured && showBrowseGPUs && (
-            <div className="runtime-subsection" style={{ marginTop: "6px" }}>
-              <div
-                className="runtime-subsection-header"
-                style={{ marginBottom: "4px" }}
-              >
-                <h4
-                  className="runtime-subsection-title"
-                  style={{ fontSize: "11px" }}
-                >
-                  <Filter size={10} style={{ marginRight: "2px" }} />
-                  Browse GPUs
-                </h4>
-              </div>
-
-              {/* Filter and Search Bar */}
+          {apiConfigured && (
+            <section className="runtime-section" style={{ padding: "12px 16px" }}>
+              {/* Search and Filter Bar */}
               <div
                 style={{
-                  marginBottom: "6px",
+                  marginBottom: "20px",
                   display: "flex",
-                  gap: "4px",
+                  gap: "8px",
                   alignItems: "center",
                 }}
               >
+                <input
+                  type="text"
+                  placeholder="Search"
+                  style={{
+                    flex: 1,
+                    padding: "6px 12px",
+                    fontSize: "11px",
+                    border: "1px solid var(--border-color)",
+                    borderRadius: "8px",
+                    backgroundColor: "var(--background)",
+                    color: "var(--text)",
+                  }}
+                />
                 <button
                   className="runtime-btn runtime-btn-secondary"
                   onClick={() => setShowFilterPopup(!showFilterPopup)}
                   style={{
-                    padding: "4px 8px",
+                    padding: "6px 12px",
                     fontSize: "11px",
                     position: "relative",
+                    backgroundColor: "#000",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer"
                   }}
                 >
                   <Filter size={10} style={{ marginRight: "3px" }} />
@@ -859,19 +795,6 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     />
                   )}
                 </button>
-                <button
-                  className="runtime-btn runtime-btn-primary"
-                  onClick={loadAvailableGPUs}
-                  disabled={loadingAvailability}
-                  style={{
-                    flex: 1,
-                    padding: "4px 8px",
-                    fontSize: "11px",
-                  }}
-                >
-                  <Search size={10} style={{ marginRight: "3px" }} />
-                  {loadingAvailability ? "Searching..." : "Search"}
-                </button>
               </div>
 
               {/* Filter Popup */}
@@ -885,40 +808,35 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
 
               {/* Results */}
               {loadingAvailability ? (
-                <div className="runtime-empty-state" style={{ padding: "6px" }}>
-                  <p
-                    style={{ color: "var(--text-secondary)", fontSize: "10px" }}
-                  >
-                    Loading...
-                  </p>
+                <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "11px" }}>
+                  Loading...
                 </div>
               ) : availableGPUs.length === 0 ? (
-                <div className="runtime-empty-state" style={{ padding: "6px" }}>
-                  <p
-                    style={{ color: "var(--text-secondary)", fontSize: "10px" }}
-                  >
-                    Click Search to find GPUs
-                  </p>
+                <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "11px" }}>
+                  Use filters to find available GPUs
                 </div>
               ) : (
-                <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+                <div style={{ maxHeight: "calc(100vh - 400px)", overflowY: "auto", paddingRight: "12px" }}>
                   {availableGPUs.map((gpu, index) => (
-                    <div
-                      key={`${gpu.cloudId}-${index}`}
-                      style={{
-                        padding: "4px 6px",
-                        borderRadius: "3px",
-                        border: "1px solid var(--border-color)",
-                        marginBottom: "3px",
-                        backgroundColor: "var(--background-secondary)",
-                      }}
-                    >
+                    <React.Fragment key={`${gpu.cloudId}-${index}`}>
+                      {index > 0 && (
+                        <div style={{
+                          height: "1px",
+                          backgroundColor: "rgba(128, 128, 128, 0.15)",
+                          margin: "8px 0"
+                        }} />
+                      )}
+                      <div
+                        style={{
+                          padding: "8px 0",
+                        }}
+                      >
                       <div
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "flex-start",
-                          marginBottom: "3px",
+                          marginBottom: "8px",
                         }}
                       >
                         <div>
@@ -940,30 +858,54 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                             {gpu.provider} - {gpu.socket} - {gpu.gpuMemory}GB
                           </div>
                         </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              fontSize: "11px",
-                              color: "var(--accent)",
-                            }}
-                          >
-                            ${gpu.prices?.onDemand?.toFixed(2) || "N/A"}/hr
-                          </div>
-                          {gpu.stockStatus && (
+                        <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+                          <div>
                             <div
                               style={{
-                                fontSize: "9px",
-                                color:
-                                  gpu.stockStatus === "Available"
-                                    ? "var(--success)"
-                                    : "var(--text-secondary)",
-                                marginTop: "1px",
+                                fontWeight: 600,
+                                fontSize: "11px",
+                                color: "var(--accent)",
                               }}
                             >
-                              {gpu.stockStatus}
+                              ${gpu.prices?.onDemand?.toFixed(2) || "N/A"}/hr
                             </div>
-                          )}
+                            {gpu.stockStatus && (
+                              <div
+                                style={{
+                                  fontSize: "9px",
+                                  color:
+                                    gpu.stockStatus === "Available"
+                                      ? "var(--success)"
+                                      : "var(--text-secondary)",
+                                  marginTop: "1px",
+                                }}
+                              >
+                                {gpu.stockStatus}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            className="runtime-btn runtime-btn-sm runtime-btn-primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              createPodFromGpu(gpu);
+                            }}
+                            disabled={creatingPodId === gpu.cloudId}
+                            style={{
+                              fontSize: "10px",
+                              padding: "6px 16px",
+                              whiteSpace: "nowrap",
+                              backgroundColor: "#000",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "8px",
+                              cursor: "pointer"
+                            }}
+                          >
+                            {creatingPodId === gpu.cloudId
+                              ? "Selecting..."
+                              : "Select"}
+                          </button>
                         </div>
                       </div>
                       <div
@@ -973,71 +915,47 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                           fontSize: "9px",
                           color: "var(--text-secondary)",
                           alignItems: "center",
-                          justifyContent: "space-between",
                         }}
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "4px",
-                            flexWrap: "wrap",
-                            flex: 1,
-                          }}
-                        >
-                          {gpu.region && (
-                            <span style={{ marginRight: "8px" }}>
-                              {gpu.region}
-                            </span>
-                          )}
-                          {gpu.dataCenter && (
-                            <span style={{ marginRight: "8px" }}>
-                              {gpu.dataCenter}
-                            </span>
-                          )}
-                          {gpu.security && (
-                            <span
-                              style={{
-                                backgroundColor:
-                                  gpu.security === "secure_cloud"
-                                    ? "var(--success-bg)"
-                                    : "var(--info-bg)",
-                                color:
-                                  gpu.security === "secure_cloud"
-                                    ? "var(--success)"
-                                    : "var(--info)",
-                                padding: "1px 4px",
-                                borderRadius: "2px",
-                                fontSize: "9px",
-                              }}
-                            >
-                              {gpu.security === "secure_cloud"
-                                ? "Secure"
-                                : "Community"}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          className="runtime-btn runtime-btn-sm runtime-btn-primary"
-                          onClick={() => createPodFromGpu(gpu)}
-                          disabled={creatingPodId === gpu.cloudId}
-                          style={{
-                            fontSize: "10px",
-                            padding: "3px 6px",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {creatingPodId === gpu.cloudId
-                            ? "Creating..."
-                            : "Create"}
-                        </button>
+                        {gpu.region && (
+                          <span style={{ marginRight: "8px" }}>
+                            {gpu.region}
+                          </span>
+                        )}
+                        {gpu.dataCenter && (
+                          <span style={{ marginRight: "8px" }}>
+                            {gpu.dataCenter}
+                          </span>
+                        )}
+                        {gpu.security && (
+                          <span
+                            style={{
+                              backgroundColor:
+                                gpu.security === "secure_cloud"
+                                  ? "var(--success-bg)"
+                                  : "var(--info-bg)",
+                              color:
+                                gpu.security === "secure_cloud"
+                                  ? "var(--success)"
+                                  : "var(--info)",
+                              padding: "1px 4px",
+                              borderRadius: "2px",
+                              fontSize: "9px",
+                            }}
+                          >
+                            {gpu.security === "secure_cloud"
+                              ? "Secure"
+                              : "Community"}
+                          </span>
+                        )}
                       </div>
                     </div>
+                    </React.Fragment>
                   ))}
                 </div>
               )}
-            </div>
+            </section>
           )}
-        </section>
       </div>
     </>
   );

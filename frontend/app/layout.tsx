@@ -9,7 +9,10 @@ import ComputePopup from "@/components/popups/ComputePopup";
 import MetricsPopup from "@/components/popups/MetricsPopup";
 import SettingsPopup from "@/components/popups/SettingsPopup";
 import { ConnectionBanner } from "@/components/ConnectionBanner";
-import { PodWebSocketProvider, usePodWebSocket } from "@/contexts/PodWebSocketContext";
+import {
+  PodWebSocketProvider,
+  usePodWebSocket,
+} from "@/contexts/PodWebSocketContext";
 import "./globals.css";
 
 function AppContent({ children }: { children: React.ReactNode }) {
@@ -59,7 +62,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
       case "packages":
         return "Packages";
       case "compute":
-        return "Compute Resources";
+        return "Kernel";
       case "metrics":
         return "System Metrics";
       case "settings":
@@ -70,69 +73,74 @@ function AppContent({ children }: { children: React.ReactNode }) {
   };
 
   // Get connecting pod name
-  const connectingPod = connectingPodId ? gpuPods.find(p => p.id === connectingPodId) : null;
+  const connectingPod = connectingPodId
+    ? gpuPods.find((p) => p.id === connectingPodId)
+    : null;
 
   return (
     <>
-      <ConnectionBanner connectionState={connectionState} podName={connectingPod?.name} />
+      <ConnectionBanner
+        connectionState={connectionState}
+        podName={connectingPod?.name}
+      />
       <div id="app">
         <Sidebar onTogglePopup={togglePopup} activePopup={activePopup} />
-            <div
-              id="popup-overlay"
-              className="popup-overlay"
-              style={{ display: activePopup ? "flex" : "none" }}
-            >
-              {activePopup && (
-                <div className="popup-content">
-                  <div className="popup-header">
-                    <h2 className="popup-title">{getPopupTitle()}</h2>
-                    <button className="popup-close" onClick={closePopup}>
-                      ×
-                    </button>
-                  </div>
-                  <div className="popup-body">{renderPopup()}</div>
-                </div>
-              )}
-            </div>
-            <div
-              id="kernel-banner"
-              className="kernel-banner"
-              style={{ display: "none" }}
-            >
-              <div className="kernel-message">
-                <span className="kernel-status-text">🔴 Kernel Disconnected</span>
-                <span className="kernel-subtitle">
-                  The notebook kernel has stopped running. Restart to continue.
-                </span>
+        <div
+          id="popup-overlay"
+          className="popup-overlay"
+          style={{ display: activePopup ? "flex" : "none" }}
+        >
+          {activePopup && (
+            <div className="popup-content">
+              <div className="popup-header">
+                <h2 className="popup-title">{getPopupTitle()}</h2>
+                <button className="popup-close" onClick={closePopup}>
+                  ×
+                </button>
               </div>
+              <div className="popup-body">{renderPopup()}</div>
             </div>
-            <div className="kernel-status-bar">
-              <div className="kernel-status-indicator">
-                <span
-                  id="kernel-status-dot"
-                  className="status-dot connecting"
-                ></span>
-                <span id="kernel-status-text" className="status-text">
-                  Connecting...
-                </span>
-              </div>
-            </div>
-            <div className="main-content">{children}</div>
-            <div style={{ display: "none" }}>
-              <span id="connection-status">Connected</span>
-              <span id="kernel-status">Ready</span>
-              <img
-                id="copy-icon-template"
-                src="/assets/icons/copy.svg"
-                alt="Copy"
-              />
-              <img
-                id="check-icon-template"
-                src="/assets/icons/check.svg"
-                alt="Copied"
-              />
-            </div>
+          )}
+        </div>
+        <div
+          id="kernel-banner"
+          className="kernel-banner"
+          style={{ display: "none" }}
+        >
+          <div className="kernel-message">
+            <span className="kernel-status-text">🔴 Kernel Disconnected</span>
+            <span className="kernel-subtitle">
+              The notebook kernel has stopped running. Restart to continue.
+            </span>
           </div>
+        </div>
+        <div className="kernel-status-bar">
+          <div className="kernel-status-indicator">
+            <span
+              id="kernel-status-dot"
+              className="status-dot connecting"
+            ></span>
+            <span id="kernel-status-text" className="status-text">
+              Connecting...
+            </span>
+          </div>
+        </div>
+        <div className="main-content">{children}</div>
+        <div style={{ display: "none" }}>
+          <span id="connection-status">Connected</span>
+          <span id="kernel-status">Ready</span>
+          <img
+            id="copy-icon-template"
+            src="/assets/icons/copy.svg"
+            alt="Copy"
+          />
+          <img
+            id="check-icon-template"
+            src="/assets/icons/check.svg"
+            alt="Copied"
+          />
+        </div>
+      </div>
     </>
   );
 }
