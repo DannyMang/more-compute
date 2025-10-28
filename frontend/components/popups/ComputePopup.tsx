@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Zap,
   ExternalLink,
@@ -70,6 +70,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [podCreationError, setPodCreationError] = useState<string | null>(null);
   const [deletingPodId, setDeletingPodId] = useState<string | null>(null);
   const [connectionHealth, setConnectionHealth] = useState<"healthy" | "unhealthy" | "unknown">("unknown");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Filter popup state
   const [showFilterPopup, setShowFilterPopup] = useState(false);
@@ -495,6 +496,19 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     }
   };
 
+  // Filter GPUs based on search query (memoized for performance)
+  const filteredGPUs = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return availableGPUs;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return availableGPUs.filter((gpu) => {
+      const gpuType = gpu.gpuType.toLowerCase();
+      return gpuType.includes(query);
+    });
+  }, [searchQuery, availableGPUs]);
+
   return (
     <>
       <ErrorModal
@@ -751,15 +765,18 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               >
                 <input
                   type="text"
-                  placeholder="Search"
+                  placeholder="Search GPU (e.g., H100, A100, RTX 4090)"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
                     flex: 1,
                     padding: "6px 12px",
                     fontSize: "11px",
-                    border: "1px solid var(--border-color)",
+                    border: "1px solid #d1d5db",
                     borderRadius: "8px",
                     backgroundColor: "var(--background)",
                     color: "var(--text)",
+                    outline: "none",
                   }}
                 />
                 <button
@@ -815,9 +832,13 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                 <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "11px" }}>
                   Use filters to find available GPUs
                 </div>
+              ) : filteredGPUs.length === 0 ? (
+                <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "11px" }}>
+                  No GPUs match "{searchQuery}"
+                </div>
               ) : (
                 <div style={{ maxHeight: "calc(100vh - 400px)", overflowY: "auto", paddingRight: "12px" }}>
-                  {availableGPUs.map((gpu, index) => (
+                  {filteredGPUs.map((gpu, index) => (
                     <React.Fragment key={`${gpu.cloudId}-${index}`}>
                       {index > 0 && (
                         <div style={{
