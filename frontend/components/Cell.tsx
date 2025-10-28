@@ -1,3 +1,14 @@
+/**
+ * LEGACY COMPONENT - NO LONGER USED
+ *
+ * This component has been replaced by MonacoCell.tsx which provides:
+ * - Modern Monaco Editor (VSCode engine)
+ * - LSP support for Python autocomplete and hover
+ * - Better performance and features
+ *
+ * Kept for reference only. Do not use in new code.
+ */
+
 "use client";
 
 import React, { useRef, useEffect, useState } from "react";

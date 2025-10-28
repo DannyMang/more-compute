@@ -4,9 +4,9 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import { Cell as CellType } from "@/types/notebook";
-import CellOutput from "./CellOutput";
+import CellOutput from "../output/CellOutput";
 import AddCellButton from "./AddCellButton";
-import MarkdownRenderer from "./MarkdownRenderer";
+import MarkdownRenderer from "../output/MarkdownRenderer";
 import CellButton from "./CellButton";
 import {
   UpdateIcon,

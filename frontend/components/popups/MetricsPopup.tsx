@@ -69,17 +69,21 @@ const MetricsPopup: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
           </Panel>
         )}
 
-        {hasGPU && (
-          <Panel title="GPU Utilization" icon={<Gauge size={14} />}>
+        {hasGPU && metrics!.gpu!.map((gpu, index) => (
+          <Panel
+            key={index}
+            title={`GPU ${index} Utilization`}
+            icon={<Gauge size={14} />}
+          >
             <BigValue
-              value={fmtPct(metrics!.gpu![0].util_percent)}
-              subtitle={`Temp ${metrics!.gpu![0].temperature_c ?? "-"}°C`}
+              value={fmtPct(gpu.util_percent)}
+              subtitle={`Temp ${gpu.temperature_c ?? "-"}°C`}
             />
             <MiniChart
-              data={history.map((h) => (h.gpu && h.gpu[0]?.util_percent) || 0)}
+              data={history.map((h) => (h.gpu && h.gpu[index]?.util_percent) || 0)}
             />
           </Panel>
-        )}
+        ))}
 
         {metrics?.network && (
           <Panel title="Network" icon={<Activity size={14} />}>

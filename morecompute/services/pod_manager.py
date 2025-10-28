@@ -499,6 +499,64 @@ class PodKernelManager:
             "messages": messages
         }
 
+    async def execute_ssh_command(self, command: str) -> tuple[str, str, int]:
+        """
+        Execute a command on the remote pod via SSH.
+
+        args:
+            command: The command to execute
+
+        returns:
+            tuple of (stdout, stderr, return_code)
+        """
+        if not self.pod or not self.pod.sshConnection:
+            raise RuntimeError("No active pod connection")
+
+        # Parse SSH connection string to get host and port
+        ssh_parts = self.pod.sshConnection.split()
+        host_part = None
+        port = "22"  # default SSH port
+
+        for part in ssh_parts:
+            if "@" in part:
+                host_part = part
+            if part == "-p" and ssh_parts.index(part) + 1 < len(ssh_parts):
+                port = ssh_parts[ssh_parts.index(part) + 1]
+
+        if not host_part:
+            raise RuntimeError(f"Invalid SSH connection format: {self.pod.sshConnection}")
+
+        # Get SSH key
+        ssh_key = self._get_ssh_key()
+        if not ssh_key:
+            raise RuntimeError("SSH key not found. Please configure MORECOMPUTE_SSH_KEY or add key to ~/.ssh/")
+
+        # Build SSH command
+        ssh_cmd = [
+            "ssh",
+            "-i", ssh_key,
+            "-p", port,
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "LogLevel=ERROR",
+            host_part,
+            command
+        ]
+
+        # Execute command
+        proc = await asyncio.create_subprocess_exec(
+            *ssh_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await proc.communicate()
+        return (
+            stdout.decode('utf-8', errors='replace'),
+            stderr.decode('utf-8', errors='replace'),
+            proc.returncode or 0
+        )
+
     async def get_status(self) -> dict[str, object]:
         """
         Get current connection status.

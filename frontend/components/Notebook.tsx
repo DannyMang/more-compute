@@ -16,11 +16,11 @@ import {
   ErrorOutput,
 } from "@/types/notebook";
 import { WebSocketService } from "@/lib/websocket-native";
-import AddCellButton from "./AddCellButton";
+import AddCellButton from "./cell/AddCellButton";
 import { loadSettings, applyTheme } from "@/lib/settings";
 
 // Dynamically import MonacoCell to avoid SSR issues with Monaco Editor
-const CellComponent = dynamic(() => import("./MonacoCell").then(mod => ({ default: mod.MonacoCell })), {
+const CellComponent = dynamic(() => import("./cell/MonacoCell").then(mod => ({ default: mod.MonacoCell })), {
   ssr: false,
   loading: () => (
     <div style={{

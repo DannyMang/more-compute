@@ -2,13 +2,13 @@
 
 import { useState } from "react";
 import Script from "next/script";
-import Sidebar from "@/components/Sidebar";
+import Sidebar from "@/components/layout/Sidebar";
 import FolderPopup from "@/components/popups/FolderPopup";
 import PackagesPopup from "@/components/popups/PackagesPopup";
 import ComputePopup from "@/components/popups/ComputePopup";
 import MetricsPopup from "@/components/popups/MetricsPopup";
 import SettingsPopup from "@/components/popups/SettingsPopup";
-import { ConnectionBanner } from "@/components/ConnectionBanner";
+import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import {
   PodWebSocketProvider,
   usePodWebSocket,

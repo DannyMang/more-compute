@@ -298,11 +298,38 @@ class NotebookLauncher:
         print("\n        Edit notebook in your browser!\n")
         print("        ➜  URL: http://localhost:3000\n")
 
+        # Track Ctrl+C count for graceful shutdown
+        self.shutdown_count = 0
+        self.shutdown_lock = threading.Lock()
+
         # Set up signal handlers
         def signal_handler(signum, frame):
-            print("\n\n        Thanks for using MoreCompute!\n")
-            self.cleanup()
-            sys.exit(0)
+            with self.shutdown_lock:
+                self.shutdown_count += 1
+
+                if self.shutdown_count == 1:
+                    # First Ctrl+C - show warning
+                    print("\n" + "=" * 70)
+                    print("⚠️  SHUTDOWN CONFIRMATION")
+                    print("=" * 70)
+                    print("\n⚠️  REMINDER: Any running GPU pods will continue to incur costs")
+                    print("    until you terminate them in the Compute popup.")
+                    print("\n" + "=" * 70)
+                    print("Press Ctrl+C again within 5 seconds to confirm shutdown.")
+                    print("=" * 70 + "\n")
+
+                    # Reset counter after 5 seconds
+                    def reset_counter():
+                        time.sleep(5)
+                        with self.shutdown_lock:
+                            self.shutdown_count = 0
+
+                    threading.Thread(target=reset_counter, daemon=True).start()
+                else:
+                    # Second Ctrl+C - actually shutdown
+                    print("\n\n        Thanks for using MoreCompute!\n")
+                    self.cleanup()
+                    sys.exit(0)
 
         # Windows signal handling is different
         if not self.is_windows:

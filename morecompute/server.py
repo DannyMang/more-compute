@@ -112,9 +112,11 @@ async def shutdown_event():
 async def list_installed_packages(force_refresh: bool = False):
     """
     Return installed packages for the current Python runtime.
+    Fetches from remote pod if connected, otherwise from local environment.
     Args:
         force_refresh: If True, bypass cache and fetch fresh data
     """
+    global pod_manager
     cache_key = "packages_list"
 
     # Check cache first unless force refresh is requested
@@ -122,6 +124,29 @@ async def list_installed_packages(force_refresh: bool = False):
         return packages_cache[cache_key]
 
     try:
+        # If connected to remote pod, fetch packages from there
+        if pod_manager and pod_manager.pod:
+            try:
+                stdout, stderr, returncode = await pod_manager.execute_ssh_command(
+                    "python3 -m pip list --format=json 2>/dev/null || pip list --format=json"
+                )
+
+                if returncode == 0 and stdout.strip():
+                    import json
+                    pkgs_data = json.loads(stdout)
+                    packages = [{"name": p["name"], "version": p["version"]} for p in pkgs_data]
+                    packages.sort(key=lambda p: p["name"].lower())
+                    result = {"packages": packages}
+                    packages_cache[cache_key] = result
+                    return result
+                else:
+                    print(f"[API/PACKAGES] Remote command failed (code {returncode}): {stderr}", file=sys.stderr, flush=True)
+                    # Fall through to local packages
+            except Exception as e:
+                print(f"[API/PACKAGES] Failed to fetch remote packages: {e}", file=sys.stderr, flush=True)
+                # Fall through to local packages
+
+        # Local packages (fallback or when not connected)
         packages = []
         for dist in importlib_metadata.distributions():
             name = dist.metadata.get("Name") or dist.metadata.get("Summary") or dist.metadata.get("name")
@@ -139,7 +164,68 @@ async def list_installed_packages(force_refresh: bool = False):
 
 @app.get("/api/metrics")
 async def get_metrics():
+    global pod_manager
     try:
+        # If connected to remote pod, fetch metrics from there
+        if pod_manager and pod_manager.pod:
+            try:
+                # Python script to collect metrics on remote pod
+                metrics_script = """
+import json, psutil
+try:
+    import pynvml
+    pynvml.nvmlInit()
+    gpu_count = pynvml.nvmlDeviceGetCount()
+    gpus = []
+    for i in range(gpu_count):
+        handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        try:
+            temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+        except:
+            temp = None
+        gpus.append({
+            "util_percent": util.gpu,
+            "mem_used": mem.used,
+            "mem_total": mem.total,
+            "temperature_c": temp
+        })
+    pynvml.nvmlShutdown()
+except:
+    gpus = []
+cpu = psutil.cpu_percent(interval=0.1)
+mem = psutil.virtual_memory()
+disk = psutil.disk_usage('/')
+net = psutil.net_io_counters()
+proc = psutil.Process()
+mem_info = proc.memory_info()
+print(json.dumps({
+    "cpu": {"percent": cpu, "cores": psutil.cpu_count()},
+    "memory": {"percent": mem.percent, "used": mem.used, "total": mem.total},
+    "storage": {"percent": disk.percent, "used": disk.used, "total": disk.total},
+    "gpu": gpus,
+    "network": {"bytes_sent": net.bytes_sent, "bytes_recv": net.bytes_recv},
+    "process": {"rss": mem_info.rss, "threads": proc.num_threads()}
+}))
+"""
+                # Escape single quotes in the script for shell
+                escaped_script = metrics_script.replace("'", "'\"'\"'")
+                stdout, stderr, returncode = await pod_manager.execute_ssh_command(
+                    f"python3 -c '{escaped_script}'"
+                )
+
+                if returncode == 0 and stdout.strip():
+                    import json
+                    return json.loads(stdout)
+                else:
+                    print(f"[API/METRICS] Remote command failed (code {returncode}): {stderr}", file=sys.stderr, flush=True)
+                    # Fall through to local metrics
+            except Exception as e:
+                print(f"[API/METRICS] Failed to fetch remote metrics: {e}", file=sys.stderr, flush=True)
+                # Fall through to local metrics
+
+        # Local metrics (fallback or when not connected)
         return metrics.get_all_devices()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {exc}")
@@ -780,11 +866,53 @@ async def disconnect_from_pod():
 
 @app.get("/api/gpu/pods/connection/status")
 async def get_pod_connection_status():
-    """Get status of current pod connection."""
-    if pod_manager is None:
-        return {"connected": False, "pod": None}
+    """
+    Get status of current pod connection.
 
-    return await pod_manager.get_status()
+    Returns connection status AND any running pods from Prime Intellect API.
+    This ensures we don't lose track of running pods after backend restart.
+    """
+    # Check local connection state first
+    local_status = None
+    if pod_manager is not None:
+        local_status = await pod_manager.get_status()
+        if local_status.get("connected"):
+            return local_status
+
+    # If not locally connected, check Prime Intellect API for any running pods
+    if prime_intellect:
+        try:
+            pods_response = await prime_intellect.get_pods(status=None, limit=100, offset=0)
+            pods = pods_response.get("data", [])
+
+            # Find any ACTIVE pods with SSH connection info
+            running_pods = [
+                pod for pod in pods
+                if pod.get("status") == "ACTIVE" and pod.get("sshConnection")
+            ]
+
+            if running_pods:
+                # Return the first running pod as "discovered but not connected"
+                first_pod = running_pods[0]
+                return {
+                    "connected": False,
+                    "discovered_running_pods": running_pods,
+                    "pod": {
+                        "id": first_pod.get("id"),
+                        "name": first_pod.get("name"),
+                        "status": first_pod.get("status"),
+                        "gpu_type": first_pod.get("gpuName"),
+                        "gpu_count": first_pod.get("gpuCount"),
+                        "price_hr": first_pod.get("priceHr"),
+                        "ssh_connection": first_pod.get("sshConnection")
+                    },
+                    "message": "Found running pod but not connected. Backend may have restarted."
+                }
+        except Exception as e:
+            print(f"[CONNECTION STATUS] Error checking Prime Intellect API: {e}", file=sys.stderr, flush=True)
+
+    # No connection and no running pods found
+    return {"connected": False, "pod": None}
 
 
 @app.get("/api/gpu/pods/worker-logs")

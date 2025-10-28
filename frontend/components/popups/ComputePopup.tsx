@@ -24,7 +24,9 @@ import {
   CreatePodRequest,
   PodConnectionStatus,
 } from "@/lib/api";
-import ErrorModal from "@/components/ErrorModal";
+import ErrorModal from "@/components/modals/ErrorModal";
+import SuccessModal from "@/components/modals/SuccessModal";
+import ConfirmModal from "@/components/modals/ConfirmModal";
 import FilterPopup from "./FilterPopup";
 import { usePodWebSocket } from "@/contexts/PodWebSocketContext";
 
@@ -71,6 +73,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [deletingPodId, setDeletingPodId] = useState<string | null>(null);
   const [connectionHealth, setConnectionHealth] = useState<"healthy" | "unhealthy" | "unknown">("unknown");
   const [searchQuery, setSearchQuery] = useState("");
+  const [discoveredPod, setDiscoveredPod] = useState<GPUPod | null>(null);
 
   // Filter popup state
   const [showFilterPopup, setShowFilterPopup] = useState(false);
@@ -86,6 +89,30 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     isOpen: false,
     title: "",
     message: "",
+  });
+
+  // Success modal state
+  const [successModal, setSuccessModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
+
+  // Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
   });
 
   // Health check effect - runs every 10 seconds when connected
@@ -136,6 +163,23 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
             setConnectedPodId(status.pod.id);
             setKernelStatus(true); // Kernel is running when connected to pod
             setConnectionHealth("healthy");
+          } else if (!status.connected && status.pod) {
+            // Discovered running pod but not connected (backend restart scenario)
+            console.log("[COMPUTE POPUP] Discovered running pod after restart:", status.pod);
+            // Only show discovered pod warning if it's not already in the pods list
+            // (This can happen if pods haven't loaded yet)
+            const alreadyInList = gpuPods.some(p => p.id === status.pod.id);
+            if (!alreadyInList) {
+              setDiscoveredPod({
+                id: status.pod.id,
+                name: status.pod.name,
+                status: "running",
+                gpuType: status.pod.gpu_type || "Unknown",
+                region: "Unknown",
+                costPerHour: status.pod.price_hr || 0,
+                sshConnection: status.pod.ssh_connection || null,
+              });
+            }
           }
         }
       } catch (err) {
@@ -240,9 +284,11 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
 
       // Close browse section and show success
       setShowBrowseGPUs(false);
-      alert(
-        `Pod "${newPod.name}" created successfully! Wait for provisioning (~2-5 min).`,
-      );
+      setSuccessModal({
+        isOpen: true,
+        title: "Pod Created Successfully!",
+        message: `Pod "${newPod.name}" created successfully! Wait for provisioning (~2-5 min).`,
+      });
     } catch (err) {
       let errorMsg = "Failed to create pod";
 
@@ -258,6 +304,9 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
             "Insufficient funds. Please add credits to your Prime Intellect wallet:\nhttps://app.primeintellect.ai/dashboard/billing";
         } else if (errorMsg.includes("401") || errorMsg.includes("403")) {
           errorMsg = "Authentication failed. Check your API key configuration.";
+        } else if (errorMsg.includes("503") || errorMsg.includes("not available")) {
+          errorMsg =
+            "This GPU type is currently unavailable. Please try selecting a different GPU from the list below.";
         } else if (errorMsg.includes("data_center_id")) {
           errorMsg =
             "Pod configuration error: Missing data center ID. Try a different GPU or provider.";
@@ -326,6 +375,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               setConnectionHealth("healthy");
               setConnectingPodId(null);
               setConnectionState("connected"); // Show "Connected!" banner
+              setDiscoveredPod(null); // Clear discovered pod state
 
               setErrorModal({
                 isOpen: true,
@@ -372,6 +422,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         setConnectionHealth("healthy");
         setConnectingPodId(null);
         setConnectionState("connected"); // Show "Connected!" banner
+        setDiscoveredPod(null); // Clear discovered pod state
 
         setErrorModal({
           isOpen: true,
@@ -428,7 +479,13 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       setKernelStatus(false); // Mark kernel as not running
       setConnectionHealth("unknown"); // Reset health status
       setConnectionState(null); // Hide banner
-      alert("Disconnected from pod");
+
+      // Show warning that pod is still running
+      setErrorModal({
+        isOpen: true,
+        title: "⚠️ Disconnected",
+        message: "Disconnected from pod. Note: The pod is still running and incurring costs. You can reconnect or terminate it below.",
+      });
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to disconnect";
@@ -437,36 +494,54 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   };
 
   const handleDeletePod = async (podId: string, podName: string) => {
-    if (!confirm(`Are you sure you want to terminate pod "${podName}"?`)) {
-      return;
-    }
+    // Show confirmation modal instead of native confirm dialog
+    setConfirmModal({
+      isOpen: true,
+      title: "Terminate Pod?",
+      message: `Are you sure you want to terminate pod "${podName}"?\n\nThis will stop the pod and you will no longer be charged for it.`,
+      onConfirm: async () => {
+        setDeletingPodId(podId);
+        try {
+          // Disconnect if this is the connected pod
+          if (connectedPodId === podId) {
+            await disconnectFromPod();
+            setConnectedPodId(null);
+            setKernelStatus(false);
+            setConnectionHealth("unknown");
+          }
 
-    setDeletingPodId(podId);
-    try {
-      // Disconnect if this is the connected pod
-      if (connectedPodId === podId) {
-        await disconnectFromPod();
-        setConnectedPodId(null);
-        setKernelStatus(false);
-        setConnectionHealth("unknown");
-      }
+          // Clear connection state if deleting the connecting pod
+          if (connectingPodId === podId) {
+            setConnectingPodId(null);
+            setConnectionState(null);
+          }
 
-      // Clear connection state if deleting the connecting pod
-      if (connectingPodId === podId) {
-        setConnectingPodId(null);
-        setConnectionState(null);
-      }
+          await deleteGpuPod(podId);
 
-      await deleteGpuPod(podId);
-      alert(`Pod "${podName}" terminated successfully`);
-      await loadGPUPods();
-    } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to terminate pod";
-      alert(`Terminate error: ${errorMsg}`);
-    } finally {
-      setDeletingPodId(null);
-    }
+          // Clear discovered pod if it was the one we just deleted
+          if (discoveredPod && discoveredPod.id === podId) {
+            setDiscoveredPod(null);
+          }
+
+          setSuccessModal({
+            isOpen: true,
+            title: "Pod Terminated",
+            message: `Pod "${podName}" terminated successfully.`,
+          });
+          await loadGPUPods();
+        } catch (err) {
+          const errorMsg =
+            err instanceof Error ? err.message : "Failed to terminate pod";
+          setErrorModal({
+            isOpen: true,
+            title: "Termination Failed",
+            message: `Failed to terminate pod: ${errorMsg}`,
+          });
+        } finally {
+          setDeletingPodId(null);
+        }
+      },
+    });
   };
 
   const handleConnectToPrimeIntellect = () => {
@@ -519,6 +594,22 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         actionLabel={errorModal.actionLabel}
         actionUrl={errorModal.actionUrl}
       />
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        onClose={() => setSuccessModal({ ...successModal, isOpen: false })}
+        title={successModal.title}
+        message={successModal.message}
+      />
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel="Terminate"
+        cancelLabel="Cancel"
+        isDangerous={true}
+      />
       <div className="runtime-popup">
         {/* Kernel Status Section */}
         <section
@@ -560,9 +651,11 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               Compute Profile
             </h3>
             <span className="runtime-cost" style={{ fontSize: "12px", fontWeight: 500 }}>
-              {connectedPodId
-                ? `$${(gpuPods.find((p) => p.id === connectedPodId)?.costPerHour || 0).toFixed(2)} / hour`
-                : "$0.00 / hour"}
+              {(() => {
+                const runningPods = gpuPods.filter(p => p.status === "running");
+                const totalCost = runningPods.reduce((sum, pod) => sum + pod.costPerHour, 0);
+                return `$${totalCost.toFixed(2)} / hour`;
+              })()}
             </span>
           </div>
         </section>
@@ -687,60 +780,169 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               <div style={{ padding: "8px 0", color: "var(--text-secondary)", fontSize: "11px" }}>
                 Loading...
               </div>
-            ) : !connectedPodId ? (
+            ) : gpuPods.filter(p => p.status === "running").length === 0 && !discoveredPod ? (
               <div style={{ padding: "8px 0", color: "var(--text-secondary)", fontSize: "11px" }}>
                 Currently not connected to any.
               </div>
+            ) : !connectedPodId && discoveredPod ? (
+              <div style={{ padding: "8px 0" }}>
+                <div style={{
+                  backgroundColor: "#fff3cd",
+                  border: "1px solid #ffc107",
+                  borderRadius: "8px",
+                  padding: "12px",
+                  marginBottom: "8px"
+                }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#856404", marginBottom: "4px" }}>
+                    ⚠️ Running Pod Detected
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#856404", marginBottom: "8px" }}>
+                    Found a running pod but not connected (backend may have restarted). This pod is still costing money!
+                  </div>
+                  <div style={{ fontSize: "10px", marginBottom: "8px" }}>
+                    <span style={{ fontWeight: 500 }}>{discoveredPod.name}</span> • {discoveredPod.gpuType} • ${discoveredPod.costPerHour.toFixed(2)}/hour
+                  </div>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      className="runtime-btn runtime-btn-secondary"
+                      onClick={() => handleConnectToPod(discoveredPod.id)}
+                      style={{
+                        flex: 1,
+                        fontSize: "10px",
+                        padding: "6px 12px",
+                        backgroundColor: "#ffc107",
+                        color: "#000",
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontWeight: 600
+                      }}
+                    >
+                      Reconnect
+                    </button>
+                    <button
+                      className="runtime-btn runtime-btn-secondary"
+                      onClick={() => handleDeletePod(discoveredPod.id, discoveredPod.name)}
+                      disabled={deletingPodId === discoveredPod.id}
+                      style={{
+                        fontSize: "10px",
+                        padding: "6px 12px",
+                        backgroundColor: "#dc2626",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {deletingPodId === discoveredPod.id ? "..." : "Terminate"}
+                    </button>
+                  </div>
+                </div>
+              </div>
             ) : (
               gpuPods
-                .filter((pod) => pod.id === connectedPodId)
-                .map((pod) => (
-                  <div key={pod.id} style={{ padding: "8px 0" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                      <div>
-                        <div style={{ fontSize: "11px", marginBottom: "4px" }}>
-                          <span style={{ fontWeight: 500 }}>{pod.name}</span>
+                .filter((pod) => pod.status === "running")
+                .map((pod) => {
+                  const isConnected = pod.id === connectedPodId;
+                  return (
+                    <div key={pod.id} style={{ padding: "8px 0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                        <div>
+                          <div style={{ fontSize: "11px", marginBottom: "4px" }}>
+                            <span style={{ fontWeight: 500 }}>{pod.name}</span>
+                            {isConnected && (
+                              <span style={{
+                                marginLeft: "6px",
+                                fontSize: "9px",
+                                backgroundColor: "#10b981",
+                                color: "white",
+                                padding: "2px 6px",
+                                borderRadius: "4px"
+                              }}>
+                                Connected
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: "10px", color: "var(--text-secondary)" }}>
+                            {pod.gpuType} • ${pod.costPerHour.toFixed(2)}/hour
+                          </div>
                         </div>
-                        <div style={{ fontSize: "10px", color: "var(--text-secondary)" }}>
-                          {pod.gpuType} • ${pod.costPerHour.toFixed(2)}/hour
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          {isConnected ? (
+                            <>
+                              <button
+                                className="runtime-btn runtime-btn-secondary"
+                                onClick={handleDisconnect}
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "6px 12px",
+                                  backgroundColor: "#000",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                Disconnect
+                              </button>
+                              <button
+                                className="runtime-btn runtime-btn-secondary"
+                                onClick={() => handleDeletePod(pod.id, pod.name)}
+                                disabled={deletingPodId === pod.id}
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "6px 12px",
+                                  backgroundColor: "#dc2626",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                {deletingPodId === pod.id ? "..." : "Terminate"}
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                className="runtime-btn runtime-btn-secondary"
+                                onClick={() => handleConnectToPod(pod.id)}
+                                disabled={connectingPodId === pod.id}
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "6px 12px",
+                                  backgroundColor: "#10b981",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                {connectingPodId === pod.id ? "Connecting..." : "Connect"}
+                              </button>
+                              <button
+                                className="runtime-btn runtime-btn-secondary"
+                                onClick={() => handleDeletePod(pod.id, pod.name)}
+                                disabled={deletingPodId === pod.id}
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "6px 12px",
+                                  backgroundColor: "#dc2626",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                {deletingPodId === pod.id ? "..." : "Terminate"}
+                              </button>
+                            </>
+                          )}
                         </div>
-                      </div>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button
-                          className="runtime-btn runtime-btn-secondary"
-                          onClick={handleDisconnect}
-                          style={{
-                            fontSize: "10px",
-                            padding: "6px 12px",
-                            backgroundColor: "#000",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "8px",
-                            cursor: "pointer"
-                          }}
-                        >
-                          Disconnect
-                        </button>
-                        <button
-                          className="runtime-btn runtime-btn-secondary"
-                          onClick={() => handleDeletePod(pod.id, pod.name)}
-                          disabled={deletingPodId === pod.id}
-                          style={{
-                            fontSize: "10px",
-                            padding: "6px 12px",
-                            backgroundColor: "#dc2626",
-                            color: "white",
-                            border: "none",
-                            borderRadius: "8px",
-                            cursor: "pointer"
-                          }}
-                        >
-                          {deletingPodId === pod.id ? "..." : "Terminate"}
-                        </button>
                       </div>
                     </div>
-                  </div>
-                ))
+                  );
+                })
             )}
           </section>
 
