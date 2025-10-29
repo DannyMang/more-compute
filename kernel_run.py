@@ -221,17 +221,24 @@ class NotebookLauncher:
 
             # Check if node_modules exists
             if not (frontend_dir / "node_modules").exists():
-                print("Installing dependencies...")
-                subprocess.run(
-                    [npm_cmd, "install"],
-                    cwd=frontend_dir,
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    shell=self.is_windows,
-                    encoding='utf-8',
-                    errors='replace'
-                )
+                print("Installing dependencies (this may take a minute)...")
+                try:
+                    subprocess.run(
+                        [npm_cmd, "install", "--no-audit", "--no-fund"],
+                        cwd=frontend_dir,
+                        check=True,
+                        shell=self.is_windows,
+                        encoding='utf-8',
+                        errors='replace'
+                    )
+                    print("Dependencies installed successfully!")
+                except subprocess.CalledProcessError as e:
+                    print(f"\nError installing dependencies: {e}")
+                    print("Try running manually:")
+                    print(f"  cd {frontend_dir}")
+                    print("  npm install")
+                    self.cleanup()
+                    sys.exit(1)
 
             fe_stdout = None if self.debug else subprocess.DEVNULL
             fe_stderr = None if self.debug else subprocess.DEVNULL
