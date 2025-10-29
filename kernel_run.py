@@ -371,11 +371,22 @@ def build_parser() -> argparse.ArgumentParser:
 def ensure_notebook_exists(notebook_path: Path):
     if notebook_path.exists():
         if notebook_path.suffix != '.ipynb':
-            raise ValueError("Notebook path must be a .ipynb file")
+            raise ValueError(
+                f"Error: '{notebook_path}' is not a notebook file.\n"
+                f"Notebook files must have a .ipynb extension.\n"
+                f"Example: more-compute {notebook_path}.ipynb"
+            )
         return
 
     if notebook_path.suffix != '.ipynb':
-        raise ValueError("Notebook path must end with .ipynb")
+        raise ValueError(
+            f"Error: '{notebook_path}' does not have the .ipynb extension.\n"
+            f"Notebook files must end with .ipynb\n\n"
+            f"Did you mean?\n"
+            f"  more-compute {notebook_path}.ipynb\n\n"
+            f"Or to create a new notebook with timestamp:\n"
+            f"  more-compute new"
+        )
 
     notebook_path.parent.mkdir(parents=True, exist_ok=True)
     notebook = Notebook()

@@ -1,18 +1,10 @@
-(for settings.json)
+# For settings.json
 
-Possible Themes:
+Available themes: `light`, `dark`, `tokyo-night`, `tokyo-night-storm`, `tokyo-night-light`, `night-owl`, `night-owl-light`, `synthwave-84`, `one-dark-pro`
 
-light
-dark
-tokyo-night
-tokyo-night-storm
-tokyo-night-light
-night-owl
-night-owl-light
-synthwave-84
-one-dark-pro
-
-Example settings.json:
+Example:
+```json
 {
   "theme": "dark"
 }
+```

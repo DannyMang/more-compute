@@ -46,6 +46,9 @@ const SettingsPopup: React.FC<{ onSettingsChange?: (settings: NotebookSettings) 
 
   return (
     <div className="settings-container">
+      <div style={{ fontSize: '12px', marginBottom: '8px', color: 'var(--mc-text-secondary, #6b7280)' }}>
+        See all themes at <a href="https://github.com/DannyMang/more-compute/blob/main/frontend/styling_README.md" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--mc-link-color, #3b82f6)', textDecoration: 'underline' }}>styling_README.md</a>
+      </div>
       <textarea
         className="settings-editor"
         value={settingsJson}
