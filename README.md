@@ -1,100 +1,86 @@
 # more-compute
 
-- windows support coming soon
+[![PyPI version](https://badge.fury.io/py/more-compute.svg)](https://pypi.org/project/more-compute/)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An interactive notebook environment similar to Marimo and Google Colab that runs locally.
+Interactive notebook environment for local Python development. Works with standard `.ipynb` files,
+similar to Jupyter Lab but more awesome.
 
 ## Installation
 
-### Windows
+**Prerequisites:** [Node.js](https://nodejs.org/) 16+ required for web interface.
 
-#### Prerequisites
-**Node.js Required**: Download and install from https://nodejs.org/ (required for the web interface)
+### Using uv (Recommended)
 
-#### Quick Install
-```powershell
-# 1. Install uv (one-time setup)
-powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
-
-# 2. Close and reopen PowerShell, then install more-compute
-uv tool install more-compute
-
-# 3. Add to PATH permanently (run once)
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable(
-    "Path",
-    "$userPath;$env:USERPROFILE\.local\bin",
-    "User"
-)
-
-# 4. Restart PowerShell
-
-# 5. Verify installation
-more-compute --version
-```
-
-#### Troubleshooting Windows
-
-**"more-compute is not recognized"**
-1. Check if installed: `Test-Path $env:USERPROFILE\.local\bin\more-compute.exe`
-2. Check PATH: `$env:Path -split ';' | Select-String ".local"`
-3. **Must restart terminal** after PATH changes!
-
-**"npm not found" or "Failed to start frontend"**
-- Install Node.js from https://nodejs.org/
-- Restart terminal after installation
-- Verify: `npm --version`
-
-**Port 8000 already in use**
-```powershell
-$env:MORECOMPUTE_PORT = "8080"
-more-compute notebook.ipynb
-```
-
-### macOS/Linux
-
-#### Recommended: Using uv
 ```bash
-# Install uv
+# macOS/Linux
 curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install more-compute
 uv tool install more-compute
 
-# Verify
-more-compute --version
+# Windows
+powershell -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv tool install more-compute
 ```
 
-#### Alternative: Using pip
+### Using pip
+
 ```bash
 pip install more-compute
-# Note: You may need to add to PATH manually. We recommend using uv.
+
+# Add to PATH if needed:
+# macOS/Linux: echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+# Windows: See troubleshooting below
 ```
 
 ## Usage
 
-### Create a new notebook
 ```bash
-more-compute new
+more-compute notebook.ipynb  # Open existing notebook
+more-compute                 # Create and open new notebook
+more-compute --debug         # Show logs
 ```
-This creates a timestamped notebook like `notebook_20241007_153302.ipynb`
 
+Opens automatically at http://localhost:8000
 
-### Open an existing notebook
+## Troubleshooting
+
+**Command not found:**
 ```bash
-# Open a specific notebook
-more-compute your_notebook.ipynb
+uv tool update-shell  # Fixes PATH automatically
+```
 
-# Or run directly
-python3 kernel_run.py your_notebook.ipynb
+**Manual PATH fix (macOS/Linux):**
+```bash
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
+source ~/.bashrc
+```
 
-# If no path provided, opens default notebook
-more-compute
+**Manual PATH fix (Windows):**
+```powershell
+$pythonScripts = python -c "import site; print(site.USER_BASE)"
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable("Path", "$userPath;$pythonScripts\Scripts", "User")
+# Restart PowerShell
+```
+
+**Port in use:**
+```bash
+export MORECOMPUTE_PORT=8080  # macOS/Linux
+$env:MORECOMPUTE_PORT = "8080"  # Windows
 ```
 
 ## Development
 
-To install in development mode:
 ```bash
-pip install -e .
+git clone https://github.com/DannyMang/MORECOMPUTE.git
+cd MORECOMPUTE
+uv venv && source .venv/bin/activate
+uv pip install -e .
+cd frontend && npm install && cd ..
+python kernel_run.py notebook.ipynb
 ```
+
+## License
+
+MIT - see [LICENSE](LICENSE)
