@@ -57,4 +57,7 @@ where = ["."]
 include = ["morecompute*", "frontend"]
 
 [tool.setuptools.package-data]
-"frontend" = ["**/*"]
+"frontend" = ["**/*.tsx", "**/*.ts", "**/*.js", "**/*.jsx", "**/*.json", "**/*.css", "**/*.mjs", "**/*.md"]
+
+[tool.setuptools.exclude-package-data]
+"frontend" = ["node_modules/**", ".next/**"]
