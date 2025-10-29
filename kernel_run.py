@@ -305,13 +305,19 @@ class NotebookLauncher:
         print("\n        Edit notebook in your browser!\n")
         print("        ➜  URL: http://localhost:3000\n")
 
+        # Track Ctrl+C presses
+        interrupt_count = [0]  # Use list to allow modification in nested function
+
         # Set up signal handlers
         def signal_handler(signum, frame):
-            # Shutdown immediately on Ctrl+C
-            print("\nREMINDER: Any running GPU pods will continue to incur costs until you terminate them in the Compute popup.")
-            print("\n        Thanks for using MoreCompute!\n")
-            self.cleanup()
-            sys.exit(0)
+            interrupt_count[0] += 1
+            if interrupt_count[0] == 1:
+                print("\n\nREMINDER: Any running GPU pods will continue to incur costs until you terminate them in the Compute popup.")
+                print("[CTRL-C AGAIN TO EXIT]")
+            else:
+                print("\n        Thanks for using MoreCompute!\n")
+                self.cleanup()
+                sys.exit(0)
 
         # Windows signal handling is different
         if not self.is_windows:
@@ -341,6 +347,7 @@ class NotebookLauncher:
                 time.sleep(1)
 
         except KeyboardInterrupt:
+            # This shouldn't be reached due to signal handler, but keep as fallback
             print("\n\n        Thanks for using MoreCompute!\n")
             self.cleanup()
 
