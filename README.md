@@ -4,8 +4,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Interactive notebook environment for local Python development. Works with standard `.ipynb` files,
-similar to Jupyter Lab but more awesome.
+An interactive notebook environment, similar to Marimo and Google Colab, that runs locally. It works with standard `.ipynb` files, similar to Jupyter Lab but more awesome.
 
 ## Installation
 
