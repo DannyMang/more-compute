@@ -1,5 +1,5 @@
 import { editor } from 'monaco-editor';
-import generatedThemes from './generated-themes.json';
+import generatedThemes from './themes.json';
 
 export type MonacoThemeName = keyof typeof generatedThemes.themes;
 
