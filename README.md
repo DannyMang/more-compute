@@ -9,7 +9,7 @@ similar to Jupyter Lab but more awesome.
 
 ## Installation
 
-**Prerequisites:** [Node.js](https://nodejs.org/) 16+ required for web interface.
+**Prerequisites:** [Node.js](https://nodejs.org/) >= 20.10.0 required for web interface
 
 ### Using uv (Recommended)
 
