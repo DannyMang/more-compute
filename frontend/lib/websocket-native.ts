@@ -1,8 +1,8 @@
-import { Cell, ExecutionResult } from '@/types/notebook';
+type EventCallback = (data: unknown) => void;
 
 export class WebSocketService {
   private ws: WebSocket | null = null;
-  private listeners: Map<string, Function[]> = new Map();
+  private listeners: Map<string, EventCallback[]> = new Map();
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 5;
   private url: string = '';
@@ -47,7 +47,7 @@ export class WebSocketService {
     });
   }
 
-  private handleMessage(data: any) {
+  private handleMessage(data: { type: string; data: unknown }) {
     const messageType = data.type;
     const messageData = data.data;
   
@@ -119,14 +119,14 @@ export class WebSocketService {
     }
   }
 
-  on(event: string, callback: Function) {
+  on(event: string, callback: EventCallback) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
     this.listeners.get(event)!.push(callback);
   }
 
-  off(event: string, callback: Function) {
+  off(event: string, callback: EventCallback) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       const index = callbacks.indexOf(callback);
@@ -136,14 +136,14 @@ export class WebSocketService {
     }
   }
 
-  private emit(event: string, data: any) {
+  private emit(event: string, data: unknown) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       callbacks.forEach(callback => callback(data));
     }
   }
 
-  private send(type: string, data: any = {}) {
+  private send(type: string, data: Record<string, unknown> = {}) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, data }));
     } else {
@@ -161,7 +161,7 @@ export class WebSocketService {
   }
 
   // Cell operations
-  addCell(index: number, cellType: 'code' | 'markdown', source: string = '', fullCell?: any) {
+  addCell(index: number, cellType: 'code' | 'markdown', source: string = '', fullCell?: unknown) {
     this.send('add_cell', {
       index,
       cell_type: cellType,

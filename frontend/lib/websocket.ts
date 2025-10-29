@@ -1,17 +1,17 @@
-import { Cell, ExecutionResult } from '@/types/notebook';
+type EventCallback = (data?: unknown) => void;
 
 interface SocketWrapper {
-  on: (event: string, callback: Function) => void;
-  emit: (event: string, data?: any) => void;
+  on: (event: string, callback: EventCallback) => void;
+  emit: (event: string, data?: Record<string, unknown>) => void;
   disconnect: () => void;
 }
 
 export class WebSocketService {
   private socket: SocketWrapper | null = null;
-  private listeners: Map<string, Function[]> = new Map();
+  private listeners: Map<string, EventCallback[]> = new Map();
 
   private createSocketWrapper(ws: WebSocket): SocketWrapper {
-    const eventHandlers = new Map<string, Function>();
+    const eventHandlers = new Map<string, EventCallback>();
 
     ws.onopen = () => {
       const handler = eventHandlers.get('connect');
@@ -39,10 +39,10 @@ export class WebSocketService {
     };
 
     return {
-      on: (event: string, callback: Function) => {
+      on: (event: string, callback: EventCallback) => {
         eventHandlers.set(event, callback);
       },
-      emit: (event: string, data?: any) => {
+      emit: (event: string, data?: Record<string, unknown>) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: event, data }));
         }
@@ -106,14 +106,14 @@ export class WebSocketService {
     });
   }
 
-  on(event: string, callback: Function) {
+  on(event: string, callback: EventCallback) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
     this.listeners.get(event)!.push(callback);
   }
 
-  off(event: string, callback: Function) {
+  off(event: string, callback: EventCallback) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       const index = callbacks.indexOf(callback);
@@ -123,7 +123,7 @@ export class WebSocketService {
     }
   }
 
-  private emit(event: string, data: any) {
+  private emit(event: string, data?: unknown) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       callbacks.forEach(callback => callback(data));

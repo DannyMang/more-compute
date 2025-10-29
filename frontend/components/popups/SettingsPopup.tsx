@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { THEMES, DEFAULT_SETTINGS, loadSettings, saveSettings, applyTheme, type NotebookSettings } from '@/lib/settings';
 
-const SettingsPopup: React.FC<{ onClose?: () => void; onSettingsChange?: (settings: NotebookSettings) => void }> = ({ onClose, onSettingsChange }) => {
+const SettingsPopup: React.FC<{ onSettingsChange?: (settings: NotebookSettings) => void }> = ({ onSettingsChange }) => {
   const [settings, setSettings] = useState<NotebookSettings>(() => loadSettings());
   const [settingsJson, setSettingsJson] = useState(() => JSON.stringify(loadSettings(), null, 2));
   const [error, setError] = useState<string | null>(null);
@@ -9,7 +9,7 @@ const SettingsPopup: React.FC<{ onClose?: () => void; onSettingsChange?: (settin
   useEffect(() => {
     setSettingsJson(JSON.stringify(settings, null, 2));
     applyTheme(settings.theme);
-  }, []);
+  }, [settings]);
 
   const persistSettings = useCallback((updated: NotebookSettings) => {
     setSettings(updated);
@@ -33,7 +33,7 @@ const SettingsPopup: React.FC<{ onClose?: () => void; onSettingsChange?: (settin
       };
       setError(null);
       persistSettings(merged);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to parse settings JSON', err);
       setError('Invalid JSON. Please fix the syntax and try again.');
     }

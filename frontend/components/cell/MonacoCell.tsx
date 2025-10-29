@@ -674,7 +674,6 @@ export const MonacoCell: React.FC<CellProps> = ({
                       showIcons: true,
                       showSnippets: true,
                       showWords: false,
-                      maxVisibleSuggestions: 8, // Reasonable height, navigate with arrows
                       insertMode: 'replace',
                       filterGraceful: true,
                     },
@@ -691,7 +690,7 @@ export const MonacoCell: React.FC<CellProps> = ({
                     overviewRulerBorder: false,
                     overviewRulerLanes: 0,
                     // NOTE: fixedOverflowWidgets has known positioning bugs in 2024 - disabled
-                    padding: { top: 8, bottom: 8, left: 16, right: 16 }, // All padding managed by Monaco
+                    padding: { top: 8, bottom: 8 }, // All padding managed by Monaco
                     scrollbar: {
                       vertical: "auto",
                       horizontal: "auto",

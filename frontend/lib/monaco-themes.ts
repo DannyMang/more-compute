@@ -3,16 +3,34 @@ import generatedThemes from './themes.json';
 
 export type MonacoThemeName = keyof typeof generatedThemes.themes;
 
+interface VSCodeTokenColor {
+  name?: string;
+  scope: string | string[];
+  settings?: {
+    foreground?: string;
+    background?: string;
+    fontStyle?: string;
+  };
+}
+
+interface VSCodeTheme {
+  displayName: string;
+  name: string;
+  type: 'light' | 'dark';
+  colors?: Record<string, string>;
+  tokenColors?: VSCodeTokenColor[];
+}
+
 /**
  * Convert VS Code theme to Monaco theme definition
  */
-function convertToMonacoTheme(vsCodeTheme: any): editor.IStandaloneThemeData {
+function convertToMonacoTheme(vsCodeTheme: VSCodeTheme): editor.IStandaloneThemeData {
   const colors = vsCodeTheme.colors || {};
   const tokenColors = vsCodeTheme.tokenColors || [];
 
   // Convert token colors to Monaco rules format
   const rules: editor.ITokenThemeRule[] = [];
-  tokenColors.forEach((tokenColor: any) => {
+  tokenColors.forEach((tokenColor: VSCodeTokenColor) => {
     const scopes = Array.isArray(tokenColor.scope) ? tokenColor.scope : [tokenColor.scope];
     const settings = tokenColor.settings || {};
 
@@ -28,7 +46,7 @@ function convertToMonacoTheme(vsCodeTheme: any): editor.IStandaloneThemeData {
     });
   });
 
-  const monacoColors: any = {
+  const monacoColors: Record<string, string> = {
     'editor.background': colors['editor.background'],
     'editor.foreground': colors['editor.foreground'],
     'editor.lineHighlightBackground': colors['editor.lineHighlightBackground'] || colors['editor.background'],
@@ -56,9 +74,9 @@ function convertToMonacoTheme(vsCodeTheme: any): editor.IStandaloneThemeData {
 /**
  * Load and define all themes in Monaco Editor
  */
-export function loadMonacoThemes(monaco: any) {
-  Object.entries(generatedThemes.themes).forEach(([themeName, themeData]: [string, any]) => {
-    const monacoTheme = convertToMonacoTheme(themeData);
+export function loadMonacoThemes(monaco: typeof import('monaco-editor')) {
+  Object.entries(generatedThemes.themes).forEach(([themeName, themeData]) => {
+    const monacoTheme = convertToMonacoTheme(themeData as VSCodeTheme);
     monaco.editor.defineTheme(themeName, monacoTheme);
   });
 }
@@ -67,10 +85,10 @@ export function loadMonacoThemes(monaco: any) {
  * Get list of available theme names
  */
 export function getAvailableThemes(): Array<{ name: string; displayName: string; type: 'light' | 'dark' }> {
-  return Object.entries(generatedThemes.themes).map(([name, data]: [string, any]) => ({
+  return Object.entries(generatedThemes.themes).map(([name, data]) => ({
     name,
     displayName: data.displayName,
-    type: data.type,
+    type: data.type as 'light' | 'dark',
   }));
 }
 
@@ -89,17 +107,16 @@ function adjustColor(hex: string, percent: number): string {
  * Get simplified color scheme for UI elements (non-Monaco parts)
  */
 export function getThemeColors(themeName: string) {
-  const theme = (generatedThemes.themes as any)[themeName];
+  const theme = generatedThemes.themes[themeName as keyof typeof generatedThemes.themes];
   if (!theme) return null;
 
-  const colors = theme.colors || {};
+  const colors: Record<string, string | undefined> = theme.colors || {};
   const isLight = theme.type === 'light';
 
   // Extract colors from VS Code theme
   const editorBg = colors['editor.background'] || (isLight ? '#ffffff' : '#1e1e1e');
   const editorFg = colors['editor.foreground'] || (isLight ? '#1f2937' : '#d4d4d4');
   const activityBarBg = colors['activityBar.background'] || editorBg;
-  const statusBarBg = colors['statusBar.background'] || activityBarBg;
   const sidebarBg = colors['sideBar.background'] || activityBarBg;
   const buttonBg = colors['button.background'] || (isLight ? '#3b82f6' : '#60a5fa');
   const buttonFg = colors['button.foreground'] || (isLight ? '#ffffff' : '#000000');

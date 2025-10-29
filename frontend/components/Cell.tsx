@@ -13,10 +13,10 @@
 
 import React, { useRef, useEffect, useState } from "react";
 import { Cell as CellType } from "@/types/notebook";
-import CellOutput from "./CellOutput";
-import AddCellButton from "./AddCellButton";
-import MarkdownRenderer from "./MarkdownRenderer";
-import CellButton from "./CellButton";
+import CellOutput from "./output/CellOutput";
+import AddCellButton from "./cell/AddCellButton";
+import MarkdownRenderer from "./output/MarkdownRenderer";
+import CellButton from "./cell/CellButton";
 import {
   UpdateIcon,
   LinkBreak2Icon,
@@ -64,10 +64,14 @@ export const Cell: React.FC<CellProps> = ({
   // REFS
   // ============================================================================
   const editorRef = useRef<HTMLTextAreaElement>(null);
-  const codeMirrorInstance = useRef(null);
+  const codeMirrorInstance = useRef<{
+    setValue: (value: string) => void;
+    toTextArea: () => void;
+    getValue: () => string;
+  } | null>(null);
   const wasEditingMarkdown = useRef(false);
   const indexRef = useRef<number>(index);
-  const intervalRef = useRef(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // ============================================================================
   // STATE

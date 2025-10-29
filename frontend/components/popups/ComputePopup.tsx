@@ -168,16 +168,17 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
             console.log("[COMPUTE POPUP] Discovered running pod after restart:", status.pod);
             // Only show discovered pod warning if it's not already in the pods list
             // (This can happen if pods haven't loaded yet)
-            const alreadyInList = gpuPods.some(p => p.id === status.pod.id);
+            const pod = status.pod;
+            const alreadyInList = gpuPods.some(p => p.id === pod.id);
             if (!alreadyInList) {
               setDiscoveredPod({
-                id: status.pod.id,
-                name: status.pod.name,
+                id: pod.id,
+                name: pod.name,
                 status: "running",
-                gpuType: status.pod.gpu_type || "Unknown",
+                gpuType: pod.gpu_type || "Unknown",
                 region: "Unknown",
-                costPerHour: status.pod.price_hr || 0,
-                sshConnection: status.pod.ssh_connection || null,
+                costPerHour: pod.price_hr || 0,
+                sshConnection: pod.ssh_connection || null,
               });
             }
           }
