@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Script from "next/script";
 import Sidebar from "@/components/layout/Sidebar";
 import FolderPopup from "@/components/popups/FolderPopup";
@@ -13,12 +13,19 @@ import {
   PodWebSocketProvider,
   usePodWebSocket,
 } from "@/contexts/PodWebSocketContext";
+import { loadSettings, applyTheme } from "@/lib/settings";
 import "./globals.css";
 
 function AppContent({ children }: { children: React.ReactNode }) {
   const [appSettings, setAppSettings] = useState({});
   const [activePopup, setActivePopup] = useState<string | null>(null);
   const { connectionState, gpuPods, connectingPodId } = usePodWebSocket();
+
+  // Apply theme on initial mount
+  useEffect(() => {
+    const settings = loadSettings();
+    applyTheme(settings.theme);
+  }, []);
 
   const handleSettingsChange = (settings: any) => {
     console.log("Settings updated:", settings);

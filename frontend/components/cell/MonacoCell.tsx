@@ -17,6 +17,8 @@ import {
 } from "@radix-ui/react-icons";
 import { Check, X } from "lucide-react";
 import { fixIndentation } from "@/lib/api";
+import { loadMonacoThemes } from "@/lib/monaco-themes";
+import { loadSettings } from "@/lib/settings";
 
 interface CellProps {
   cell: CellType;
@@ -39,6 +41,20 @@ const cellEditors = new Map<string, monaco.editor.IStandaloneCodeEditor>();
 
 // Global flag to ensure providers are registered only once
 let providersRegistered = false;
+// Global flag to ensure themes are loaded only once
+let themesLoaded = false;
+
+// Load Monaco themes globally once
+function loadMonacoThemesGlobally(monacoInstance: Monaco) {
+  if (themesLoaded) return;
+  themesLoaded = true;
+
+  try {
+    loadMonacoThemes(monacoInstance);
+  } catch (e) {
+    console.warn('Failed to load Monaco themes:', e);
+  }
+}
 
 // Register global LSP providers once
 function registerGlobalLSPProviders(monacoInstance: Monaco) {
@@ -294,6 +310,26 @@ export const MonacoCell: React.FC<CellProps> = ({
       }
       editorRef.current = null;
     }
+
+    // Load themes globally once
+    loadMonacoThemesGlobally(monacoInstance);
+
+    // Apply theme globally before editor is created
+    const settings = loadSettings();
+    const userTheme = settings.theme;
+
+    if (userTheme === 'light') {
+      monacoInstance.editor.setTheme('vs');
+    } else if (userTheme === 'dark') {
+      monacoInstance.editor.setTheme('vs-dark');
+    } else {
+      try {
+        monacoInstance.editor.setTheme(userTheme);
+      } catch (e) {
+        const isDark = userTheme.includes('dark') || userTheme.includes('night') || userTheme.includes('synthwave');
+        monacoInstance.editor.setTheme(isDark ? 'vs-dark' : 'vs');
+      }
+    }
   };
 
   const handleEditorDidMount = (
@@ -303,29 +339,25 @@ export const MonacoCell: React.FC<CellProps> = ({
     editorRef.current = editor;
     monacoRef.current = monacoInstance;
 
-    // Define custom theme with proper suggest widget colors
-    monacoInstance.editor.defineTheme('notebookTheme', {
-      base: 'vs', // Light theme base
-      inherit: true,
-      rules: [],
-      colors: {
-        'editorSuggestWidget.background': '#ffffff',
-        'editorSuggestWidget.foreground': '#1f2937', // Dark text
-        'editorSuggestWidget.border': '#e5e7eb',
-        'editorSuggestWidget.selectedBackground': '#eff6ff',
-        'editorSuggestWidget.selectedForeground': '#1f2937', // Dark text when selected
-        'editorSuggestWidget.highlightForeground': '#3b82f6', // Blue for matches
-        'editorSuggestWidget.focusHighlightForeground': '#2563eb',
-        'list.hoverBackground': '#f3f4f6',
-        'list.hoverForeground': '#1f2937',
-      },
-    });
-
-    // Apply the custom theme
-    monacoInstance.editor.setTheme('notebookTheme');
-
     // Register global LSP providers once
     registerGlobalLSPProviders(monacoInstance);
+
+    // Apply theme again after editor is mounted to ensure it takes effect
+    const settings = loadSettings();
+    const userTheme = settings.theme;
+
+    if (userTheme === 'light') {
+      monacoInstance.editor.setTheme('vs');
+    } else if (userTheme === 'dark') {
+      monacoInstance.editor.setTheme('vs-dark');
+    } else {
+      try {
+        monacoInstance.editor.setTheme(userTheme);
+      } catch (e) {
+        const isDark = userTheme.includes('dark') || userTheme.includes('night') || userTheme.includes('synthwave');
+        monacoInstance.editor.setTheme(isDark ? 'vs-dark' : 'vs');
+      }
+    }
 
     // Register this cell's editor in the global map for LSP
     if (cell.cell_type === "code") {
@@ -482,6 +514,39 @@ export const MonacoCell: React.FC<CellProps> = ({
     }
   }, [isActive]);
 
+  // Listen for theme changes and update Monaco editor
+  useEffect(() => {
+    const handleThemeChange = () => {
+      if (!monacoRef.current) return;
+
+      const settings = loadSettings();
+      const userTheme = settings.theme;
+
+      if (userTheme === 'light') {
+        monacoRef.current.editor.setTheme('vs');
+      } else if (userTheme === 'dark') {
+        monacoRef.current.editor.setTheme('vs-dark');
+      } else {
+        try {
+          monacoRef.current.editor.setTheme(userTheme);
+        } catch (e) {
+          const isDark = userTheme.includes('dark') || userTheme.includes('night') || userTheme.includes('synthwave');
+          monacoRef.current.editor.setTheme(isDark ? 'vs-dark' : 'vs');
+        }
+      }
+    };
+
+    // Listen for storage events (theme changes from settings)
+    window.addEventListener('storage', handleThemeChange);
+    // Also listen for custom theme change event
+    window.addEventListener('themeChanged', handleThemeChange);
+
+    return () => {
+      window.removeEventListener('storage', handleThemeChange);
+      window.removeEventListener('themeChanged', handleThemeChange);
+    };
+  }, []);
+
   // ============================================================================
   // RENDER
   // ============================================================================
@@ -596,7 +661,7 @@ export const MonacoCell: React.FC<CellProps> = ({
                     wordWrap: "on",
                     wrappingStrategy: "advanced",
                     fontSize: 14,
-                    fontFamily: "'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace",
+                    fontFamily: "'Fira Code', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace",
                     lineHeight: 24,
                     automaticLayout: true,
                     tabSize: 4,
@@ -634,7 +699,6 @@ export const MonacoCell: React.FC<CellProps> = ({
                       horizontalScrollbarSize: 10,
                     },
                   }}
-                  theme="vs"
                 />
               </div>
             ) : (

@@ -16,6 +16,10 @@ const SettingsPopup: React.FC<{ onClose?: () => void; onSettingsChange?: (settin
     setSettingsJson(JSON.stringify(updated, null, 2));
     saveSettings(updated);
     applyTheme(updated.theme);
+
+    // Dispatch custom event to notify Monaco cells of theme change
+    window.dispatchEvent(new CustomEvent('themeChanged', { detail: { theme: updated.theme } }));
+
     onSettingsChange?.(updated);
   }, [onSettingsChange]);
 
@@ -42,12 +46,6 @@ const SettingsPopup: React.FC<{ onClose?: () => void; onSettingsChange?: (settin
 
   return (
     <div className="settings-container">
-      <div style={{ marginBottom: '16px', padding: '12px', background: '#f8f9fa', borderRadius: '6px', color: '#6b7280', fontSize: '13px', lineHeight: 1.5 }}>
-        <strong>MoreCompute Settings</strong><br />
-        Configure your notebook environment. Changes are saved to local storage.
-        <br /><br />
-        <em>Experiment with themes (e.g. "catppuccin") or customise fonts and autosave.</em>
-      </div>
       <textarea
         className="settings-editor"
         value={settingsJson}
@@ -55,7 +53,7 @@ const SettingsPopup: React.FC<{ onClose?: () => void; onSettingsChange?: (settin
         spellCheck={false}
       />
       {error && (
-        <div style={{ color: '#dc2626', fontSize: '12px', marginTop: '8px' }}>{error}</div>
+        <div style={{ color: 'var(--mc-error-color, #dc2626)', fontSize: '12px', marginTop: '8px' }}>{error}</div>
       )}
       <div className="settings-actions">
         <button className="btn btn-secondary" type="button" onClick={handleReset}>Reset to Defaults</button>

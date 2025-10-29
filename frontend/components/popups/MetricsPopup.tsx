@@ -149,7 +149,7 @@ const MiniChart: React.FC<{ data: number[] }> = ({ data }) => {
     .join(" ");
   return (
     <svg width={width} height={height} className="mini-chart">
-      <polyline points={points} fill="none" stroke="#3b82f6" strokeWidth="2" />
+      <polyline points={points} fill="none" stroke="var(--mc-primary)" strokeWidth="2" />
     </svg>
   );
 };
