@@ -1,20 +1,68 @@
-import { io, Socket } from 'socket.io-client';
-import { Cell, ExecutionResult } from '@/types/notebook';
+type EventCallback = (data?: unknown) => void;
+
+interface SocketWrapper {
+  on: (event: string, callback: EventCallback) => void;
+  emit: (event: string, data?: Record<string, unknown>) => void;
+  disconnect: () => void;
+}
 
 export class WebSocketService {
-  private socket: Socket | null = null;
-  private listeners: Map<string, Function[]> = new Map();
+  private socket: SocketWrapper | null = null;
+  private listeners: Map<string, EventCallback[]> = new Map();
+
+  private createSocketWrapper(ws: WebSocket): SocketWrapper {
+    const eventHandlers = new Map<string, EventCallback>();
+
+    ws.onopen = () => {
+      const handler = eventHandlers.get('connect');
+      if (handler) handler();
+    };
+
+    ws.onerror = (error) => {
+      const handler = eventHandlers.get('connect_error');
+      if (handler) handler(error);
+    };
+
+    ws.onclose = () => {
+      const handler = eventHandlers.get('disconnect');
+      if (handler) handler();
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        const handler = eventHandlers.get(message.type);
+        if (handler) handler(message.data);
+      } catch (err) {
+        console.error('Failed to parse WebSocket message:', err);
+      }
+    };
+
+    return {
+      on: (event: string, callback: EventCallback) => {
+        eventHandlers.set(event, callback);
+      },
+      emit: (event: string, data?: Record<string, unknown>) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: event, data }));
+        }
+      },
+      disconnect: () => {
+        ws.close();
+      },
+    };
+  }
 
   connect(url: string = 'ws://localhost:8000'): Promise<void> {
     return new Promise((resolve, reject) => {
       // For development, connect directly to the backend WebSocket
-      const wsUrl = process.env.NODE_ENV === 'production' 
-        ? '/ws' 
+      const wsUrl = process.env.NODE_ENV === 'production'
+        ? '/ws'
         : 'ws://localhost:8000/ws';
-      
+
       // Use native WebSocket for FastAPI compatibility
       const ws = new WebSocket(wsUrl);
-      
+
       // Wrap WebSocket in Socket.IO-like interface
       this.socket = this.createSocketWrapper(ws);
 
@@ -58,14 +106,14 @@ export class WebSocketService {
     });
   }
 
-  on(event: string, callback: Function) {
+  on(event: string, callback: EventCallback) {
     if (!this.listeners.has(event)) {
       this.listeners.set(event, []);
     }
     this.listeners.get(event)!.push(callback);
   }
 
-  off(event: string, callback: Function) {
+  off(event: string, callback: EventCallback) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       const index = callbacks.indexOf(callback);
@@ -75,7 +123,7 @@ export class WebSocketService {
     }
   }
 
-  private emit(event: string, data: any) {
+  private emit(event: string, data?: unknown) {
     const callbacks = this.listeners.get(event);
     if (callbacks) {
       callbacks.forEach(callback => callback(data));

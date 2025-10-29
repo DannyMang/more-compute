@@ -1,69 +1,14 @@
-from pydantic import BaseModel
-from datetime import datetime
 import httpx
 from fastapi import HTTPException
 
-class EnvVar(BaseModel):
-    key: str
-    value: str
+from ..models.api_models import (
+    CreatePodRequest,
+    CreateDiskRequest,
+    PodResponse,
+    DiskResponse,
+)
 
-class PodConfig(BaseModel):
-    # Required fields
-    name: str
-    cloudId: str
-    gpuType: str
-    socket: str
-    gpuCount: int = 1
-
-    # Optional
-    diskSize: int | None = None
-    vcpus: int | None = None
-    memory: int | None = None
-    maxPrice: float | None = None
-    image: str | None = None
-    customTemplateId: str | None = None
-    dataCenterId: str | None = None
-    country: str | None = None
-    security: str | None = None
-    envVars: list[EnvVar] | None = None
-    jupyterPassword: str | None = None
-    autoRestart: bool | None = None
-
-
-class ProviderConfig(BaseModel):
-    type: str = "runpod"
-
-
-class TeamConfig(BaseModel):
-    teamId: str | None = None
-
-
-class CreatePodRequest(BaseModel):
-    pod: PodConfig
-    provider: ProviderConfig
-    team: TeamConfig | None = None
-
-
-class PodResponse(BaseModel):
-    id: str
-    userId: str
-    teamId: str | None
-    name: str
-    status: str
-    gpuName: str
-    gpuCount: int
-    priceHr: float
-    sshConnection: str | None
-    ip: str | None
-    createdAt: datetime
-    updatedAt: datetime
-
-
-class AvailabilityQuery(BaseModel):
-    regions: list[str] | None = None
-    gpu_count: int | None = None
-    gpu_type: str | None = None
-    security: str | None = None
+# Helper methods for https://docs.primeintellect.ai/api-reference/
 
 
 class PrimeIntellectService:
@@ -314,3 +259,82 @@ class PrimeIntellectService:
             Dict with confirmation
         """
         return await self._make_request("PATCH", f"/ssh-keys/{key_id}/primary")
+
+
+    async def get_disks(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> dict[str, object]:
+        """
+        Get list of all disks
+
+        args:
+            limit : max number of results (default : 100)
+            offset : for Pagination
+
+        returns:
+            dict with:
+                - data: list of disk objects
+                - total_count : total number of disks
+                - offset : current offset
+                - limit: current limit
+        """
+        params : dict[str, str | int | float | list[str]] = {"limit":limit, "offset":offset}
+        return await self._make_request("GET", "/disks/", params=params)
+
+    async def create_disks(self, disk_request :CreateDiskRequest) -> DiskResponse:
+        """
+        Create new persistent disk
+
+        Args:
+            disk_reqeust: disk configuration request
+
+        Returns:
+            Disk response with disk details
+
+        """
+        import sys
+        payload = disk_request.model_dump(exclude_none=True)
+        print(f"[PI SERVICE] Creating disk with payload: + {payload}", file=sys.stderr, flush=True)
+        response = await self._make_request("POST", "/disks/", json_data=payload)
+        return DiskResponse.model_validate(response)
+
+    async def get_disk(self, disk_id:str) -> DiskResponse:
+        """
+        Get details of specific disk
+
+        args:
+            disk_id: disk identifier
+
+        returns:
+            DiskResponse
+        """
+        response = await self._make_request("GET", f"/disks/{disk_id}")
+        return DiskResponse.model_validate(response)
+
+    async def update_disk(self, disk_id:str, name:str) -> dict[str,object]:
+        """
+        update disk name
+
+        args:
+            disk_id: disk identifier
+            name: new name of disk
+
+        returns:
+            dict with update confirmation
+        """
+        data: dict[str, object] = {"name":name}
+        return await self._make_request("PATCH", f"/disks/{disk_id}", json_data=data)
+
+    async def delete_disk(self, disk_id: str) -> dict[str, object]:
+        """
+        Delete a disk.
+
+        Args:
+            disk_id: The disk identifier
+
+        Returns:
+            Dict with deletion confirmation
+        """
+        return await self._make_request("DELETE", f"/disks/{disk_id}")

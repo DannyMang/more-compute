@@ -25,21 +25,46 @@
     margin: 0;
     padding: 0;
     box-sizing: border-box;
+    font-family: inherit;
 }
 
 :root {
-    --mc-background: #E9E7E3;
-
     /* Font Family Custom Properties */
     --font-sans: 'CustomFont', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --font-mono: 'VeraMono', 'CustomMono', 'Fira Code', 'Monaco', 'Cascadia Code', 'Roboto Mono', monospace;
     --font-display: 'DisplayFont', 'Inter', system-ui, sans-serif;
+
+    /* Default theme colors - will be overridden by theme system */
+    --mc-background: #E9E7E3;
     --mc-cell-background: #F4EEE7;
     --mc-text-color: #575042;
     --mc-markdown-color: #372E25;
     --mc-markdown-heading-color: #624204;
     --mc-markdown-paragraph-color: #575042;
     --mc-line-number-color: #9ca3af;
+
+    /* Primary/Secondary colors */
+    --mc-primary: #3b82f6;
+    --mc-primary-hover: #2563eb;
+    --mc-secondary: #DBC7A8;
+    --mc-secondary-hover: #E2DACC;
+
+    /* UI element colors */
+    --mc-border: #DBC7A8;
+    --mc-border-hover: #C4B59A;
+    --mc-sidebar-background: #f8fafc;
+    --mc-sidebar-foreground: #4b5563;
+    --mc-button-background: #3b82f6;
+    --mc-button-foreground: #ffffff;
+    --mc-input-background: #ffffff;
+    --mc-input-border: #e5e7eb;
+
+    /* Output colors */
+    --mc-output-background: #f8f8f8;
+    --mc-output-text-color: #000000;
+    --mc-output-border: #e5e7eb;
+
+    /* Legacy */
     --text-secondary: #6b7280;
 }
 
@@ -56,8 +81,7 @@
 }
 
 body {
-    font-family:
-        -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     background-color: var(--mc-background);
     color: var(--mc-text-color);
     line-height: 1.6;
@@ -68,6 +92,66 @@ body {
     min-height: 100vh;
     padding: 0;
     display: flex;
+}
+
+/* Connection Status Banner */
+.connection-banner {
+    position: fixed;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1001;
+    padding: 6px 16px;
+    border-radius: 20px;
+    animation: fadeIn 0.3s ease-out;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    backdrop-filter: blur(8px);
+    font-size: 11px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.connection-banner.provisioning {
+    background: rgba(251, 191, 36, 0.95);
+    color: #78350f;
+}
+
+.connection-banner.deploying {
+    background: rgba(251, 191, 36, 0.95);
+    color: #78350f;
+}
+
+.connection-banner.connected {
+    background: rgba(16, 185, 129, 0.95);
+    color: #064e3b;
+}
+
+.connection-message {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.connection-status-text {
+    font-weight: 600;
+    font-size: 11px;
+}
+
+.connection-subtitle {
+    display: none;
+}
+
+@keyframes fadeIn {
+    0% {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-10px);
+    }
+    100% {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
 }
 
 /* Kernel Status Banner */
@@ -244,7 +328,7 @@ body {
     left: 0;
     right: 0;
     height: 1px;
-    background: #DBC7A8;
+    background: var(--mc-secondary);
     opacity: 0;
     transition: opacity 0.2s ease;
 }
@@ -311,19 +395,19 @@ body {
     justify-content: center;
     gap: 8px;
     padding: 8px 48px;
-    border: 1px solid #DBC7A8;
-    background: #fff;
+    border: 1px solid var(--mc-border);
+    background: var(--mc-cell-background);
     cursor: pointer;
     font-size: 14px;
     font-weight: 500;
     border-radius: 8px;
-    color: #575042;
+    color: var(--mc-text-color);
     font-family: 'Fira';
     letter-spacing: -0.02em;
 }
 
 .cell-type-option:hover {
-    background: #E9E7E3;
+    background: var(--mc-secondary);
     cursor: pointer;
 }
 
@@ -382,19 +466,26 @@ body {
     margin: 20px 0;
     padding: 0;
     background: var(--mc-cell-background);
-    border: 2px solid #DBC7A8;
+    border: 2px solid var(--mc-border);
     border-radius: 0.5px;
     transition: all 0.2s ease;
-    overflow: hidden;
+    overflow: visible;
+    z-index: 1; /* Create stacking context but keep low */
+}
+
+/* Active cell should be above others to show autocomplete */
+.cell.active {
+    z-index: 10;
 }
 
 .cell:hover {
-    box-shadow: 2px 4px 0 #E2DACC;
+    box-shadow: 2px 4px 0 var(--mc-secondary-hover);
 }
 
 .cell.active {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 1px #3b82f6;
+    border-color: var(--mc-primary);
+    box-shadow: 0 0 0 1px var(--mc-primary);
+    z-index: 10 !important; /* Ensure active cell and its widgets appear above others */
 }
 
 /* Markdown display mode - no borders or background */
@@ -773,8 +864,8 @@ body {
 
 /* Cell Output */
 .cell-output {
-    border-top: 1px solid #f3f4f6;
-    background: #fafafa;
+    border-top: 1px solid var(--mc-output-border);
+    background: var(--mc-output-background);
 }
 
 .output-content {
@@ -782,7 +873,7 @@ body {
 }
 
 .output-stream {
-    background: #f9fafb;
+    background: var(--mc-output-background);
     padding: 12px 16px;
     margin: 8px 0;
     border-radius: 6px;
@@ -790,12 +881,13 @@ body {
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
-    border-left: 3px solid #e5e7eb;
+    border-left: 3px solid var(--mc-output-border);
+    color: var(--mc-output-text-color);
 }
 
 .output-stream.stdout {
-    color: #374151;
-    border-left-color: #6b7280;
+    color: var(--mc-output-text-color);
+    border-left-color: var(--mc-primary);
 }
 
 .output-stream.stderr {
@@ -805,15 +897,16 @@ body {
 }
 
 .output-result {
-    background: var(--mc-cell-background);
+    background: var(--mc-output-background);
     padding: 12px 16px;
     margin: 8px 0;
     border-radius: 6px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--mc-output-border);
     font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
     font-size: 13px;
     white-space: pre-wrap;
     word-wrap: break-word;
+    color: var(--mc-output-text-color);
 }
 
 .output-error {
@@ -891,11 +984,11 @@ body {
 /* Sidebar Styles */
 .sidebar {
     width: 60px;
-    background: #f8fafc;
-    border-right: 1px solid #e2e8f0;
+    background: var(--mc-sidebar-background);
+    border-right: 1px solid var(--mc-border);
     display: flex;
     flex-direction: column;
-    padding: 16px 0;
+    padding: 8px 0;
     position: fixed;
     left: 0;
     top: 0;
@@ -903,11 +996,23 @@ body {
     z-index: 50;
 }
 
+.sidebar-active-indicator {
+    position: absolute;
+    right: 0;
+    top: 8px;
+    width: 3px;
+    height: 40px;
+    background: var(--mc-primary);
+    border-radius: 2px 0 0 2px;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1;
+}
+
 .sidebar-item {
     position: relative;
-    width: 48px;
-    height: 48px;
-    margin: 4px auto;
+    width: 40px;
+    height: 40px;
+    margin: 2px auto;
     border-radius: 8px;
     display: flex;
     align-items: center;
@@ -917,20 +1022,16 @@ body {
 }
 
 .sidebar-item:hover {
-    background: #e2e8f0;
+    background: var(--mc-secondary);
 }
 
-.sidebar-item.active {
-    background: #3b82f6;
-}
-
-.sidebar-item.active .sidebar-icon {
-    filter: brightness(0) invert(1);
+.sidebar-item.active .sidebar-icon-wrapper {
+    color: var(--mc-primary);
 }
 
 .sidebar-icon {
-    width: 20px;
-    height: 20px;
+    width: 16px;
+    height: 16px;
     opacity: 0.7;
     transition: opacity 0.2s ease;
 }
@@ -944,8 +1045,9 @@ body {
     left: 60px;
     top: 50%;
     transform: translateY(-50%);
-    background: #1f2937;
-    color: white;
+    background: var(--mc-sidebar-background);
+    color: var(--mc-sidebar-foreground);
+    border: 1px solid var(--mc-border);
     padding: 6px 8px;
     border-radius: 4px;
     font-size: 12px;
@@ -965,14 +1067,24 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 24px;
-    height: 24px;
-    color: #4b5563;
+    width: 100%;
+    height: 100%;
+    color: var(--mc-sidebar-foreground);
+    opacity: 0.7;
+    transition: all 0.2s ease;
+}
+
+.sidebar-item:hover .sidebar-icon-wrapper {
+    opacity: 1;
+}
+
+.sidebar-item.active .sidebar-icon-wrapper {
+    opacity: 1;
 }
 
 .sidebar-icon-image {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
 }
 
 /* Main content adjustment */
@@ -989,7 +1101,7 @@ body {
     width: min(480px, calc(100vw - 60px));
     height: 100vh;
     background: var(--mc-background);
-    border-right: 1px solid #e2e8f0;
+    border-right: 1px solid var(--mc-border);
     box-shadow: 2px 0 10px rgba(0, 0, 0, 0.1);
     z-index: 40;
     display: flex;
@@ -1011,20 +1123,21 @@ body {
     justify-content: space-between;
     margin-bottom: 20px;
     padding-bottom: 12px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--mc-border);
 }
 
 .popup-title {
     font-size: 18px;
     font-weight: 600;
-    color: #1f2937;
+    color: var(--mc-text-color);
 }
 
 .popup-close {
     background: none;
     border: none;
     font-size: 20px;
-    color: #6b7280;
+    color: var(--mc-text-color);
+    opacity: 0.6;
     cursor: pointer;
     padding: 4px;
     border-radius: 4px;
@@ -1032,8 +1145,8 @@ body {
 }
 
 .popup-close:hover {
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--mc-secondary);
+    opacity: 1;
 }
 
 /* File Browser Styles */
@@ -1059,7 +1172,7 @@ body {
 .file-toolbar-btn {
     background: var(--mc-cell-background);
     color: var(--mc-text-color);
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--mc-border);
     padding: 6px 10px;
     border-radius: 6px;
     font-size: 12px;
@@ -1074,17 +1187,17 @@ body {
 
 /* Icon-only variant (bordered, compact) */
 .file-toolbar-btn.icon {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--mc-border);
     background: var(--mc-cell-background);
     padding: 6px;
 }
 
 .file-toolbar-btn.icon:hover {
-    background: #f3f4f6;
+    background: var(--mc-secondary);
 }
 
 .file-toolbar-btn:hover:not(:disabled) {
-    background: #e5e7eb;
+    background: var(--mc-secondary);
 }
 
 .file-toolbar-btn:disabled {
@@ -1137,8 +1250,8 @@ body {
 }
 
 .file-item:hover {
-    background: #f3f4f6;
-    border-color: #e5e7eb;
+    background: var(--mc-secondary);
+    border-color: var(--mc-border);
 }
 
 .file-icon {
@@ -1219,20 +1332,20 @@ body {
     justify-content: space-between;
     padding: 12px;
     margin: 8px 0;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--mc-border);
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .env-item:hover {
-    border-color: #3b82f6;
-    background: #f8fafc;
+    border-color: var(--mc-primary);
+    background: var(--mc-secondary);
 }
 
 .env-item.active {
-    border-color: #3b82f6;
-    background: #eff6ff;
+    border-color: var(--mc-primary);
+    background: var(--mc-secondary-hover);
 }
 
 .env-info {
@@ -1262,11 +1375,12 @@ body {
     height: 400px;
     font-family: 'Fira', 'SF Mono', Monaco, monospace;
     font-size: 13px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--mc-border);
     border-radius: 6px;
     padding: 12px;
     resize: vertical;
-    background: #f9fafb;
+    background: var(--mc-input-background);
+    color: var(--mc-text-color);
 }
 
 .settings-actions {
@@ -1287,22 +1401,22 @@ body {
 }
 
 .btn-primary {
-    background: #3b82f6;
-    color: white;
+    background: var(--mc-primary) !important;
+    color: var(--mc-button-foreground) !important;
 }
 
 .btn-primary:hover {
-    background: #2563eb;
+    background: var(--mc-primary-hover) !important;
 }
 
 .btn-secondary {
-    background: #f3f4f6;
-    color: #374151;
-    border: 1px solid #d1d5db;
+    background: var(--mc-secondary);
+    color: var(--mc-text-color);
+    border: 1px solid var(--mc-border);
 }
 
 .btn-secondary:hover {
-    background: #e5e7eb;
+    background: var(--mc-secondary-hover);
 }
 
 /* Metrics Popup Styles */
@@ -1317,19 +1431,20 @@ body {
 }
 
 .metric-panel {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--mc-border);
     border-radius: 8px;
     background: var(--mc-cell-background);
 }
 
 .metric-panel-header {
     padding: 8px 12px;
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--mc-border);
 }
 
 .metric-panel-title {
     font-size: 12px;
-    color: #6b7280;
+    color: var(--mc-text-color);
+    opacity: 0.7;
     font-weight: 600;
 }
 
@@ -1345,7 +1460,8 @@ body {
 
 .metric-big-value .subtitle {
     font-size: 12px;
-    color: #6b7280;
+    color: var(--mc-text-color);
+    opacity: 0.6;
 }
 
 .mini-chart {
@@ -1431,8 +1547,8 @@ body {
     align-items: center;
     gap: 8px;
     flex: 1;
-    background: var(--mc-cell-background);
-    border: 1px solid #e5e7eb;
+    background: var(--mc-input-background);
+    border: 1px solid var(--mc-input-border);
     border-radius: 8px;
     padding: 8px 10px;
 }
@@ -1534,4 +1650,133 @@ body {
   font-weight: normal;
   font-style: normal;
   font-display: swap;
+}
+
+/* Monaco Editor Styling - Match CodeMirror */
+.monaco-editor-container {
+  position: relative;
+  min-height: 100px;
+  border-radius: 4px;
+  overflow: visible !important;
+  z-index: auto;
+}
+
+.monaco-editor-container.code-editor-container {
+  min-height: 100px;
+}
+
+.monaco-editor-container.markdown-editor-container {
+  min-height: 60px;
+}
+
+/* Monaco editor wrapper - use theme background */
+.monaco-editor {
+  position: relative !important;
+  z-index: 1 !important;
+}
+
+.monaco-editor .overflow-guard {
+  border-radius: 0px !important;
+}
+
+/* Use theme background */
+.monaco-editor .monaco-editor-background,
+.monaco-editor .inputarea.ime-input {
+  background: var(--mc-cell-background) !important;
+}
+
+/* Monaco line numbers - match CodeMirror styling */
+.monaco-editor .margin {
+  background: var(--mc-cell-background) !important;
+}
+
+.monaco-editor .line-numbers {
+  color: var(--mc-line-number-color) !important;
+  font-size: 11px !important;
+  font-family: 'Fira', 'SF Mono', Monaco, monospace;
+}
+
+.monaco-editor .margin-view-overlays {
+  background: var(--mc-cell-background) !important;
+  border-right: 1px solid #e5e7eb !important;
+}
+
+/* Remove all line highlights */
+.monaco-editor .current-line,
+.monaco-editor .current-line-exact {
+  background: transparent !important;
+  border: none !important;
+}
+
+.monaco-editor .view-overlays .current-line {
+  background: transparent !important;
+}
+
+/* Monaco editor scrollbar styling */
+.monaco-editor .monaco-scrollable-element > .scrollbar {
+  background: transparent;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.monaco-editor .monaco-scrollable-element > .scrollbar > .slider:hover {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+/* Monaco suggestion widget styling */
+.monaco-editor .suggest-widget {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 6px !important;
+  z-index: 1000 !important; /* High z-index within active cell's stacking context */
+  pointer-events: auto !important;
+  position: absolute !important; /* Position within cell, not fixed */
+}
+
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row {
+  padding: 6px 8px !important;
+  min-height: 28px !important;
+}
+
+/* The theme colors handle foreground/background, but ensure hover works */
+.monaco-editor .suggest-widget .monaco-list .monaco-list-row:hover {
+  cursor: pointer !important;
+}
+
+/* Monaco hover widget styling */
+.monaco-editor .monaco-hover {
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 6px !important;
+  background: white !important;
+  z-index: 100000 !important;
+}
+
+/* Monaco parameter hints */
+.monaco-editor .parameter-hints-widget {
+  border: 1px solid #e5e7eb !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+  border-radius: 6px !important;
+  z-index: 100000 !important;
+}
+
+/* Ensure cell content doesn't clip widgets */
+.cell-content {
+  overflow: visible !important;
+}
+
+/* Ensure Monaco renders properly in cells - match CodeMirror padding */
+.cell .monaco-editor-container {
+  background: transparent;
+  padding: 0;
+}
+
+/* Monaco padding is handled via editor options - no CSS padding needed */
+
+/* Fix cell input padding for Monaco */
+.cell-input {
+  padding: 0 !important;
+  overflow: visible;
 }

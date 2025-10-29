@@ -4,34 +4,71 @@
 
 An interactive notebook environment similar to Marimo and Google Colab that runs locally.
 
-For references:
-
-https://marimo.io/
-
-https://colab.google/
-
-
-FOR LOCAL DEVELOPMENT:
-
-```bash
-pip install -e .
-```
-
 ## Installation
 
-### Recommended: Using uv
+### Windows
+
+#### Prerequisites
+**Node.js Required**: Download and install from https://nodejs.org/ (required for the web interface)
+
+#### Quick Install
+```powershell
+# 1. Install uv (one-time setup)
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# 2. Close and reopen PowerShell, then install more-compute
+uv tool install more-compute
+
+# 3. Add to PATH permanently (run once)
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+[Environment]::SetEnvironmentVariable(
+    "Path",
+    "$userPath;$env:USERPROFILE\.local\bin",
+    "User"
+)
+
+# 4. Restart PowerShell
+
+# 5. Verify installation
+more-compute --version
+```
+
+#### Troubleshooting Windows
+
+**"more-compute is not recognized"**
+1. Check if installed: `Test-Path $env:USERPROFILE\.local\bin\more-compute.exe`
+2. Check PATH: `$env:Path -split ';' | Select-String ".local"`
+3. **Must restart terminal** after PATH changes!
+
+**"npm not found" or "Failed to start frontend"**
+- Install Node.js from https://nodejs.org/
+- Restart terminal after installation
+- Verify: `npm --version`
+
+**Port 8000 already in use**
+```powershell
+$env:MORECOMPUTE_PORT = "8080"
+more-compute notebook.ipynb
+```
+
+### macOS/Linux
+
+#### Recommended: Using uv
 ```bash
 # Install uv
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Install more-compute
 uv tool install more-compute
+
+# Verify
+more-compute --version
 ```
 
-### Alternative: Using pip
+#### Alternative: Using pip
 ```bash
 pip install more-compute
-# you have to add to path manually
+# Note: You may need to add to PATH manually. We recommend using uv.
 ```
 
 ## Usage
@@ -42,10 +79,6 @@ more-compute new
 ```
 This creates a timestamped notebook like `notebook_20241007_153302.ipynb`
 
-Or run directly:
-```bash
-python3 kernel_run.py new
-```
 
 ### Open an existing notebook
 ```bash
@@ -57,75 +90,6 @@ python3 kernel_run.py your_notebook.ipynb
 
 # If no path provided, opens default notebook
 more-compute
-```
-
-## Features
-
-- **Interactive notebook interface** similar to Google Colab
-- **Support for both `.py` and `.ipynb` files**
-- **Real-time cell execution** with execution timing
-- **Magic commands** support:
-  - `!pip install package_name` - Install Python packages
-  - `!ls` - List directory contents
-  - `!pwd` - Print working directory
-  - `!any_shell_command` - Run any shell command
-- **Visual execution feedback**:
-  - ✅ Green check icon for successful execution
-  - ❌ Red X icon for failed execution
-  - Execution timing displayed for each cell
-- **Local development environment** - runs on your machine
-- **Web-based interface** accessible via localhost
-- **Cell management**:
-  - Add/delete cells
-  - Drag and drop to reorder
-  - Code and Markdown cell types
-
-## Usage Examples
-
-### Installing and Using Libraries
-```python
-# Install packages using magic commands (like Colab)
-!pip install pandas numpy matplotlib
-
-# Import and use them
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-
-# Create some data
-df = pd.DataFrame({
-    'x': np.range(10),
-    'y': np.random.randn(10)
-})
-
-print(df.head())
-```
-
-### Shell Commands
-```bash
-# List files
-!ls -la
-
-# Check current directory
-!pwd
-
-# Run any shell command
-!echo "Hello from the shell!"
-```
-
-### Data Analysis Example
-```python
-# Load data
-data = pd.read_csv('your_data.csv')
-
-# Analyze
-data.describe()
-
-# Plot
-plt.figure(figsize=(10, 6))
-plt.plot(data['x'], data['y'])
-plt.title('My Analysis')
-plt.show()
 ```
 
 ## Development

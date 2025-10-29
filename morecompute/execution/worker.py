@@ -150,6 +150,74 @@ def worker_main():
                 exec_count = requested_count - 1
             command_type = msg.get('command_type')
             pub.send_json({'type': 'execution_start', 'cell_index': cell_index, 'execution_count': exec_count + 1})
+
+            # Check if this is a special command (shell command starting with ! or magic command)
+            is_special_cmd = code.strip().startswith('!') or code.strip().startswith('%')
+
+            if is_special_cmd:
+                # Handle special commands on remote worker
+                exec_count += 1
+                status = 'ok'
+                error_payload = None
+                start = time.time()
+
+                try:
+                    import subprocess
+                    import shlex
+
+                    # Strip the ! prefix for shell commands
+                    if code.strip().startswith('!'):
+                        shell_cmd = code.strip()[1:].strip()
+
+                        # Run shell command
+                        process = subprocess.Popen(
+                            ['/bin/bash', '-c', shell_cmd],
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE,
+                            text=True
+                        )
+                        stdout, stderr = process.communicate()
+
+                        # Send stdout
+                        if stdout:
+                            pub.send_json({'type': 'stream', 'name': 'stdout', 'text': stdout, 'cell_index': cell_index})
+
+                        # Send stderr
+                        if stderr:
+                            pub.send_json({'type': 'stream', 'name': 'stderr', 'text': stderr, 'cell_index': cell_index})
+
+                        # Check return code
+                        if process.returncode != 0:
+                            status = 'error'
+                            # Only set error if we don't have detailed stderr
+                            if not stderr.strip():
+                                error_payload = {
+                                    'ename': 'ShellCommandError',
+                                    'evalue': f'Command failed with return code {process.returncode}',
+                                    'traceback': [f'Shell command failed: {shell_cmd}']
+                                }
+                    else:
+                        # Magic commands not fully supported on remote yet
+                        status = 'error'
+                        error_payload = {
+                            'ename': 'NotImplementedError',
+                            'evalue': 'Magic commands (%) not yet supported on remote GPU pods',
+                            'traceback': ['Use ! for shell commands instead']
+                        }
+
+                except Exception as exc:
+                    status = 'error'
+                    error_payload = {'ename': type(exc).__name__, 'evalue': str(exc), 'traceback': traceback.format_exc().split('\n')}
+
+                duration_ms = f"{(time.time()-start)*1000:.1f}ms"
+                if error_payload:
+                    pub.send_json({'type': 'execution_error', 'cell_index': cell_index, 'error': error_payload})
+                pub.send_json({'type': 'execution_complete', 'cell_index': cell_index, 'result': {'status': status, 'execution_count': exec_count, 'execution_time': duration_ms, 'outputs': [], 'error': error_payload}})
+                rep.send_json({'ok': True, 'pid': os.getpid()})
+                current_cell = None
+                continue
+
+            # Regular Python code execution
             # Redirect streams
             sf = _StreamForwarder(pub, cell_index)
             old_out, old_err = sys.stdout, sys.stderr
@@ -164,13 +232,6 @@ def worker_main():
             error_payload = None
             start = time.time()
             try:
-                if command_type == 'special':
-                    # This path should be handled in-process; worker only handles python execution
-                    exec_count += 1
-                    pub.send_json({'type': 'execution_complete', 'cell_index': cell_index, 'result': {'status': 'ok', 'execution_count': exec_count, 'execution_time': '0.0ms', 'outputs': [], 'error': None}})
-                    rep.send_json({'ok': True})
-                    current_cell = None
-                    continue
                 compiled = compile(code, '<cell>', 'exec')
                 exec(compiled, g, l)
 

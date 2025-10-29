@@ -96,6 +96,23 @@ class PodKernelManager:
         """
         import sys
 
+        # Check if already connected to this pod
+        if self.pod and self.pod.id == pod_id:
+            # Check if tunnel is still alive
+            if self.ssh_tunnel_proc and self.ssh_tunnel_proc.poll() is None:
+                return {
+                    "status": "ok",
+                    "message": f"Already connected to pod {pod_id}"
+                }
+            # Tunnel died, clean up and reconnect
+            print(f"[POD MANAGER] Existing tunnel dead, reconnecting...", file=sys.stderr, flush=True)
+            await self.disconnect()
+
+        # If connected to different pod, disconnect first
+        if self.pod and self.pod.id != pod_id:
+            print(f"[POD MANAGER] Disconnecting from {self.pod.id} to connect to {pod_id}", file=sys.stderr, flush=True)
+            await self.disconnect()
+
         self.pod = await self.pi_service.get_pod(pod_id)
 
         print(f"[POD MANAGER] Pod status: {self.pod.status}", file=sys.stderr, flush=True)
@@ -144,12 +161,16 @@ class PodKernelManager:
         print(f"[POD MANAGER] Parsed SSH host: {ssh_host}, port: {ssh_port}", file=sys.stderr, flush=True)
 
         #deploy worker code to pod
+        print(f"[POD MANAGER] Deploying worker code to pod...", file=sys.stderr, flush=True)
         deploy_result = await self._deploy_worker(ssh_host, ssh_port)
+        print(f"[POD MANAGER] Deploy result: {deploy_result}", file=sys.stderr, flush=True)
         if deploy_result.get("status") ==  "error":
             return deploy_result
 
         #create ssh tunnel for ZMQ ports
+        print(f"[POD MANAGER] Creating SSH tunnel...", file=sys.stderr, flush=True)
         tunnel_result = await self._create_ssh_tunnel(ssh_host, ssh_port)
+        print(f"[POD MANAGER] Tunnel result: {tunnel_result}", file=sys.stderr, flush=True)
         if tunnel_result.get("status") ==  "error":
             return tunnel_result
 
@@ -158,6 +179,11 @@ class PodKernelManager:
         if worker_result.get("status") ==  "error":
             await self.disconnect()
             return worker_result
+
+        # Note: Worker may take a few seconds to start and install matplotlib
+        # The connection should work even if verification fails
+        print(f"[POD MANAGER] Remote worker is starting (matplotlib install may take a few seconds)", file=sys.stderr, flush=True)
+        print(f"[POD MANAGER] Connection established - try running code in ~5 seconds", file=sys.stderr, flush=True)
 
         return {
             "status": "ok",
@@ -253,7 +279,7 @@ class PodKernelManager:
                 (
                     "cd /tmp && "
                     "tar -xzf morecompute.tar.gz && "
-                    "pip install --quiet pyzmq && "
+                    "pip install --quiet pyzmq matplotlib && "
                     "echo 'Deployment complete'"
                 )
             ])
@@ -315,19 +341,27 @@ class PodKernelManager:
 
             self.ssh_tunnel_proc = subprocess.Popen(
                 tunnel_cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
             )
 
             # Wait briefly for tunnel to establish
             await asyncio.sleep(2)
 
-            if self.ssh_tunnel_proc.poll() is not None:
+            # Check if process is still running
+            if self.ssh_tunnel_proc is None:
                 return {
                     "status": "error",
-                    "message": "SSH tunnel failed to establish"
+                    "message": "SSH tunnel process is None"
                 }
-
+            if self.ssh_tunnel_proc.poll() is not None:
+                # Process died, get error output
+                stdout, stderr = self.ssh_tunnel_proc.communicate()
+                error_msg = stderr.decode('utf-8') if stderr else "No error output"
+                return {
+                    "status": "error",
+                    "message": f"SSH tunnel failed to establish: {error_msg}"
+                }
             return {
                 "status": "ok",
                 "message": "SSH tunnel created",
@@ -335,6 +369,7 @@ class PodKernelManager:
             }
 
         except Exception as e:
+            print(f"[POD MANAGER] Exception creating tunnel: {e}", file=sys.stderr, flush=True)
             return {
                 "status": "error",
                 "message": f"Tunnel creation error: {str(e)}"
@@ -352,7 +387,10 @@ class PodKernelManager:
             dict with worker start status
         """
         try:
+            print(f"[POD MANAGER] Starting remote worker on {ssh_host}:{ssh_port}", file=sys.stderr, flush=True)
+
             # Start worker in background on remote pod
+            # Use 'python3' instead of sys.executable since remote pod may have different Python path
             ssh_key = self._get_ssh_key()
             worker_cmd = ["ssh", "-p", ssh_port]
 
@@ -365,14 +403,14 @@ class PodKernelManager:
                 "-o", "BatchMode=yes",
                 "-o", "ConnectTimeout=10",
                 f"root@{ssh_host}",
+                "sh", "-c",
                 (
-                    f"cd /tmp && "
-                    f"export MC_ZMQ_CMD_ADDR=tcp://0.0.0.0:{self.remote_cmd_port} && "
-                    f"export MC_ZMQ_PUB_ADDR=tcp://0.0.0.0:{self.remote_pub_port} && "
-                    f"export PYTHONPATH=/tmp:$PYTHONPATH && "
-                    f"nohup {sys.executable} -m morecompute.execution.worker "
-                    f"> /tmp/worker.log 2>&1 & "
-                    f"echo $!"
+                    f"'cd /tmp && "
+                    f"MC_ZMQ_CMD_ADDR=tcp://0.0.0.0:{self.remote_cmd_port} "
+                    f"MC_ZMQ_PUB_ADDR=tcp://0.0.0.0:{self.remote_pub_port} "
+                    f"nohup python3 /tmp/morecompute/execution/worker.py "
+                    f">/tmp/worker.log 2>&1 </dev/null & "
+                    f"echo $!'"
                 )
             ])
 
@@ -390,9 +428,12 @@ class PodKernelManager:
                 }
 
             remote_pid = result.stdout.strip()
+            print(f"[POD MANAGER] Remote worker PID: {remote_pid}", file=sys.stderr, flush=True)
 
             # Wait for worker to be ready
             await asyncio.sleep(2)
+
+            print(f"[POD MANAGER] Remote worker should be ready now", file=sys.stderr, flush=True)
 
             return {
                 "status": "ok",
@@ -458,6 +499,64 @@ class PodKernelManager:
             "messages": messages
         }
 
+    async def execute_ssh_command(self, command: str) -> tuple[str, str, int]:
+        """
+        Execute a command on the remote pod via SSH.
+
+        args:
+            command: The command to execute
+
+        returns:
+            tuple of (stdout, stderr, return_code)
+        """
+        if not self.pod or not self.pod.sshConnection:
+            raise RuntimeError("No active pod connection")
+
+        # Parse SSH connection string to get host and port
+        ssh_parts = self.pod.sshConnection.split()
+        host_part = None
+        port = "22"  # default SSH port
+
+        for part in ssh_parts:
+            if "@" in part:
+                host_part = part
+            if part == "-p" and ssh_parts.index(part) + 1 < len(ssh_parts):
+                port = ssh_parts[ssh_parts.index(part) + 1]
+
+        if not host_part:
+            raise RuntimeError(f"Invalid SSH connection format: {self.pod.sshConnection}")
+
+        # Get SSH key
+        ssh_key = self._get_ssh_key()
+        if not ssh_key:
+            raise RuntimeError("SSH key not found. Please configure MORECOMPUTE_SSH_KEY or add key to ~/.ssh/")
+
+        # Build SSH command
+        ssh_cmd = [
+            "ssh",
+            "-i", ssh_key,
+            "-p", port,
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "LogLevel=ERROR",
+            host_part,
+            command
+        ]
+
+        # Execute command
+        proc = await asyncio.create_subprocess_exec(
+            *ssh_cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+
+        stdout, stderr = await proc.communicate()
+        return (
+            stdout.decode('utf-8', errors='replace'),
+            stderr.decode('utf-8', errors='replace'),
+            proc.returncode or 0
+        )
+
     async def get_status(self) -> dict[str, object]:
         """
         Get current connection status.
@@ -465,7 +564,10 @@ class PodKernelManager:
         returns:
             dict with status information
         """
-        if not self.pod:
+        # Cache pod reference to avoid race condition with disconnect()
+        pod = self.pod
+
+        if not pod:
             return {
                 "connected": False,
                 "pod": None
@@ -478,7 +580,7 @@ class PodKernelManager:
 
         # Get updated pod info
         try:
-            updated_pod = await self.pi_service.get_pod(self.pod.id)
+            updated_pod = await self.pi_service.get_pod(pod.id)
             pod_status = updated_pod.status
         except Exception:
             pod_status = "unknown"
@@ -486,13 +588,13 @@ class PodKernelManager:
         return {
             "connected": True,
             "pod": {
-                "id": self.pod.id,
-                "name": self.pod.name,
+                "id": pod.id,
+                "name": pod.name,
                 "status": pod_status,
-                "gpu_type": self.pod.gpuName,
-                "gpu_count": self.pod.gpuCount,
-                "price_hr": self.pod.priceHr,
-                "ssh_connection": self.pod.sshConnection
+                "gpu_type": pod.gpuName,
+                "gpu_count": pod.gpuCount,
+                "price_hr": pod.priceHr,
+                "ssh_connection": pod.sshConnection
             },
             "tunnel": {
                 "alive": tunnel_alive,

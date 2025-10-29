@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Zap,
   ExternalLink,
@@ -24,8 +24,11 @@ import {
   CreatePodRequest,
   PodConnectionStatus,
 } from "@/lib/api";
-import ErrorModal from "@/components/ErrorModal";
+import ErrorModal from "@/components/modals/ErrorModal";
+import SuccessModal from "@/components/modals/SuccessModal";
+import ConfirmModal from "@/components/modals/ConfirmModal";
 import FilterPopup from "./FilterPopup";
+import { usePodWebSocket } from "@/contexts/PodWebSocketContext";
 
 interface GPUPod {
   id: string;
@@ -34,6 +37,7 @@ interface GPUPod {
   gpuType: string;
   region: string;
   costPerHour: number;
+  sshConnection: string | null;
 }
 
 interface ComputePopupProps {
@@ -41,7 +45,17 @@ interface ComputePopupProps {
 }
 
 const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
-  const [gpuPods, setGpuPods] = useState<GPUPod[]>([]);
+  const {
+    gpuPods,
+    setPods,
+    registerAutoConnect,
+    connectionState,
+    setConnectionState,
+    connectingPodId,
+    setConnectingPodId,
+    connectedPodId,
+    setConnectedPodId,
+  } = usePodWebSocket();
   const [loading, setLoading] = useState(false);
   const [kernelStatus, setKernelStatus] = useState(false);
   const [apiConfigured, setApiConfigured] = useState<boolean | null>(null);
@@ -56,9 +70,10 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [filters, setFilters] = useState<GpuAvailabilityParams>({});
   const [creatingPodId, setCreatingPodId] = useState<string | null>(null);
   const [podCreationError, setPodCreationError] = useState<string | null>(null);
-  const [connectingPodId, setConnectingPodId] = useState<string | null>(null);
-  const [connectedPodId, setConnectedPodId] = useState<string | null>(null);
   const [deletingPodId, setDeletingPodId] = useState<string | null>(null);
+  const [connectionHealth, setConnectionHealth] = useState<"healthy" | "unhealthy" | "unknown">("unknown");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [discoveredPod, setDiscoveredPod] = useState<GPUPod | null>(null);
 
   // Filter popup state
   const [showFilterPopup, setShowFilterPopup] = useState(false);
@@ -76,6 +91,63 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     message: "",
   });
 
+  // Success modal state
+  const [successModal, setSuccessModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+  });
+
+  // Confirm modal state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  // Health check effect - runs every 10 seconds when connected
+  useEffect(() => {
+    if (!connectedPodId) {
+      setConnectionHealth("unknown");
+      return;
+    }
+
+    const checkConnectionHealth = async () => {
+      try {
+        const status: PodConnectionStatus = await getPodConnectionStatus();
+        if (status.connected && status.pod?.id === connectedPodId) {
+          setConnectionHealth("healthy");
+        } else {
+          setConnectionHealth("unhealthy");
+          // Auto-disconnect if connection is dead
+          setConnectedPodId(null);
+          setKernelStatus(false);
+        }
+      } catch (err) {
+        console.error("Connection health check failed:", err);
+        setConnectionHealth("unhealthy");
+      }
+    };
+
+    // Initial check
+    checkConnectionHealth();
+
+    // Set up periodic health checks
+    const interval = setInterval(checkConnectionHealth, 10000); // Check every 10 seconds
+
+    return () => clearInterval(interval);
+  }, [connectedPodId]);
+
   useEffect(() => {
     const checkApiConfig = async () => {
       try {
@@ -83,11 +155,32 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         setApiConfigured(config.configured);
         if (config.configured) {
           await loadGPUPods();
+          // Load available GPUs automatically
+          await loadAvailableGPUs();
           // Check if already connected to a pod
           const status: PodConnectionStatus = await getPodConnectionStatus();
           if (status.connected && status.pod) {
             setConnectedPodId(status.pod.id);
             setKernelStatus(true); // Kernel is running when connected to pod
+            setConnectionHealth("healthy");
+          } else if (!status.connected && status.pod) {
+            // Discovered running pod but not connected (backend restart scenario)
+            console.log("[COMPUTE POPUP] Discovered running pod after restart:", status.pod);
+            // Only show discovered pod warning if it's not already in the pods list
+            // (This can happen if pods haven't loaded yet)
+            const pod = status.pod;
+            const alreadyInList = gpuPods.some(p => p.id === pod.id);
+            if (!alreadyInList) {
+              setDiscoveredPod({
+                id: pod.id,
+                name: pod.name,
+                status: "running",
+                gpuType: pod.gpu_type || "Unknown",
+                region: "Unknown",
+                costPerHour: pod.price_hr || 0,
+                sshConnection: pod.ssh_connection || null,
+              });
+            }
           }
         }
       } catch (err) {
@@ -96,16 +189,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       }
     };
     checkApiConfig();
-
-    // Poll pod list every 10 seconds if configured
-    const pollInterval = setInterval(async () => {
-      if (apiConfigured) {
-        await loadGPUPods();
-      }
-    }, 10000);
-
-    return () => clearInterval(pollInterval);
-  }, [apiConfigured]);
+  }, []);
 
   const loadGPUPods = async (params?: PodsListParams) => {
     setLoading(true);
@@ -113,10 +197,11 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       const response = await fetchGpuPods(params || { limit: 100 });
       const pods = (response.data || []).map((pod: PodResponse) => {
         // Map API status to UI status
+        // Pod must be ACTIVE *and* have SSH connection info to be "running"
         let uiStatus: "running" | "stopped" | "starting" = "stopped";
-        if (pod.status === "ACTIVE") {
+        if (pod.status === "ACTIVE" && pod.sshConnection) {
           uiStatus = "running";
-        } else if (pod.status === "PROVISIONING" || pod.status === "PENDING") {
+        } else if (pod.status === "ACTIVE" || pod.status === "PROVISIONING" || pod.status === "PENDING") {
           uiStatus = "starting";
         }
 
@@ -127,9 +212,10 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
           gpuType: pod.gpuName,
           region: "Unknown", //look at later
           costPerHour: pod.priceHr,
+          sshConnection: pod.sshConnection,
         };
       });
-      setGpuPods(pods);
+      setPods(pods);
     } catch (err) {
       console.error("Failed to load GPU pods:", err);
     } finally {
@@ -187,14 +273,23 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
 
       const newPod = await createGpuPod(podRequest);
 
+      // Register auto-connect callback for when pod becomes ready
+      registerAutoConnect(newPod.id, handleConnectToPod);
+
+      // Set provisioning state for the banner
+      setConnectingPodId(newPod.id);
+      setConnectionState("provisioning"); // Show "PROVISIONING" banner
+
       // Refresh the pods list
       await loadGPUPods();
 
       // Close browse section and show success
       setShowBrowseGPUs(false);
-      alert(
-        `Pod "${newPod.name}" created successfully! Wait for provisioning (~2-5 min).`,
-      );
+      setSuccessModal({
+        isOpen: true,
+        title: "Pod Created Successfully!",
+        message: `Pod "${newPod.name}" created successfully! Wait for provisioning (~2-5 min).`,
+      });
     } catch (err) {
       let errorMsg = "Failed to create pod";
 
@@ -210,6 +305,9 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
             "Insufficient funds. Please add credits to your Prime Intellect wallet:\nhttps://app.primeintellect.ai/dashboard/billing";
         } else if (errorMsg.includes("401") || errorMsg.includes("403")) {
           errorMsg = "Authentication failed. Check your API key configuration.";
+        } else if (errorMsg.includes("503") || errorMsg.includes("not available")) {
+          errorMsg =
+            "This GPU type is currently unavailable. Please try selecting a different GPU from the list below.";
         } else if (errorMsg.includes("data_center_id")) {
           errorMsg =
             "Pod configuration error: Missing data center ID. Try a different GPU or provider.";
@@ -240,27 +338,112 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   };
 
   const handleConnectToPod = async (podId: string) => {
+    // Prevent double-connecting
+    if (connectingPodId === podId || connectedPodId === podId) {
+      console.log(`[CONNECT] Already connecting/connected to pod ${podId}, skipping`);
+      return;
+    }
+
     setConnectingPodId(podId);
+    setConnectionState("deploying"); // Show "Deploying worker..." banner
+    setConnectionHealth("unknown"); // Reset health status during connection
     try {
+      // Initiate connection (now returns immediately with "connecting" status)
       const result = await connectToPod(podId);
-      if (result.status === "ok") {
+
+      if (result.status === "connecting") {
+        console.log("[CONNECT] Connection initiated, polling for completion...");
+
+        // Poll connection status until it's connected or fails
+        const maxAttempts = 30; // 30 seconds max
+        let attempts = 0;
+        let isComplete = false; // Track if polling is complete to prevent race conditions
+
+        const pollInterval = setInterval(async () => {
+          if (isComplete) return; // Skip if already completed
+          attempts++;
+
+          try {
+            const status: PodConnectionStatus = await getPodConnectionStatus();
+
+            if (status.connected && status.pod?.id === podId && !isComplete) {
+              // Successfully connected!
+              isComplete = true;
+              clearInterval(pollInterval);
+
+              setConnectedPodId(podId);
+              setKernelStatus(true);
+              setConnectionHealth("healthy");
+              setConnectingPodId(null);
+              setConnectionState("connected"); // Show "Connected!" banner
+              setDiscoveredPod(null); // Clear discovered pod state
+
+              setErrorModal({
+                isOpen: true,
+                title: "✓ Connected!",
+                message: "Successfully connected to GPU pod. You can now run code on the remote GPU.",
+              });
+
+              // Hide the connected banner after 3 seconds
+              setTimeout(() => {
+                setConnectionState(null);
+              }, 3000);
+            } else if (attempts >= maxAttempts && !isComplete) {
+              // Timeout
+              clearInterval(pollInterval);
+              setConnectionHealth("unhealthy");
+              setConnectingPodId(null);
+              setConnectionState(null); // Hide banner on failure
+
+              setErrorModal({
+                isOpen: true,
+                title: "Connection Timeout",
+                message: "Connection took too long. The pod may not be ready yet. Check the pod status and try again.",
+              });
+            }
+          } catch (err) {
+            // Error during polling
+            clearInterval(pollInterval);
+            setConnectionHealth("unhealthy");
+            setConnectingPodId(null);
+            setConnectionState(null); // Hide banner on error
+
+            setErrorModal({
+              isOpen: true,
+              title: "Connection Failed",
+              message: "Failed to establish connection. Please try again.",
+            });
+          }
+        }, 1000); // Poll every second
+
+      } else if (result.status === "ok") {
+        // Immediate success (backwards compatible)
         setConnectedPodId(podId);
-        setKernelStatus(true); // Mark kernel as running
+        setKernelStatus(true);
+        setConnectionHealth("healthy");
+        setConnectingPodId(null);
+        setConnectionState("connected"); // Show "Connected!" banner
+        setDiscoveredPod(null); // Clear discovered pod state
+
         setErrorModal({
           isOpen: true,
           title: "✓ Connected!",
-          message:
-            "Successfully connected to GPU pod. You can now run code on the remote GPU.",
+          message: "Successfully connected to GPU pod. You can now run code on the remote GPU.",
         });
+
+        // Hide the connected banner after 3 seconds
+        setTimeout(() => {
+          setConnectionState(null);
+        }, 3000);
       } else {
-        // Show detailed error message from backend
+        // Error
+        setConnectionHealth("unhealthy");
+        setConnectingPodId(null);
+        setConnectionState(null); // Hide banner on error
+
         let errorMsg = result.message || "Connection failed";
 
-        // Check for SSH key issues
-        if (
-          errorMsg.includes("SSH authentication") ||
-          errorMsg.includes("SSH public key")
-        ) {
+        if (errorMsg.includes("SSH authentication") || errorMsg.includes("SSH public key")) {
           setErrorModal({
             isOpen: true,
             title: "SSH Key Required",
@@ -277,15 +460,16 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         }
       }
     } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to connect to pod";
+      const errorMsg = err instanceof Error ? err.message : "Failed to connect to pod";
+      setConnectionHealth("unhealthy");
+      setConnectingPodId(null);
+      setConnectionState(null); // Hide banner on error
+
       setErrorModal({
         isOpen: true,
         title: "Connection Error",
-        message: errorMsg,
+        message: `${errorMsg}\n\nThis could be due to:\n• Network connectivity issues\n• Pod may have stopped running\n• SSH tunnel creation failed`,
       });
-    } finally {
-      setConnectingPodId(null);
     }
   };
 
@@ -294,7 +478,15 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       await disconnectFromPod();
       setConnectedPodId(null);
       setKernelStatus(false); // Mark kernel as not running
-      alert("Disconnected from pod");
+      setConnectionHealth("unknown"); // Reset health status
+      setConnectionState(null); // Hide banner
+
+      // Show warning that pod is still running
+      setErrorModal({
+        isOpen: true,
+        title: "⚠️ Disconnected",
+        message: "Disconnected from pod. Note: The pod is still running and incurring costs. You can reconnect or terminate it below.",
+      });
     } catch (err) {
       const errorMsg =
         err instanceof Error ? err.message : "Failed to disconnect";
@@ -303,29 +495,54 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   };
 
   const handleDeletePod = async (podId: string, podName: string) => {
-    if (!confirm(`Are you sure you want to terminate pod "${podName}"?`)) {
-      return;
-    }
+    // Show confirmation modal instead of native confirm dialog
+    setConfirmModal({
+      isOpen: true,
+      title: "Terminate Pod?",
+      message: `Are you sure you want to terminate pod "${podName}"?\n\nThis will stop the pod and you will no longer be charged for it.`,
+      onConfirm: async () => {
+        setDeletingPodId(podId);
+        try {
+          // Disconnect if this is the connected pod
+          if (connectedPodId === podId) {
+            await disconnectFromPod();
+            setConnectedPodId(null);
+            setKernelStatus(false);
+            setConnectionHealth("unknown");
+          }
 
-    setDeletingPodId(podId);
-    try {
-      // Disconnect if this is the connected pod
-      if (connectedPodId === podId) {
-        await disconnectFromPod();
-        setConnectedPodId(null);
-        setKernelStatus(false);
-      }
+          // Clear connection state if deleting the connecting pod
+          if (connectingPodId === podId) {
+            setConnectingPodId(null);
+            setConnectionState(null);
+          }
 
-      await deleteGpuPod(podId);
-      alert(`Pod "${podName}" terminated successfully`);
-      await loadGPUPods();
-    } catch (err) {
-      const errorMsg =
-        err instanceof Error ? err.message : "Failed to terminate pod";
-      alert(`Terminate error: ${errorMsg}`);
-    } finally {
-      setDeletingPodId(null);
-    }
+          await deleteGpuPod(podId);
+
+          // Clear discovered pod if it was the one we just deleted
+          if (discoveredPod && discoveredPod.id === podId) {
+            setDiscoveredPod(null);
+          }
+
+          setSuccessModal({
+            isOpen: true,
+            title: "Pod Terminated",
+            message: `Pod "${podName}" terminated successfully.`,
+          });
+          await loadGPUPods();
+        } catch (err) {
+          const errorMsg =
+            err instanceof Error ? err.message : "Failed to terminate pod";
+          setErrorModal({
+            isOpen: true,
+            title: "Termination Failed",
+            message: `Failed to terminate pod: ${errorMsg}`,
+          });
+        } finally {
+          setDeletingPodId(null);
+        }
+      },
+    });
   };
 
   const handleConnectToPrimeIntellect = () => {
@@ -355,6 +572,19 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     }
   };
 
+  // Filter GPUs based on search query (memoized for performance)
+  const filteredGPUs = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return availableGPUs;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return availableGPUs.filter((gpu) => {
+      const gpuType = gpu.gpuType.toLowerCase();
+      return gpuType.includes(query);
+    });
+  }, [searchQuery, availableGPUs]);
+
   return (
     <>
       <ErrorModal
@@ -365,11 +595,27 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
         actionLabel={errorModal.actionLabel}
         actionUrl={errorModal.actionUrl}
       />
+      <SuccessModal
+        isOpen={successModal.isOpen}
+        onClose={() => setSuccessModal({ ...successModal, isOpen: false })}
+        title={successModal.title}
+        message={successModal.message}
+      />
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ ...confirmModal, isOpen: false })}
+        onConfirm={confirmModal.onConfirm}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmLabel="Terminate"
+        cancelLabel="Cancel"
+        isDangerous={true}
+      />
       <div className="runtime-popup">
         {/* Kernel Status Section */}
         <section
           className="runtime-section"
-          style={{ padding: "6px 12px", marginBottom: "16px" }}
+          style={{ padding: "16px 20px" }}
         >
           <div
             style={{
@@ -378,57 +624,80 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               alignItems: "center",
             }}
           >
-            <h3 className="runtime-section-title" style={{ fontSize: "12px" }}>
-              Kernel:{" "}
-              <span
-                className={
-                  kernelStatus
-                    ? "kernel-status-active"
-                    : "kernel-status-inactive"
-                }
-              >
-                {kernelStatus ? "running" : "not running"}
-              </span>
-            </h3>
-            <button
-              className="runtime-btn runtime-btn-secondary"
-              style={{ fontSize: "11px", padding: "3px 8px" }}
-            >
-              Stop kernel
-            </button>
+            <div>
+              <div style={{ fontSize: "11px", color: "var(--text-secondary)", marginBottom: "4px" }}>
+                The kernel is currently: {kernelStatus ? "Running" : "Stopped"}
+              </div>
+            </div>
           </div>
         </section>
 
+        {/* Divider */}
+        <div style={{
+          height: "1px",
+          backgroundColor: "rgba(128, 128, 128, 0.2)",
+          margin: "0 16px"
+        }} />
+
         {/* Compute Profile Section */}
-        <section className="runtime-section" style={{ padding: "6px 12px" }}>
+        <section className="runtime-section" style={{ padding: "12px 16px" }}>
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
-              marginBottom: "3px",
             }}
           >
-            <h3 className="runtime-section-title" style={{ fontSize: "12px" }}>
-              Compute profile
+            <h3 className="runtime-section-title" style={{ fontSize: "12px", fontWeight: 500 }}>
+              Compute Profile
             </h3>
-            <span className="runtime-cost" style={{ fontSize: "11px" }}>
-              $0.00 / hour
+            <span className="runtime-cost" style={{ fontSize: "12px", fontWeight: 500 }}>
+              {(() => {
+                const runningPods = gpuPods.filter(p => p.status === "running");
+                const totalCost = runningPods.reduce((sum, pod) => sum + pod.costPerHour, 0);
+                return `$${totalCost.toFixed(2)} / hour`;
+              })()}
             </span>
           </div>
+        </section>
+
+        {/* Divider */}
+        <div style={{
+          height: "1px",
+          backgroundColor: "rgba(128, 128, 128, 0.2)",
+          margin: "0 16px"
+        }} />
 
           {/* GPU Pods Section */}
-          <div className="runtime-subsection" style={{ marginTop: "30px" }}>
+          <section className="runtime-section" style={{ padding: "12px 16px" }}>
             <div
-              className="runtime-subsection-header"
-              style={{ marginBottom: "4px" }}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "12px"
+              }}
             >
-              <h4
-                className="runtime-subsection-title"
-                style={{ fontSize: "11px" }}
-              >
+              <h3 className="runtime-section-title" style={{ fontSize: "12px", fontWeight: 500 }}>
                 Remote GPU Pods
-              </h4>
+              </h3>
+              {apiConfigured && (
+                <button
+                  className="runtime-btn runtime-btn-secondary"
+                  onClick={handleConnectToPrimeIntellect}
+                  style={{
+                    fontSize: "11px",
+                    padding: "6px 12px",
+                    backgroundColor: "#000",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer"
+                  }}
+                >
+                  Manage
+                </button>
+              )}
             </div>
 
             {apiConfigured === false ? (
@@ -451,8 +720,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     onKeyPress={(e) => e.key === "Enter" && handleSaveApiKey()}
                     style={{
                       width: "100%",
-                      padding: "4px 6px",
-                      borderRadius: "3px",
+                      padding: "6px 12px",
+                      borderRadius: "8px",
                       border: "1px solid var(--border-color)",
                       backgroundColor: "var(--background)",
                       color: "var(--text)",
@@ -477,14 +746,31 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     className="runtime-btn runtime-btn-primary"
                     onClick={handleSaveApiKey}
                     disabled={saving}
-                    style={{ flex: 1, fontSize: "11px", padding: "4px 8px" }}
+                    style={{
+                      flex: 1,
+                      fontSize: "11px",
+                      padding: "6px 12px",
+                      backgroundColor: "#000",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer"
+                    }}
                   >
                     {saving ? "Saving..." : "Save"}
                   </button>
                   <button
                     className="runtime-btn runtime-btn-secondary"
                     onClick={handleConnectToPrimeIntellect}
-                    style={{ fontSize: "11px", padding: "4px 8px" }}
+                    style={{
+                      fontSize: "11px",
+                      padding: "6px 12px",
+                      backgroundColor: "#000",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer"
+                    }}
                   >
                     <ExternalLink size={10} style={{ marginRight: "3px" }} />
                     Get Key
@@ -492,185 +778,222 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                 </div>
               </div>
             ) : loading || apiConfigured === null ? (
-              <div className="runtime-empty-state" style={{ padding: "6px" }}>
-                <p style={{ color: "var(--text-secondary)", fontSize: "10px" }}>
-                  Loading...
-                </p>
+              <div style={{ padding: "8px 0", color: "var(--text-secondary)", fontSize: "11px" }}>
+                Loading...
               </div>
-            ) : gpuPods.length === 0 ? (
-              <div className="runtime-empty-state" style={{ padding: "6px" }}>
-                <p
-                  style={{
-                    marginBottom: "4px",
-                    color: "var(--text-secondary)",
-                    fontSize: "10px",
-                  }}
-                >
-                  No GPU pods. Browse GPUs to create.
-                </p>
-                <div style={{ display: "flex", gap: "4px", width: "100%" }}>
-                  <button
-                    className="runtime-btn runtime-btn-primary"
-                    onClick={() => {
-                      setShowBrowseGPUs(!showBrowseGPUs);
-                      if (!showBrowseGPUs && availableGPUs.length === 0) {
-                        loadAvailableGPUs();
-                      }
-                    }}
-                    style={{ flex: 1, fontSize: "11px", padding: "4px 8px" }}
-                  >
-                    <Search size={10} style={{ marginRight: "3px" }} />
-                    Browse GPUs
-                  </button>
-                  <button
-                    className="runtime-btn runtime-btn-secondary"
-                    onClick={handleConnectToPrimeIntellect}
-                    style={{ fontSize: "11px", padding: "4px 8px" }}
-                  >
-                    <ExternalLink size={10} style={{ marginRight: "3px" }} />
-                    Manage
-                  </button>
+            ) : gpuPods.filter(p => p.status === "running").length === 0 && !discoveredPod ? (
+              <div style={{ padding: "8px 0", color: "var(--text-secondary)", fontSize: "11px" }}>
+                Currently not connected to any.
+              </div>
+            ) : !connectedPodId && discoveredPod ? (
+              <div style={{ padding: "8px 0" }}>
+                <div style={{
+                  backgroundColor: "#fff3cd",
+                  border: "1px solid #ffc107",
+                  borderRadius: "8px",
+                  padding: "12px",
+                  marginBottom: "8px"
+                }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#856404", marginBottom: "4px" }}>
+                    ⚠️ Running Pod Detected
+                  </div>
+                  <div style={{ fontSize: "10px", color: "#856404", marginBottom: "8px" }}>
+                    Found a running pod but not connected (backend may have restarted). This pod is still costing money!
+                  </div>
+                  <div style={{ fontSize: "10px", marginBottom: "8px" }}>
+                    <span style={{ fontWeight: 500 }}>{discoveredPod.name}</span> • {discoveredPod.gpuType} • ${discoveredPod.costPerHour.toFixed(2)}/hour
+                  </div>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button
+                      className="runtime-btn runtime-btn-secondary"
+                      onClick={() => handleConnectToPod(discoveredPod.id)}
+                      style={{
+                        flex: 1,
+                        fontSize: "10px",
+                        padding: "6px 12px",
+                        backgroundColor: "#ffc107",
+                        color: "#000",
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: "pointer",
+                        fontWeight: 600
+                      }}
+                    >
+                      Reconnect
+                    </button>
+                    <button
+                      className="runtime-btn runtime-btn-secondary"
+                      onClick={() => handleDeletePod(discoveredPod.id, discoveredPod.name)}
+                      disabled={deletingPodId === discoveredPod.id}
+                      style={{
+                        fontSize: "10px",
+                        padding: "6px 12px",
+                        backgroundColor: "#dc2626",
+                        color: "white",
+                        border: "none",
+                        borderRadius: "8px",
+                        cursor: "pointer"
+                      }}
+                    >
+                      {deletingPodId === discoveredPod.id ? "..." : "Terminate"}
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
-              <>
-                <div className="runtime-gpu-list">
-                  {gpuPods.map((pod) => (
-                    <div key={pod.id} className="runtime-gpu-item">
-                      <div className="runtime-gpu-info">
-                        <div className="runtime-gpu-header">
-                          <span className="runtime-gpu-name">{pod.name}</span>
-                          <span
-                            className={`runtime-status-badge runtime-status-${pod.status}`}
-                          >
-                            <Activity size={10} />
-                            {pod.status}
-                          </span>
+              gpuPods
+                .filter((pod) => pod.status === "running")
+                .map((pod) => {
+                  const isConnected = pod.id === connectedPodId;
+                  return (
+                    <div key={pod.id} style={{ padding: "8px 0" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                        <div>
+                          <div style={{ fontSize: "11px", marginBottom: "4px" }}>
+                            <span style={{ fontWeight: 500 }}>{pod.name}</span>
+                            {isConnected && (
+                              <span style={{
+                                marginLeft: "6px",
+                                fontSize: "9px",
+                                backgroundColor: "#10b981",
+                                color: "white",
+                                padding: "2px 6px",
+                                borderRadius: "4px"
+                              }}>
+                                Connected
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: "10px", color: "var(--text-secondary)" }}>
+                            {pod.gpuType} • ${pod.costPerHour.toFixed(2)}/hour
+                          </div>
                         </div>
-                        <div className="runtime-gpu-details">
-                          <span className="runtime-gpu-type">
-                            {pod.gpuType}
-                          </span>
-                          <span className="runtime-gpu-region">
-                            {pod.region}
-                          </span>
-                          <span className="runtime-gpu-cost">
-                            ${pod.costPerHour.toFixed(2)}/hour
-                          </span>
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: "4px" }}>
-                        {pod.status === "running" ? (
-                          connectedPodId === pod.id ? (
-                            <button
-                              className="runtime-btn runtime-btn-sm"
-                              onClick={handleDisconnect}
-                              style={{
-                                fontSize: "11px",
-                                padding: "4px 8px",
-                                backgroundColor: "var(--success)",
-                              }}
-                            >
-                              Disconnect
-                            </button>
+                        <div style={{ display: "flex", gap: "6px" }}>
+                          {isConnected ? (
+                            <>
+                              <button
+                                className="runtime-btn runtime-btn-secondary"
+                                onClick={handleDisconnect}
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "6px 12px",
+                                  backgroundColor: "#000",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                Disconnect
+                              </button>
+                              <button
+                                className="runtime-btn runtime-btn-secondary"
+                                onClick={() => handleDeletePod(pod.id, pod.name)}
+                                disabled={deletingPodId === pod.id}
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "6px 12px",
+                                  backgroundColor: "#dc2626",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                {deletingPodId === pod.id ? "..." : "Terminate"}
+                              </button>
+                            </>
                           ) : (
-                            <button
-                              className="runtime-btn runtime-btn-sm"
-                              onClick={() => handleConnectToPod(pod.id)}
-                              disabled={connectingPodId === pod.id}
-                              style={{ fontSize: "11px", padding: "4px 8px" }}
-                            >
-                              {connectingPodId === pod.id
-                                ? "Connecting..."
-                                : "Connect"}
-                            </button>
-                          )
-                        ) : (
-                          <button
-                            className="runtime-btn runtime-btn-sm runtime-btn-secondary"
-                            style={{ fontSize: "11px", padding: "4px 8px" }}
-                            disabled
-                          >
-                            {pod.status === "starting"
-                              ? "Starting..."
-                              : "Stopped"}
-                          </button>
-                        )}
-                        <button
-                          className="runtime-btn runtime-btn-sm"
-                          onClick={() => handleDeletePod(pod.id, pod.name)}
-                          disabled={deletingPodId === pod.id}
-                          style={{
-                            fontSize: "11px",
-                            padding: "4px 8px",
-                            backgroundColor: "var(--error-color)",
-                            color: "white",
-                          }}
-                        >
-                          {deletingPodId === pod.id ? "..." : "×"}
-                        </button>
+                            <>
+                              <button
+                                className="runtime-btn runtime-btn-secondary"
+                                onClick={() => handleConnectToPod(pod.id)}
+                                disabled={connectingPodId === pod.id}
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "6px 12px",
+                                  backgroundColor: "#10b981",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                {connectingPodId === pod.id ? "Connecting..." : "Connect"}
+                              </button>
+                              <button
+                                className="runtime-btn runtime-btn-secondary"
+                                onClick={() => handleDeletePod(pod.id, pod.name)}
+                                disabled={deletingPodId === pod.id}
+                                style={{
+                                  fontSize: "10px",
+                                  padding: "6px 12px",
+                                  backgroundColor: "#dc2626",
+                                  color: "white",
+                                  border: "none",
+                                  borderRadius: "8px",
+                                  cursor: "pointer"
+                                }}
+                              >
+                                {deletingPodId === pod.id ? "..." : "Terminate"}
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: "4px" }}>
-                  <button
-                    className="runtime-btn runtime-btn-link"
-                    onClick={() => loadGPUPods()}
-                    style={{ fontSize: "12px", padding: "6px 8px", flex: 1 }}
-                  >
-                    Refresh
-                  </button>
-                  <button
-                    className="runtime-btn runtime-btn-link"
-                    onClick={() => {
-                      setShowBrowseGPUs(!showBrowseGPUs);
-                      if (!showBrowseGPUs && availableGPUs.length === 0) {
-                        loadAvailableGPUs();
-                      }
-                    }}
-                    style={{ fontSize: "12px", padding: "6px 8px", flex: 1 }}
-                  >
-                    <Plus size={12} style={{ marginRight: "4px" }} />
-                    Browse GPUs
-                  </button>
-                </div>
-              </>
+                  );
+                })
             )}
-          </div>
+          </section>
+
+        {/* Divider */}
+        <div style={{
+          height: "1px",
+          backgroundColor: "rgba(128, 128, 128, 0.2)",
+          margin: "0 16px"
+        }} />
 
           {/* Browse Available GPUs Section */}
-          {apiConfigured && showBrowseGPUs && (
-            <div className="runtime-subsection" style={{ marginTop: "6px" }}>
-              <div
-                className="runtime-subsection-header"
-                style={{ marginBottom: "4px" }}
-              >
-                <h4
-                  className="runtime-subsection-title"
-                  style={{ fontSize: "11px" }}
-                >
-                  <Filter size={10} style={{ marginRight: "2px" }} />
-                  Browse GPUs
-                </h4>
-              </div>
-
-              {/* Filter and Search Bar */}
+          {apiConfigured && (
+            <section className="runtime-section" style={{ padding: "12px 16px" }}>
+              {/* Search and Filter Bar */}
               <div
                 style={{
-                  marginBottom: "6px",
+                  marginBottom: "20px",
                   display: "flex",
-                  gap: "4px",
+                  gap: "8px",
                   alignItems: "center",
                 }}
               >
+                <input
+                  type="text"
+                  placeholder="Search GPU (e.g., H100, A100, RTX 4090)"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  style={{
+                    flex: 1,
+                    padding: "6px 12px",
+                    fontSize: "11px",
+                    border: "1px solid #d1d5db",
+                    borderRadius: "8px",
+                    backgroundColor: "var(--background)",
+                    color: "var(--text)",
+                    outline: "none",
+                  }}
+                />
                 <button
                   className="runtime-btn runtime-btn-secondary"
                   onClick={() => setShowFilterPopup(!showFilterPopup)}
                   style={{
-                    padding: "4px 8px",
+                    padding: "6px 12px",
                     fontSize: "11px",
                     position: "relative",
+                    backgroundColor: "#000",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "8px",
+                    cursor: "pointer"
                   }}
                 >
                   <Filter size={10} style={{ marginRight: "3px" }} />
@@ -692,19 +1015,6 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     />
                   )}
                 </button>
-                <button
-                  className="runtime-btn runtime-btn-primary"
-                  onClick={loadAvailableGPUs}
-                  disabled={loadingAvailability}
-                  style={{
-                    flex: 1,
-                    padding: "4px 8px",
-                    fontSize: "11px",
-                  }}
-                >
-                  <Search size={10} style={{ marginRight: "3px" }} />
-                  {loadingAvailability ? "Searching..." : "Search"}
-                </button>
               </div>
 
               {/* Filter Popup */}
@@ -718,40 +1028,39 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
 
               {/* Results */}
               {loadingAvailability ? (
-                <div className="runtime-empty-state" style={{ padding: "6px" }}>
-                  <p
-                    style={{ color: "var(--text-secondary)", fontSize: "10px" }}
-                  >
-                    Loading...
-                  </p>
+                <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "11px" }}>
+                  Loading...
                 </div>
               ) : availableGPUs.length === 0 ? (
-                <div className="runtime-empty-state" style={{ padding: "6px" }}>
-                  <p
-                    style={{ color: "var(--text-secondary)", fontSize: "10px" }}
-                  >
-                    Click Search to find GPUs
-                  </p>
+                <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "11px" }}>
+                  Use filters to find available GPUs
+                </div>
+              ) : filteredGPUs.length === 0 ? (
+                <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "11px" }}>
+                  No GPUs match "{searchQuery}"
                 </div>
               ) : (
-                <div style={{ maxHeight: "300px", overflowY: "auto" }}>
-                  {availableGPUs.map((gpu, index) => (
-                    <div
-                      key={`${gpu.cloudId}-${index}`}
-                      style={{
-                        padding: "4px 6px",
-                        borderRadius: "3px",
-                        border: "1px solid var(--border-color)",
-                        marginBottom: "3px",
-                        backgroundColor: "var(--background-secondary)",
-                      }}
-                    >
+                <div style={{ maxHeight: "calc(100vh - 400px)", overflowY: "auto", paddingRight: "12px" }}>
+                  {filteredGPUs.map((gpu, index) => (
+                    <React.Fragment key={`${gpu.cloudId}-${index}`}>
+                      {index > 0 && (
+                        <div style={{
+                          height: "1px",
+                          backgroundColor: "rgba(128, 128, 128, 0.15)",
+                          margin: "8px 0"
+                        }} />
+                      )}
+                      <div
+                        style={{
+                          padding: "8px 0",
+                        }}
+                      >
                       <div
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "flex-start",
-                          marginBottom: "3px",
+                          marginBottom: "8px",
                         }}
                       >
                         <div>
@@ -773,30 +1082,54 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                             {gpu.provider} - {gpu.socket} - {gpu.gpuMemory}GB
                           </div>
                         </div>
-                        <div style={{ textAlign: "right" }}>
-                          <div
-                            style={{
-                              fontWeight: 600,
-                              fontSize: "11px",
-                              color: "var(--accent)",
-                            }}
-                          >
-                            ${gpu.prices?.onDemand?.toFixed(2) || "N/A"}/hr
-                          </div>
-                          {gpu.stockStatus && (
+                        <div style={{ textAlign: "right", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "6px" }}>
+                          <div>
                             <div
                               style={{
-                                fontSize: "9px",
-                                color:
-                                  gpu.stockStatus === "Available"
-                                    ? "var(--success)"
-                                    : "var(--text-secondary)",
-                                marginTop: "1px",
+                                fontWeight: 600,
+                                fontSize: "11px",
+                                color: "var(--accent)",
                               }}
                             >
-                              {gpu.stockStatus}
+                              ${gpu.prices?.onDemand?.toFixed(2) || "N/A"}/hr
                             </div>
-                          )}
+                            {gpu.stockStatus && (
+                              <div
+                                style={{
+                                  fontSize: "9px",
+                                  color:
+                                    gpu.stockStatus === "Available"
+                                      ? "var(--success)"
+                                      : "var(--text-secondary)",
+                                  marginTop: "1px",
+                                }}
+                              >
+                                {gpu.stockStatus}
+                              </div>
+                            )}
+                          </div>
+                          <button
+                            className="runtime-btn runtime-btn-sm runtime-btn-primary"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              createPodFromGpu(gpu);
+                            }}
+                            disabled={creatingPodId === gpu.cloudId}
+                            style={{
+                              fontSize: "10px",
+                              padding: "6px 16px",
+                              whiteSpace: "nowrap",
+                              backgroundColor: "#000",
+                              color: "white",
+                              border: "none",
+                              borderRadius: "8px",
+                              cursor: "pointer"
+                            }}
+                          >
+                            {creatingPodId === gpu.cloudId
+                              ? "Selecting..."
+                              : "Select"}
+                          </button>
                         </div>
                       </div>
                       <div
@@ -806,71 +1139,47 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                           fontSize: "9px",
                           color: "var(--text-secondary)",
                           alignItems: "center",
-                          justifyContent: "space-between",
                         }}
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            gap: "4px",
-                            flexWrap: "wrap",
-                            flex: 1,
-                          }}
-                        >
-                          {gpu.region && (
-                            <span style={{ marginRight: "8px" }}>
-                              {gpu.region}
-                            </span>
-                          )}
-                          {gpu.dataCenter && (
-                            <span style={{ marginRight: "8px" }}>
-                              {gpu.dataCenter}
-                            </span>
-                          )}
-                          {gpu.security && (
-                            <span
-                              style={{
-                                backgroundColor:
-                                  gpu.security === "secure_cloud"
-                                    ? "var(--success-bg)"
-                                    : "var(--info-bg)",
-                                color:
-                                  gpu.security === "secure_cloud"
-                                    ? "var(--success)"
-                                    : "var(--info)",
-                                padding: "1px 4px",
-                                borderRadius: "2px",
-                                fontSize: "9px",
-                              }}
-                            >
-                              {gpu.security === "secure_cloud"
-                                ? "Secure"
-                                : "Community"}
-                            </span>
-                          )}
-                        </div>
-                        <button
-                          className="runtime-btn runtime-btn-sm runtime-btn-primary"
-                          onClick={() => createPodFromGpu(gpu)}
-                          disabled={creatingPodId === gpu.cloudId}
-                          style={{
-                            fontSize: "10px",
-                            padding: "3px 6px",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {creatingPodId === gpu.cloudId
-                            ? "Creating..."
-                            : "Create"}
-                        </button>
+                        {gpu.region && (
+                          <span style={{ marginRight: "8px" }}>
+                            {gpu.region}
+                          </span>
+                        )}
+                        {gpu.dataCenter && (
+                          <span style={{ marginRight: "8px" }}>
+                            {gpu.dataCenter}
+                          </span>
+                        )}
+                        {gpu.security && (
+                          <span
+                            style={{
+                              backgroundColor:
+                                gpu.security === "secure_cloud"
+                                  ? "var(--success-bg)"
+                                  : "var(--info-bg)",
+                              color:
+                                gpu.security === "secure_cloud"
+                                  ? "var(--success)"
+                                  : "var(--info)",
+                              padding: "1px 4px",
+                              borderRadius: "2px",
+                              fontSize: "9px",
+                            }}
+                          >
+                            {gpu.security === "secure_cloud"
+                              ? "Secure"
+                              : "Community"}
+                          </span>
+                        )}
                       </div>
                     </div>
+                    </React.Fragment>
                   ))}
                 </div>
               )}
-            </div>
+            </section>
           )}
-        </section>
       </div>
     </>
   );

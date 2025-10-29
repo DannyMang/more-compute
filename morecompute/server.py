@@ -3,6 +3,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPExcept
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 import os
+import sys
+import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
 import importlib.metadata as importlib_metadata
@@ -16,8 +18,20 @@ from .utils.system_environment_util import DeviceMetrics
 from .utils.error_utils import ErrorUtils
 from .utils.cache_util import make_cache_key
 from .utils.notebook_util import coerce_cell_source
-from .services.prime_intellect import PrimeIntellectService, CreatePodRequest, PodResponse
+from .utils.config_util import load_api_key_from_env, save_api_key_to_env
+from .utils.zmq_util import reconnect_zmq_sockets, reset_to_local_zmq
+from .services.prime_intellect import PrimeIntellectService
 from .services.pod_manager import PodKernelManager
+from .services.data_manager import DataManager
+from .services.pod_monitor import PodMonitor
+from .services.lsp_service import LSPService
+from .models.api_models import (
+    ApiKeyRequest,
+    ApiKeyResponse,
+    ConfigStatusResponse,
+    CreatePodRequest,
+    PodResponse,
+)
 
 
 BASE_DIR = Path(os.getenv("MORECOMPUTE_ROOT", Path.cwd())).resolve()
@@ -45,7 +59,6 @@ environments_cache = TTLCache(maxsize=1, ttl=300)  # 5 minutes cache for environ
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
-# Global instances for the application state
 notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
 if notebook_path_env:
     notebook = Notebook(file_path=notebook_path_env)
@@ -54,34 +67,56 @@ else:
 error_utils = ErrorUtils()
 executor = NextZmqExecutor(error_utils=error_utils)
 metrics = DeviceMetrics()
-
-# Initialize Prime Intellect service if API key is provided
-# Check environment variable first, then .env file (commonly gitignored)
-prime_api_key = os.getenv("PRIME_INTELLECT_API_KEY")
-if not prime_api_key:
-    env_path = BASE_DIR / ".env"
-    if env_path.exists():
-        try:
-            with env_path.open("r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if line.startswith("PRIME_INTELLECT_API_KEY="):
-                        prime_api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
-                        break
-        except Exception:
-            pass
-
+prime_api_key = load_api_key_from_env("PRIME_INTELLECT_API_KEY", BASE_DIR / ".env")
 prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
 pod_manager: PodKernelManager | None = None
+data_manager = DataManager(prime_intellect=prime_intellect)
+pod_monitor: PodMonitor | None = None
+if prime_intellect:
+    pod_monitor = PodMonitor(
+        prime_intellect=prime_intellect,
+        pod_cache=pod_cache,
+        update_callback=lambda msg: manager.broadcast_pod_update(msg)
+    )
+
+# LSP service for Python autocomplete
+lsp_service: LSPService | None = None
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    global lsp_service
+    try:
+        lsp_service = LSPService(workspace_root=BASE_DIR)
+        await lsp_service.start()
+        print("[LSP] Pyright language server started successfully", file=sys.stderr, flush=True)
+    except Exception as e:
+        print(f"[LSP] Failed to start language server: {e}", file=sys.stderr, flush=True)
+        lsp_service = None
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup services on shutdown."""
+    global lsp_service
+    if lsp_service:
+        try:
+            await lsp_service.shutdown()
+            print("[LSP] Language server shutdown complete", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[LSP] Error during shutdown: {e}", file=sys.stderr, flush=True)
 
 
 @app.get("/api/packages")
 async def list_installed_packages(force_refresh: bool = False):
     """
     Return installed packages for the current Python runtime.
+    Fetches from remote pod if connected, otherwise from local environment.
     Args:
         force_refresh: If True, bypass cache and fetch fresh data
     """
+    global pod_manager
     cache_key = "packages_list"
 
     # Check cache first unless force refresh is requested
@@ -89,6 +124,29 @@ async def list_installed_packages(force_refresh: bool = False):
         return packages_cache[cache_key]
 
     try:
+        # If connected to remote pod, fetch packages from there
+        if pod_manager and pod_manager.pod:
+            try:
+                stdout, stderr, returncode = await pod_manager.execute_ssh_command(
+                    "python3 -m pip list --format=json 2>/dev/null || pip list --format=json"
+                )
+
+                if returncode == 0 and stdout.strip():
+                    import json
+                    pkgs_data = json.loads(stdout)
+                    packages = [{"name": p["name"], "version": p["version"]} for p in pkgs_data]
+                    packages.sort(key=lambda p: p["name"].lower())
+                    result = {"packages": packages}
+                    packages_cache[cache_key] = result
+                    return result
+                else:
+                    print(f"[API/PACKAGES] Remote command failed (code {returncode}): {stderr}", file=sys.stderr, flush=True)
+                    # Fall through to local packages
+            except Exception as e:
+                print(f"[API/PACKAGES] Failed to fetch remote packages: {e}", file=sys.stderr, flush=True)
+                # Fall through to local packages
+
+        # Local packages (fallback or when not connected)
         packages = []
         for dist in importlib_metadata.distributions():
             name = dist.metadata.get("Name") or dist.metadata.get("Summary") or dist.metadata.get("name")
@@ -106,7 +164,68 @@ async def list_installed_packages(force_refresh: bool = False):
 
 @app.get("/api/metrics")
 async def get_metrics():
+    global pod_manager
     try:
+        # If connected to remote pod, fetch metrics from there
+        if pod_manager and pod_manager.pod:
+            try:
+                # Python script to collect metrics on remote pod
+                metrics_script = """
+import json, psutil
+try:
+    import pynvml
+    pynvml.nvmlInit()
+    gpu_count = pynvml.nvmlDeviceGetCount()
+    gpus = []
+    for i in range(gpu_count):
+        handle = pynvml.nvmlDeviceGetHandleByIndex(i)
+        util = pynvml.nvmlDeviceGetUtilizationRates(handle)
+        mem = pynvml.nvmlDeviceGetMemoryInfo(handle)
+        try:
+            temp = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+        except:
+            temp = None
+        gpus.append({
+            "util_percent": util.gpu,
+            "mem_used": mem.used,
+            "mem_total": mem.total,
+            "temperature_c": temp
+        })
+    pynvml.nvmlShutdown()
+except:
+    gpus = []
+cpu = psutil.cpu_percent(interval=0.1)
+mem = psutil.virtual_memory()
+disk = psutil.disk_usage('/')
+net = psutil.net_io_counters()
+proc = psutil.Process()
+mem_info = proc.memory_info()
+print(json.dumps({
+    "cpu": {"percent": cpu, "cores": psutil.cpu_count()},
+    "memory": {"percent": mem.percent, "used": mem.used, "total": mem.total},
+    "storage": {"percent": disk.percent, "used": disk.used, "total": disk.total},
+    "gpu": gpus,
+    "network": {"bytes_sent": net.bytes_sent, "bytes_recv": net.bytes_recv},
+    "process": {"rss": mem_info.rss, "threads": proc.num_threads()}
+}))
+"""
+                # Escape single quotes in the script for shell
+                escaped_script = metrics_script.replace("'", "'\"'\"'")
+                stdout, stderr, returncode = await pod_manager.execute_ssh_command(
+                    f"python3 -c '{escaped_script}'"
+                )
+
+                if returncode == 0 and stdout.strip():
+                    import json
+                    return json.loads(stdout)
+                else:
+                    print(f"[API/METRICS] Remote command failed (code {returncode}): {stderr}", file=sys.stderr, flush=True)
+                    # Fall through to local metrics
+            except Exception as e:
+                print(f"[API/METRICS] Failed to fetch remote metrics: {e}", file=sys.stderr, flush=True)
+                # Fall through to local metrics
+
+        # Local metrics (fallback or when not connected)
         return metrics.get_all_devices()
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {exc}")
@@ -183,6 +302,80 @@ async def fix_indentation(request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to fix indentation: {exc}")
 
 
+@app.post("/api/lsp/completions")
+async def get_lsp_completions(request: Request):
+    """
+    Get LSP code completions for Python.
+
+    Body:
+        cell_id: Unique cell identifier
+        source: Full source code of the cell
+        line: Line number (0-indexed)
+        character: Character position in line
+
+    Returns:
+        List of completion items with label, kind, detail, documentation
+    """
+    if not lsp_service:
+        raise HTTPException(status_code=503, detail="LSP service not available")
+
+    try:
+        body = await request.json()
+        cell_id = body.get("cell_id", "0")
+        source = body.get("source", "")
+        line = body.get("line", 0)
+        character = body.get("character", 0)
+
+        completions = await lsp_service.get_completions(
+            cell_id=str(cell_id),
+            source=source,
+            line=line,
+            character=character
+        )
+
+        return {"completions": completions}
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LSP completion error: {exc}")
+
+
+@app.post("/api/lsp/hover")
+async def get_lsp_hover(request: Request):
+    """
+    Get hover information for Python code.
+
+    Body:
+        cell_id: Unique cell identifier
+        source: Full source code of the cell
+        line: Line number (0-indexed)
+        character: Character position in line
+
+    Returns:
+        Hover information with documentation
+    """
+    if not lsp_service:
+        raise HTTPException(status_code=503, detail="LSP service not available")
+
+    try:
+        body = await request.json()
+        cell_id = body.get("cell_id", "0")
+        source = body.get("source", "")
+        line = body.get("line", 0)
+        character = body.get("character", 0)
+
+        hover_info = await lsp_service.get_hover(
+            cell_id=str(cell_id),
+            source=source,
+            line=line,
+            character=character
+        )
+
+        return {"hover": hover_info}
+
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"LSP hover error: {exc}")
+
+
 @app.get("/api/file")
 async def read_file(path: str, max_bytes: int = 256_000):
     file_path = resolve_path(path)
@@ -234,6 +427,14 @@ class WebSocketManager:
                 "data": updated_data
             })
 
+    async def broadcast_pod_update(self, message: dict):
+        """Broadcast pod status updates to all connected clients."""
+        for client in self.clients:
+            try:
+                await client.send_json(message)
+            except Exception:
+                pass
+
     async def handle_message_loop(self, websocket: WebSocket):
         """Main loop to handle incoming WebSocket messages."""
         while True:
@@ -255,6 +456,7 @@ class WebSocketManager:
             "add_cell": self._handle_add_cell,
             "delete_cell": self._handle_delete_cell,
             "update_cell": self._handle_update_cell,
+            "move_cell": self._handle_move_cell,
             "interrupt_kernel": self._handle_interrupt_kernel,
             "reset_kernel": self._handle_reset_kernel,
             "load_notebook": self._handle_load_notebook,
@@ -319,7 +521,15 @@ class WebSocketManager:
     async def _handle_add_cell(self, websocket: WebSocket, data: dict):
         index = data.get('index', len(self.notebook.cells))
         cell_type = data.get('cell_type', 'code')
-        self.notebook.add_cell(index=index, cell_type=cell_type)
+        source = data.get('source', '')
+        full_cell = data.get('full_cell')
+
+        if full_cell:
+            # Restore full cell data (for undo functionality)
+            self.notebook.add_cell(index=index, cell_type=cell_type, source=source, full_cell=full_cell)
+        else:
+            # Normal add cell
+            self.notebook.add_cell(index=index, cell_type=cell_type, source=source)
         await self.broadcast_notebook_update()
 
     async def _handle_delete_cell(self, websocket: WebSocket, data: dict):
@@ -336,6 +546,17 @@ class WebSocketManager:
             #self.notebook.save_to_file()
             #to -do?
 
+    async def _handle_move_cell(self, websocket: WebSocket, data: dict):
+        from_index = data.get('from_index')
+        to_index = data.get('to_index')
+        if from_index is not None and to_index is not None:
+            self.notebook.move_cell(from_index, to_index)
+            # Save the notebook after moving cells
+            try:
+                self.notebook.save_to_file()
+            except Exception as e:
+                print(f"Warning: Failed to save notebook after moving cell: {e}", file=sys.stderr)
+            await self.broadcast_notebook_update()
 
     async def _handle_load_notebook(self, websocket: WebSocket, data: dict):
         # In a real app, this would load from a file path in `data`
@@ -420,45 +641,35 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.handle_message_loop(websocket)
 
 
-#gpu connection api
-@app.get("/api/gpu/config")
-async def get_gpu_config():
+# GPU connection API
+@app.get("/api/gpu/config", response_model=ConfigStatusResponse)
+async def get_gpu_config() -> ConfigStatusResponse:
     """Check if Prime Intellect API is configured."""
-    return {"configured": prime_intellect is not None}
+    return ConfigStatusResponse(configured=prime_intellect is not None)
 
 
-@app.post("/api/gpu/config")
-async def set_gpu_config(request: Request):
-    """Save Prime Intellect API key to .env file (commonly gitignored) and reinitialize service."""
-    global prime_intellect
+@app.post("/api/gpu/config", response_model=ApiKeyResponse)
+async def set_gpu_config(request: ApiKeyRequest) -> ApiKeyResponse:
+    """Save Prime Intellect API key to .env file and reinitialize service."""
+    global prime_intellect, pod_monitor
+
+    if not request.api_key.strip():
+        raise HTTPException(status_code=400, detail="API key is required")
 
     try:
-        body = await request.json()
-        api_key = body.get("api_key", "").strip()
-        if not api_key:
-            raise HTTPException(status_code=400, detail="API key is required")
+        save_api_key_to_env("PRIME_INTELLECT_API_KEY", request.api_key, BASE_DIR / ".env")
+        prime_intellect = PrimeIntellectService(api_key=request.api_key)
+        if prime_intellect:
+            pod_monitor = PodMonitor(
+                prime_intellect=prime_intellect,
+                pod_cache=pod_cache,
+                update_callback=lambda msg: manager.broadcast_pod_update(msg)
+            )
 
-        env_path = BASE_DIR / ".env"
+        return ApiKeyResponse(configured=True, message="API key saved successfully")
 
-        # Read existing .env content
-        existing_lines = []
-        if env_path.exists():
-            with env_path.open("r", encoding="utf-8") as f:
-                existing_lines = f.readlines()
-
-        # Remove any existing PRIME_INTELLECT_API_KEY lines
-        new_lines = [line for line in existing_lines if not line.strip().startswith("PRIME_INTELLECT_API_KEY=")]
-        # Add the new API key
-        new_lines.append(f"PRIME_INTELLECT_API_KEY={api_key}\n")
-        # Write back to .env
-        with env_path.open("w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-        prime_intellect = PrimeIntellectService(api_key=api_key)
-
-        return {"configured": True, "message": "API key saved successfully"}
-
-    except HTTPException:
-        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to save API key: {exc}")
 
@@ -511,28 +722,34 @@ async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int 
     pod_cache[cache_key] = result
     return result
 
+
 @app.post("/api/gpu/pods")
 async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
     """Create a new GPU pod."""
     import sys
-    print(f"[CREATE POD] Received request: {pod_request.model_dump()}", file=sys.stderr, flush=True)
 
-    if not prime_intellect:
+    if not prime_intellect or not pod_monitor:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+
+    print(f"[CREATE POD] Received request: {pod_request.model_dump()}", file=sys.stderr, flush=True)
 
     try:
         result = await prime_intellect.create_pod(pod_request)
         print(f"[CREATE POD] Success: {result}", file=sys.stderr, flush=True)
+
+        # Clear cache and start monitoring
         pod_cache.clear()
+        await pod_monitor.start_monitoring(result.id)
 
         return result
+
     except HTTPException as e:
         if e.status_code == 402:
             raise HTTPException(
                 status_code=402,
                 detail="Insufficient funds in your Prime Intellect wallet. Please add credits at https://app.primeintellect.ai/dashboard/billing"
             )
-        elif e.status_code == 401 or e.status_code == 403:
+        elif e.status_code in (401, 403):
             raise HTTPException(
                 status_code=e.status_code,
                 detail="Authentication failed. Please check your Prime Intellect API key."
@@ -569,6 +786,46 @@ async def delete_gpu_pod(pod_id: str):
     return result
 
 
+async def _connect_to_pod_background(pod_id: str):
+    """Background task to connect to pod without blocking the HTTP response."""
+    global pod_manager
+    import sys
+
+    try:
+        print(f"[CONNECT BACKGROUND] Starting connection to pod {pod_id}", file=sys.stderr, flush=True)
+
+        # Disconnect from any existing pod first
+        # TO-DO have to fix this for multi-gpu
+        if pod_manager and pod_manager.pod is not None:
+            await pod_manager.disconnect()
+
+        result = await pod_manager.connect_to_pod(pod_id)
+
+        if result.get("status") == "ok":
+            pod_manager.attach_executor(executor)
+            addresses = pod_manager.get_executor_addresses()
+            reconnect_zmq_sockets(
+                executor,
+                cmd_addr=addresses["cmd_addr"],
+                pub_addr=addresses["pub_addr"]
+            )
+            print(f"[CONNECT BACKGROUND] Successfully connected to pod {pod_id}", file=sys.stderr, flush=True)
+        else:
+            # Connection failed - clean up
+            print(f"[CONNECT BACKGROUND] Failed to connect: {result}", file=sys.stderr, flush=True)
+            if pod_manager and pod_manager.pod:
+                await pod_manager.disconnect()
+
+    except Exception as e:
+        print(f"[CONNECT BACKGROUND] Error: {e}", file=sys.stderr, flush=True)
+        # Clean up on error
+        if pod_manager and pod_manager.pod:
+            try:
+                await pod_manager.disconnect()
+            except Exception as cleanup_err:
+                print(f"[CONNECT BACKGROUND] Cleanup error: {cleanup_err}", file=sys.stderr, flush=True)
+
+
 @app.post("/api/gpu/pods/{pod_id}/connect")
 async def connect_to_pod(pod_id: str):
     """Connect to a GPU pod and establish SSH tunnel for remote execution."""
@@ -576,33 +833,19 @@ async def connect_to_pod(pod_id: str):
 
     if not prime_intellect:
         raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+
     if pod_manager is None:
         pod_manager = PodKernelManager(pi_service=prime_intellect)
 
-    # Disconnect from any existing pod first, may need to fix later for multi-pod
-    if pod_manager.pod is not None:
-        await pod_manager.disconnect()
+    # Start the connection in the background
+    asyncio.create_task(_connect_to_pod_background(pod_id))
 
-    # Connect to the new pod
-    result = await pod_manager.connect_to_pod(pod_id)
-
-    if result.get("status") == "ok":
-        pod_manager.attach_executor(executor)
-        addresses = pod_manager.get_executor_addresses()
-        executor.cmd_addr = addresses["cmd_addr"]
-        executor.pub_addr = addresses["pub_addr"]
-
-        # Reconnect executor sockets to tunneled ports
-        executor.req.close(0)  # type: ignore[reportAttributeAccessIssue]
-        executor.req = executor.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-        executor.req.connect(executor.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
-
-        executor.sub.close(0)  # type: ignore[reportAttributeAccessIssue]
-        executor.sub = executor.ctx.socket(zmq.SUB)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-        executor.sub.connect(executor.pub_addr)  # type: ignore[reportAttributeAccessIssue]
-        executor.sub.setsockopt_string(zmq.SUBSCRIBE, '')  # type: ignore[reportAttributeAccessIssue]
-
-    return result
+    # Return immediately with a "connecting" status
+    return {
+        "status": "connecting",
+        "message": "Connection initiated. Check status endpoint for updates.",
+        "pod_id": pod_id
+    }
 
 
 @app.post("/api/gpu/pods/disconnect")
@@ -616,26 +859,263 @@ async def disconnect_from_pod():
     result = await pod_manager.disconnect()
 
     # Reset executor to local addresses
-    executor.cmd_addr = os.getenv('MC_ZMQ_CMD_ADDR', 'tcp://127.0.0.1:5555')
-    executor.pub_addr = os.getenv('MC_ZMQ_PUB_ADDR', 'tcp://127.0.0.1:5556')
-
-    # Reconnect to local worker
-    executor.req.close(0)  # type: ignore[reportAttributeAccessIssue]
-    executor.req = executor.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-    executor.req.connect(executor.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
-
-    executor.sub.close(0)  # type: ignore[reportAttributeAccessIssue]
-    executor.sub = executor.ctx.socket(zmq.SUB)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
-    executor.sub.connect(executor.pub_addr)  # type: ignore[reportAttributeAccessIssue]
-    executor.sub.setsockopt_string(zmq.SUBSCRIBE, '')  # type: ignore[reportAttributeAccessIssue]
+    reset_to_local_zmq(executor)
 
     return result
 
 
 @app.get("/api/gpu/pods/connection/status")
 async def get_pod_connection_status():
-    """Get status of current pod connection."""
-    if pod_manager is None:
-        return {"connected": False, "pod": None}
+    """
+    Get status of current pod connection.
 
-    return await pod_manager.get_status()
+    Returns connection status AND any running pods from Prime Intellect API.
+    This ensures we don't lose track of running pods after backend restart.
+    """
+    # Check local connection state first
+    local_status = None
+    if pod_manager is not None:
+        local_status = await pod_manager.get_status()
+        if local_status.get("connected"):
+            return local_status
+
+    # If not locally connected, check Prime Intellect API for any running pods
+    if prime_intellect:
+        try:
+            pods_response = await prime_intellect.get_pods(status=None, limit=100, offset=0)
+            pods = pods_response.get("data", [])
+
+            # Find any ACTIVE pods with SSH connection info
+            running_pods = [
+                pod for pod in pods
+                if pod.get("status") == "ACTIVE" and pod.get("sshConnection")
+            ]
+
+            if running_pods:
+                # Return the first running pod as "discovered but not connected"
+                first_pod = running_pods[0]
+                return {
+                    "connected": False,
+                    "discovered_running_pods": running_pods,
+                    "pod": {
+                        "id": first_pod.get("id"),
+                        "name": first_pod.get("name"),
+                        "status": first_pod.get("status"),
+                        "gpu_type": first_pod.get("gpuName"),
+                        "gpu_count": first_pod.get("gpuCount"),
+                        "price_hr": first_pod.get("priceHr"),
+                        "ssh_connection": first_pod.get("sshConnection")
+                    },
+                    "message": "Found running pod but not connected. Backend may have restarted."
+                }
+        except Exception as e:
+            print(f"[CONNECTION STATUS] Error checking Prime Intellect API: {e}", file=sys.stderr, flush=True)
+
+    # No connection and no running pods found
+    return {"connected": False, "pod": None}
+
+
+@app.get("/api/gpu/pods/worker-logs")
+async def get_worker_logs():
+    """Fetch worker logs from connected pod."""
+    import subprocess
+
+    if not pod_manager or not pod_manager.pod:
+        raise HTTPException(status_code=400, detail="Not connected to any pod")
+
+    ssh_parts = pod_manager.pod.sshConnection.split()
+    host_part = next((p for p in ssh_parts if "@" in p), None)
+    if not host_part:
+        raise HTTPException(status_code=500, detail="Invalid SSH connection")
+
+    ssh_host = host_part.split("@")[1]
+    ssh_port = ssh_parts[ssh_parts.index("-p") + 1] if "-p" in ssh_parts else "22"
+
+    ssh_key = pod_manager._get_ssh_key()
+    cmd = ["ssh", "-p", ssh_port]
+    if ssh_key:
+        cmd.extend(["-i", ssh_key])
+    cmd.extend([
+        "-o", "StrictHostKeyChecking=no",
+        "-o", "UserKnownHostsFile=/dev/null",
+        "-o", "BatchMode=yes",
+        f"root@{ssh_host}",
+        "cat /tmp/worker.log 2>&1 || echo 'No worker log found'"
+    ])
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        return {"logs": result.stdout, "stderr": result.stderr, "returncode": result.returncode}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch logs: {str(e)}")
+
+
+# Dataset Management API
+@app.get("/api/datasets/info")
+async def get_dataset_info(name: str, config: str | None = None):
+    """
+    Get dataset metadata without downloading.
+
+    Args:
+        name: HuggingFace dataset name (e.g., "openai/gsm8k")
+        config: Optional dataset configuration
+
+    Returns:
+        Dataset metadata including size, splits, features
+    """
+    try:
+        info = data_manager.get_dataset_info(name, config)
+        return {
+            "name": info.name,
+            "size_gb": info.size_gb,
+            "splits": info.splits,
+            "features": info.features
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to get dataset info: {exc}")
+
+
+@app.post("/api/datasets/check")
+async def check_dataset_load(request: Request):
+    """
+    Check if dataset can be loaded and get recommendations.
+
+    Body:
+        name: Dataset name
+        config: Optional configuration
+        split: Optional split
+        auto_stream_threshold_gb: Threshold for auto-streaming (default: 10)
+
+    Returns:
+        Dict with action, recommendation, import_code, alternatives
+    """
+    try:
+        body = await request.json()
+        name = body.get("name")
+        config = body.get("config")
+        split = body.get("split")
+        threshold = body.get("auto_stream_threshold_gb", 10.0)
+
+        if not name:
+            raise HTTPException(status_code=400, detail="Dataset name is required")
+
+        result = await data_manager.load_smart(
+            dataset_name=name,
+            config=config,
+            split=split,
+            auto_stream_threshold_gb=threshold
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to check dataset: {exc}")
+
+
+@app.get("/api/datasets/cache")
+async def list_cached_datasets():
+    """
+    List all cached datasets.
+
+    Returns:
+        List of cached datasets with name, size, path
+    """
+    try:
+        datasets = data_manager.list_cached_datasets()
+        cache_size = data_manager.get_cache_size()
+        return {
+            "datasets": datasets,
+            "total_cache_size_gb": cache_size,
+            "max_cache_size_gb": data_manager.max_cache_size_gb
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to list cache: {exc}")
+
+
+@app.delete("/api/datasets/cache/{dataset_id}")
+async def clear_dataset_cache(dataset_id: str):
+    """
+    Clear specific dataset from cache.
+
+    Args:
+        dataset_id: Dataset identifier (or "all" to clear everything)
+    """
+    try:
+        if dataset_id == "all":
+            result = data_manager.clear_cache(None)
+        else:
+            result = data_manager.clear_cache(dataset_id)
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {exc}")
+
+
+@app.post("/api/datasets/disk/create")
+async def create_dataset_disk(request: Request):
+    """
+    Create disk for large dataset via Prime Intellect.
+
+    Body:
+        pod_id: Pod to attach disk to
+        disk_name: Human-readable name for the disk
+        size_gb: Disk size in GB
+        provider_type: Cloud provider (default: "runpod")
+
+    Returns:
+        Dict with disk_id, mount_path, instructions
+    """
+    if not prime_intellect:
+        raise HTTPException(status_code=503, detail="Prime Intellect API not configured")
+
+    try:
+        body = await request.json()
+        pod_id = body.get("pod_id")
+        disk_name = body.get("disk_name")
+        size_gb = body.get("size_gb")
+        provider_type = body.get("provider_type", "runpod")
+
+        if not pod_id or not disk_name or not size_gb:
+            raise HTTPException(status_code=400, detail="pod_id, disk_name, and size_gb are required")
+
+        result = await data_manager.create_and_attach_disk(
+            pod_id=pod_id,
+            disk_name=disk_name,
+            size_gb=int(size_gb),
+            provider_type=provider_type
+        )
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create disk: {exc}")
+
+
+@app.get("/api/datasets/subset")
+async def get_subset_code(
+    name: str,
+    num_samples: int = 1000,
+    split: str = "train",
+    config: str | None = None
+):
+    """
+    Get code to load a dataset subset for testing.
+
+    Args:
+        name: Dataset name
+        num_samples: Number of samples to load (default: 1000)
+        split: Which split to use (default: "train")
+        config: Optional configuration
+
+    Returns:
+        Dict with import_code and recommendation
+    """
+    try:
+        result = data_manager.load_subset(
+            dataset_name=name,
+            num_samples=num_samples,
+            split=split,
+            config=config
+        )
+        return result
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to generate subset code: {exc}")

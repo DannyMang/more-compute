@@ -13,13 +13,43 @@ class Notebook:
             self.load_from_file(file_path)
         else:
             # Default empty notebook structure
-            self.cells.append({'id': self._generate_cell_id(), 'cell_type': 'code', 'source': '', 'outputs': []})
+            self.cells.append({
+                'id': self._generate_cell_id(),
+                'cell_type': 'code',
+                'source': '',
+                'metadata': {},
+                'outputs': [],
+                'execution_count': None
+            })
 
     def get_notebook_data(self) -> Dict[str, Any]:
         return {"cells": self.cells, "metadata": self.metadata, "file_path": self.file_path}
 
-    def add_cell(self, index: int, cell_type: str = 'code', source: str = ''):
-        new_cell = {'id': self._generate_cell_id(), 'cell_type': cell_type, 'source': source, 'outputs': []}
+    def add_cell(self, index: int, cell_type: str = 'code', source: str = '', full_cell: dict = None):
+        if full_cell:
+            actual_cell_type = full_cell.get('cell_type', cell_type)
+            new_cell = {
+                'id': full_cell.get('id', self._generate_cell_id()),
+                'cell_type': actual_cell_type,
+                'source': full_cell.get('source', source),
+                'metadata': full_cell.get('metadata', {}),
+            }
+            # Only add outputs and execution_count for code cells
+            if actual_cell_type == 'code':
+                new_cell['outputs'] = full_cell.get('outputs', [])
+                new_cell['execution_count'] = full_cell.get('execution_count')
+        else:
+            # Normal new cell creation
+            new_cell = {
+                'id': self._generate_cell_id(),
+                'cell_type': cell_type,
+                'source': source,
+                'metadata': {}
+            }
+            # Only add outputs for code cells
+            if cell_type == 'code':
+                new_cell['outputs'] = []
+                new_cell['execution_count'] = None
         self.cells.insert(index, new_cell)
 
     def delete_cell(self, index: int):
@@ -30,10 +60,16 @@ class Notebook:
         if 0 <= index < len(self.cells):
             self.cells[index]['source'] = source
 
+    def move_cell(self, from_index: int, to_index: int):
+        if 0 <= from_index < len(self.cells) and 0 <= to_index < len(self.cells):
+            cell = self.cells.pop(from_index)
+            self.cells.insert(to_index, cell)
+
     def clear_all_outputs(self):
         for cell in self.cells:
-            cell['outputs'] = []
-            if 'execution_count' in cell:
+            # Only clear outputs for code cells
+            if cell.get('cell_type') == 'code':
+                cell['outputs'] = []
                 cell['execution_count'] = None
 
     def to_json(self) -> str:
@@ -64,7 +100,14 @@ class Notebook:
         except (FileNotFoundError, json.JSONDecodeError) as e:
             print(f"Error loading notebook: {e}")
             # Initialize with a default cell if loading fails
-            self.cells = [{'id': self._generate_cell_id(), 'cell_type': 'code', 'source': '', 'outputs': []}]
+            self.cells = [{
+                'id': self._generate_cell_id(),
+                'cell_type': 'code',
+                'source': '',
+                'metadata': {},
+                'outputs': [],
+                'execution_count': None
+            }]
             self.metadata = {}
             self.file_path = file_path
 
@@ -72,7 +115,7 @@ class Notebook:
         path_to_save = file_path or self.file_path
         if not path_to_save:
             raise ValueError("No file path specified for saving.")
-        
+
         with open(path_to_save, 'w') as f:
             f.write(self.to_json())
         self.file_path = path_to_save

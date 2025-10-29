@@ -1,33 +1,35 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Script from "next/script";
-import Sidebar from "@/components/Sidebar";
+import Sidebar from "@/components/layout/Sidebar";
 import FolderPopup from "@/components/popups/FolderPopup";
 import PackagesPopup from "@/components/popups/PackagesPopup";
-import PythonPopup from "@/components/popups/PythonPopup";
 import ComputePopup from "@/components/popups/ComputePopup";
 import MetricsPopup from "@/components/popups/MetricsPopup";
 import SettingsPopup from "@/components/popups/SettingsPopup";
+import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
+import {
+  PodWebSocketProvider,
+  usePodWebSocket,
+} from "@/contexts/PodWebSocketContext";
+import { loadSettings, applyTheme } from "@/lib/settings";
 import "./globals.css";
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+function AppContent({ children }: { children: React.ReactNode }) {
   const [appSettings, setAppSettings] = useState({});
-  const [pythonEnvironment, setPythonEnvironment] = useState(null);
   const [activePopup, setActivePopup] = useState<string | null>(null);
+  const { connectionState, gpuPods, connectingPodId } = usePodWebSocket();
+
+  // Apply theme on initial mount
+  useEffect(() => {
+    const settings = loadSettings();
+    applyTheme(settings.theme);
+  }, []);
 
   const handleSettingsChange = (settings: any) => {
     console.log("Settings updated:", settings);
     setAppSettings(settings);
-  };
-
-  const handleEnvironmentSwitch = (env: any) => {
-    console.log("Switching to environment:", env);
-    setPythonEnvironment(env);
   };
 
   const togglePopup = (popupType: string) => {
@@ -47,13 +49,6 @@ export default function RootLayout({
         return <FolderPopup {...props} />;
       case "packages":
         return <PackagesPopup {...props} />;
-      case "python":
-        return (
-          <PythonPopup
-            {...props}
-            onEnvironmentSwitch={handleEnvironmentSwitch}
-          />
-        );
       case "compute":
         return <ComputePopup {...props} />;
       case "metrics":
@@ -73,10 +68,8 @@ export default function RootLayout({
         return "Files";
       case "packages":
         return "Packages";
-      case "python":
-        return "Python Environment";
       case "compute":
-        return "Compute Resources";
+        return "Kernel";
       case "metrics":
         return "System Metrics";
       case "settings":
@@ -86,6 +79,84 @@ export default function RootLayout({
     }
   };
 
+  // Get connecting pod name
+  const connectingPod = connectingPodId
+    ? gpuPods.find((p) => p.id === connectingPodId)
+    : null;
+
+  return (
+    <>
+      <ConnectionBanner
+        connectionState={connectionState}
+        podName={connectingPod?.name}
+      />
+      <div id="app">
+        <Sidebar onTogglePopup={togglePopup} activePopup={activePopup} />
+        <div
+          id="popup-overlay"
+          className="popup-overlay"
+          style={{ display: activePopup ? "flex" : "none" }}
+        >
+          {activePopup && (
+            <div className="popup-content">
+              <div className="popup-header">
+                <h2 className="popup-title">{getPopupTitle()}</h2>
+                <button className="popup-close" onClick={closePopup}>
+                  ×
+                </button>
+              </div>
+              <div className="popup-body">{renderPopup()}</div>
+            </div>
+          )}
+        </div>
+        <div
+          id="kernel-banner"
+          className="kernel-banner"
+          style={{ display: "none" }}
+        >
+          <div className="kernel-message">
+            <span className="kernel-status-text">🔴 Kernel Disconnected</span>
+            <span className="kernel-subtitle">
+              The notebook kernel has stopped running. Restart to continue.
+            </span>
+          </div>
+        </div>
+        <div className="kernel-status-bar">
+          <div className="kernel-status-indicator">
+            <span
+              id="kernel-status-dot"
+              className="status-dot connecting"
+            ></span>
+            <span id="kernel-status-text" className="status-text">
+              Connecting...
+            </span>
+          </div>
+        </div>
+        <div className="main-content">{children}</div>
+        <div style={{ display: "none" }}>
+          <span id="connection-status">Connected</span>
+          <span id="kernel-status">Ready</span>
+          <img
+            id="copy-icon-template"
+            src="/assets/icons/copy.svg"
+            alt="Copy"
+          />
+          <img
+            id="check-icon-template"
+            src="/assets/icons/check.svg"
+            alt="Copied"
+          />
+        </div>
+      </div>
+    </>
+  );
+}
+
+export default function RootLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   const notebookPath = process.env.NEXT_PUBLIC_NOTEBOOK_PATH || "";
   const notebookRoot = process.env.NEXT_PUBLIC_NOTEBOOK_ROOT || "";
 
@@ -104,64 +175,9 @@ export default function RootLayout({
         />
       </head>
       <body data-notebook-path={notebookPath} data-notebook-root={notebookRoot}>
-        <div id="app">
-          <Sidebar onTogglePopup={togglePopup} activePopup={activePopup} />
-          <div
-            id="popup-overlay"
-            className="popup-overlay"
-            style={{ display: activePopup ? "flex" : "none" }}
-          >
-            {activePopup && (
-              <div className="popup-content">
-                <div className="popup-header">
-                  <h2 className="popup-title">{getPopupTitle()}</h2>
-                  <button className="popup-close" onClick={closePopup}>
-                    ×
-                  </button>
-                </div>
-                <div className="popup-body">{renderPopup()}</div>
-              </div>
-            )}
-          </div>
-          <div
-            id="kernel-banner"
-            className="kernel-banner"
-            style={{ display: "none" }}
-          >
-            <div className="kernel-message">
-              <span className="kernel-status-text">🔴 Kernel Disconnected</span>
-              <span className="kernel-subtitle">
-                The notebook kernel has stopped running. Restart to continue.
-              </span>
-            </div>
-          </div>
-          <div className="kernel-status-bar">
-            <div className="kernel-status-indicator">
-              <span
-                id="kernel-status-dot"
-                className="status-dot connecting"
-              ></span>
-              <span id="kernel-status-text" className="status-text">
-                Connecting...
-              </span>
-            </div>
-          </div>
-          <div className="main-content">{children}</div>
-          <div style={{ display: "none" }}>
-            <span id="connection-status">Connected</span>
-            <span id="kernel-status">Ready</span>
-            <img
-              id="copy-icon-template"
-              src="/assets/icons/copy.svg"
-              alt="Copy"
-            />
-            <img
-              id="check-icon-template"
-              src="/assets/icons/check.svg"
-              alt="Copied"
-            />
-          </div>
-        </div>
+        <PodWebSocketProvider>
+          <AppContent>{children}</AppContent>
+        </PodWebSocketProvider>
         <Script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js" />
         <Script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js" />
         <Script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/addon/edit/closebrackets.min.js" />

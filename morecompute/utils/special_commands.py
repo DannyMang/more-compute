@@ -122,11 +122,17 @@ class AsyncSpecialCommandHandler:
             # Check if command failed
             if return_code != 0:
                 result["status"] = "error"
-                result["error"] = {
-                    "ename": "ShellCommandError",
-                    "evalue": f"Command failed with return code {return_code}",
-                    "traceback": [f"Shell command failed: {command}"]
-                }
+                # Only add generic error if we don't already have detailed stderr output
+                # The detailed stderr is already in result["outputs"] from streaming
+                has_stderr = any(o.get("name") == "stderr" and o.get("text", "").strip()
+                               for o in result.get("outputs", []))
+                if not has_stderr:
+                    # No detailed error output, add generic error
+                    result["error"] = {
+                        "ename": "ShellCommandError",
+                        "evalue": f"Command failed with return code {return_code}",
+                        "traceback": [f"Shell command failed: {command}"]
+                    }
 
         except Exception as e:
             result["status"] = "error"
