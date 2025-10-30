@@ -51,8 +51,12 @@ export interface PackagesResponse {
 }
 
 export async function fetchInstalledPackages(forceRefresh: boolean = false): Promise<PackageInfo[]> {
-  const url = forceRefresh ? `/api/packages?force_refresh=true` : `/api/packages`;
-  const response = await fetch(url);
+  // Add timestamp to prevent browser caching
+  const timestamp = forceRefresh ? `&t=${Date.now()}` : '';
+  const url = forceRefresh ? `/api/packages?force_refresh=true${timestamp}` : `/api/packages`;
+  const response = await fetch(url, {
+    cache: forceRefresh ? 'no-store' : 'default'
+  });
   if (!response.ok) {
     throw new Error(`Failed to load packages: ${response.status}`);
   }

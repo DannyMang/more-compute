@@ -62,6 +62,9 @@ export class WebSocketService {
       case 'execution_start':
         this.emit('execution_start', messageData);
         break;
+      case 'heartbeat':
+        this.emit('heartbeat', messageData);
+        break;
       case 'stream_output':
         this.emit('stream_output', messageData);
         break;

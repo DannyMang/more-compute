@@ -106,12 +106,16 @@ export const THEMES: Record<string, ThemeDefinition> = (() => {
   return themes;
 })();
 
+export type MetricsCollectionMode = 'persistent' | 'on-demand';
+
 export type NotebookSettings = {
   theme: keyof typeof THEMES;
+  metricsCollectionMode: MetricsCollectionMode;
 };
 
 export const DEFAULT_SETTINGS: NotebookSettings = {
   theme: 'light',
+  metricsCollectionMode: 'on-demand', // Only collect metrics when popup is open to save memory
 };
 
 const STORAGE_KEY = 'morecompute-settings';
@@ -127,6 +131,9 @@ export function loadSettings(): NotebookSettings {
     // Return only valid settings fields (remove old auto_save, font_size, font_family, etc.)
     const cleanSettings: NotebookSettings = {
       theme,
+      metricsCollectionMode: parsed.metricsCollectionMode === 'on-demand' || parsed.metricsCollectionMode === 'persistent'
+        ? parsed.metricsCollectionMode
+        : DEFAULT_SETTINGS.metricsCollectionMode,
     };
 
     // Save cleaned settings back to localStorage

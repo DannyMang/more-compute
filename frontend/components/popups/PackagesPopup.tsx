@@ -19,7 +19,8 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
   const [query, setQuery] = useState('');
 
   useEffect(() => {
-    loadPackages();
+    // Always force refresh on initial load to ensure fresh data
+    loadPackages(true);
     const handler = () => loadPackages(true);  // Force refresh when packages updated
     if (typeof window !== 'undefined') {
       window.addEventListener('mc:packages-updated', handler as EventListener);

@@ -435,6 +435,12 @@ export const Notebook: React.FC<NotebookProps> = ({
     dispatch({ type: "NOTEBOOK_UPDATED", payload: data });
   }, []);
 
+  const handleHeartbeat = useCallback((data: any) => {
+    // Heartbeat received - execution still in progress
+    // Cell spinner already showing via executingCells set
+    console.log("[Heartbeat]", data?.message || "Execution in progress");
+  }, []);
+
   const handleKernelStatusUpdate = useCallback(
     (status: "connecting" | "connected" | "disconnected") => {
       setKernelStatus(status);
@@ -485,6 +491,7 @@ export const Notebook: React.FC<NotebookProps> = ({
     ws.on("execution_complete", handleExecutionComplete);
     ws.on("execution_result", handleExecuteResult);
     ws.on("execution_error", handleExecutionError);
+    ws.on("heartbeat", handleHeartbeat);
 
     return () => ws.disconnect();
   }, [
@@ -497,6 +504,7 @@ export const Notebook: React.FC<NotebookProps> = ({
     handleExecuteResult,
     handleExecutionComplete,
     handleExecutionError,
+    handleHeartbeat,
   ]);
 
   // Simplified save management - only save on Ctrl+S or Run
@@ -528,7 +536,7 @@ export const Notebook: React.FC<NotebookProps> = ({
       if (cell.cell_type === "markdown") {
         // Save before rendering markdown
         saveNotebook();
-        // Markdown rendering is handled locally in Cell.tsx now
+        // Markdown rendering is handled locally in MonacoCell.tsx now
         return;
       }
 

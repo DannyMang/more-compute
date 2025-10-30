@@ -16,12 +16,10 @@ import { Output, ErrorOutput } from '@/types/notebook';
 interface ErrorDisplayProps {
   error: Output;
   maxLines?: number;
-  onFixIndentation?: () => void;
 }
 
-const TypedErrorDisplay: FC<{ error: ErrorOutput; onFixIndentation?: () => void }> = ({ error, onFixIndentation }) => {
+const TypedErrorDisplay: FC<{ error: ErrorOutput }> = ({ error }) => {
   const [isCopied, setIsCopied] = useState(false);
-  const isIndentationError = error.ename === 'IndentationError';
 
   const copyToClipboard = () => {
     const errorDetails = `Error: ${error.ename}: ${error.evalue}\n\nTraceback:\n${error.traceback.join('\n')}`;
@@ -112,29 +110,6 @@ const TypedErrorDisplay: FC<{ error: ErrorOutput; onFixIndentation?: () => void 
           display: 'flex',
           gap: '4px'
         }}>
-          {/* Fix Indentation Button */}
-          {isIndentationError && onFixIndentation && (
-            <button
-              onClick={onFixIndentation}
-              style={{
-                background: 'rgba(59, 130, 246, 0.1)',
-                border: '1px solid #3b82f6',
-                borderRadius: '4px',
-                padding: '6px 10px',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s ease',
-                fontSize: '11px',
-                fontWeight: 500,
-                color: '#3b82f6'
-              }}
-              title="Auto-fix indentation"
-            >
-              Fix Indent
-            </button>
-          )}
           {/* Copy Button */}
           <button
             onClick={copyToClipboard}
@@ -197,12 +172,12 @@ const TypedErrorDisplay: FC<{ error: ErrorOutput; onFixIndentation?: () => void 
   );
 };
 
-const ErrorDisplay: FC<ErrorDisplayProps> = ({ error, onFixIndentation }) => {
+const ErrorDisplay: FC<ErrorDisplayProps> = ({ error }) => {
   // Type guard to ensure we have an ErrorOutput
   if (error.output_type !== 'error') {
     return null;
   }
-  return <TypedErrorDisplay error={error} onFixIndentation={onFixIndentation} />;
+  return <TypedErrorDisplay error={error} />;
 };
 
 export default ErrorDisplay;

@@ -119,6 +119,10 @@ async def list_installed_packages(force_refresh: bool = False):
     global pod_manager
     cache_key = "packages_list"
 
+    # Clear cache if force refresh is requested
+    if force_refresh and cache_key in packages_cache:
+        del packages_cache[cache_key]
+
     # Check cache first unless force refresh is requested
     if not force_refresh and cache_key in packages_cache:
         return packages_cache[cache_key]

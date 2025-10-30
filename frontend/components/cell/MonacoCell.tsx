@@ -16,7 +16,6 @@ import {
   ChevronDownIcon,
 } from "@radix-ui/react-icons";
 import { Check, X } from "lucide-react";
-import { fixIndentation } from "@/lib/api";
 import { loadMonacoThemes } from "@/lib/monaco-themes";
 import { loadSettings } from "@/lib/settings";
 
@@ -282,18 +281,6 @@ export const MonacoCell: React.FC<CellProps> = ({
     onSetActive(indexRef.current);
     if (cell.cell_type === "markdown") {
       setIsEditing(true);
-    }
-  };
-
-  const handleFixIndentation = async () => {
-    try {
-      const fixedCode = await fixIndentation(cell.source);
-      onUpdate(indexRef.current, fixedCode);
-      if (editorRef.current) {
-        editorRef.current.setValue(fixedCode);
-      }
-    } catch (err) {
-      console.error("Failed to fix indentation:", err);
     }
   };
 
@@ -690,7 +677,7 @@ export const MonacoCell: React.FC<CellProps> = ({
                     overviewRulerBorder: false,
                     overviewRulerLanes: 0,
                     // NOTE: fixedOverflowWidgets has known positioning bugs in 2024 - disabled
-                    padding: { top: 8, bottom: 8 }, // All padding managed by Monaco
+                    padding: { top: 8, bottom: 8, left: 8 }, // All padding managed by Monaco
                     scrollbar: {
                       vertical: "auto",
                       horizontal: "auto",
@@ -710,7 +697,6 @@ export const MonacoCell: React.FC<CellProps> = ({
           <CellOutput
             outputs={cell.outputs}
             error={cell.error}
-            onFixIndentation={handleFixIndentation}
           />
         </div>
       </div>

@@ -210,8 +210,8 @@ body {
 .kernel-status-indicator {
     display: flex;
     align-items: center;
-    background: rgba(255, 255, 255, 0.95);
-    border: 1px solid #e5e7eb;
+    background: var(--mc-cell-background);
+    border: 1px solid var(--mc-border);
     border-radius: 20px;
     padding: 8px 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
@@ -252,7 +252,7 @@ body {
 }
 
 .status-text {
-    color: #6b7280;
+    color: var(--mc-text-color);
 }
 
 /* Notebook Wrapper */
@@ -575,131 +575,7 @@ body {
     padding: 0;
 }
 
-.cell-editor-container {
-    position: relative;
-}
-
-.cell-editor {
-    width: 100%;
-    border: none;
-    outline: none;
-    resize: none;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    font-size: 14px;
-    line-height: 1.6;
-    padding: 16px 20px;
-    background: transparent;
-    color: var(--mc-text-color);
-    min-height: 100px;
-}
-
-.cell-editor:focus {
-    outline: none;
-}
-
-/* Markdown editor styling - uses Fira font for better readability */
-.markdown-editor-container {
-    /* Inherits from cell-editor-container */
-}
-
-.markdown-editor {
-    font-family: 'Fira', 'CustomFont', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
-    /* Keep other properties from .cell-editor */
-}
-
-/* Code editor styling - keeps monospace font */
-.code-editor-container {
-    /* Inherits from cell-editor-container */
-}
-
-.code-editor {
-    /* Inherits monospace font from .cell-editor */
-}
-
-/* CodeMirror Styling */
-.CodeMirror {
-    height: auto;
-    font-family: 'Fira', 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    font-size: 14px;
-    line-height: 1.6;
-    border: none;
-    background: transparent;
-    color: var(--mc-text-color);
-}
-
-.CodeMirror-focused {
-    outline: none;
-}
-
-.CodeMirror-scroll {
-    /* Content-based sizing - start small and grow with content */
-    min-height: 32px; /* Single line minimum */
-    padding: 8px 16px;
-    transition: min-height 0.2s ease;
-    background: var(--mc-cell-background);
-}
-
-/* Auto-sizing based on content */
-.CodeMirror {
-    /* Let CodeMirror size itself based on content */
-    height: auto !important;
-    min-height: 32px;
-}
-
-.CodeMirror-sizer {
-    min-height: auto !important;
-}
-
-/* Smart sizing classes applied dynamically */
-.cell.cell-empty .CodeMirror-scroll {
-    min-height: 32px; /* Very compact for empty cells */
-}
-
-.cell.cell-single-line .CodeMirror-scroll {
-    min-height: 40px; /* Slightly more space for single line */
-}
-
-.cell.cell-focused .CodeMirror-scroll {
-    min-height: 48px; /* More space when focused for editing */
-}
-
-.CodeMirror-cursor {
-    border-left: 2px solid #3b82f6;
-}
-
-.CodeMirror-selected {
-    background: #dbeafe;
-}
-
-.CodeMirror-line {
-    padding: 0;
-}
-
-.CodeMirror-placeholder {
-    color: #9ca3af !important;
-    font-style: italic;
-}
-
-/* Line numbers styling */
-.CodeMirror-linenumbers {
-    background: var(--mc-cell-background);
-    border-right: 1px solid #e5e7eb;
-    padding-right: 8px;
-    min-width: 30px;
-}
-
-.CodeMirror-linenumber {
-    color: var(--mc-line-number-color);
-    font-size: 11px;
-    text-align: right;
-    padding: 0 5px 0 0;
-    min-width: 20px;
-}
-
-.CodeMirror-gutters {
-    background: var(--mc-cell-background);
-    border-right: 1px solid #e5e7eb;
-}
+/* Legacy textarea editor styles removed - now using Monaco Editor exclusively */
 
 /* Markdown Rendered Content - Auto-sizing */
 .markdown-rendered {
@@ -1434,6 +1310,7 @@ body {
     border: 1px solid var(--mc-border);
     border-radius: 8px;
     background: var(--mc-cell-background);
+    overflow: hidden;
 }
 
 .metric-panel-header {
@@ -1450,6 +1327,7 @@ body {
 
 .metric-panel-body {
     padding: 10px 12px;
+    overflow: hidden;
 }
 
 .metric-big-value .value {
@@ -1466,6 +1344,8 @@ body {
 
 .mini-chart {
     margin-top: 6px;
+    max-width: 100%;
+    height: auto;
 }
 
 .metrics-footer {
@@ -1577,7 +1457,7 @@ body {
 .packages-table {
     display: flex;
     flex-direction: column;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--mc-border);
     border-radius: 8px;
     overflow: hidden;
     background: var(--mc-cell-background);
@@ -1590,14 +1470,38 @@ body {
     padding: 10px 12px;
     font-size: 12px;
     font-weight: 600;
-    color: #6b7280;
-    border-bottom: 1px solid #e5e7eb;
-    background: #f9fafb;
+    color: var(--mc-text-color);
+    border-bottom: 1px solid var(--mc-border);
+    background: var(--mc-secondary);
+    opacity: 0.8;
 }
 
 .packages-list {
     overflow-y: auto;
     max-height: calc(100vh - 260px);
+    /* Firefox scrollbar styling */
+    scrollbar-width: thin;
+    scrollbar-color: var(--mc-border) var(--mc-cell-background);
+}
+
+/* Packages list scrollbar styling (Webkit browsers) */
+.packages-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.packages-list::-webkit-scrollbar-track {
+    background: var(--mc-cell-background);
+    border-radius: 4px;
+}
+
+.packages-list::-webkit-scrollbar-thumb {
+    background: var(--mc-border);
+    border-radius: 4px;
+    transition: background 0.2s ease;
+}
+
+.packages-list::-webkit-scrollbar-thumb:hover {
+    background: var(--mc-secondary);
 }
 
 .package-row {
@@ -1605,7 +1509,7 @@ body {
     grid-template-columns: 1fr 140px;
     gap: 8px;
     padding: 10px 12px;
-    border-bottom: 1px solid #f3f4f6;
+    border-bottom: 1px solid var(--mc-border);
 }
 
 .package-row:last-child {
@@ -1694,6 +1598,7 @@ body {
   color: var(--mc-line-number-color) !important;
   font-size: 11px !important;
   font-family: 'Fira', 'SF Mono', Monaco, monospace;
+  padding-right: 12px !important;
 }
 
 .monaco-editor .margin-view-overlays {

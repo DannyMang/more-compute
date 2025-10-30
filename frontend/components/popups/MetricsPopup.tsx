@@ -11,17 +11,39 @@ import {
 
 const POLL_MS = 3000;
 
-const MetricsPopup: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
+interface MetricsPopupProps {
+  onClose?: () => void;
+  sharedHistory?: MetricsSnapshot[]; // Passed from parent when in persistent mode
+}
+
+const MetricsPopup: React.FC<MetricsPopupProps> = ({ onClose, sharedHistory }) => {
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null);
-  const [history, setHistory] = useState<MetricsSnapshot[]>([]);
+  const [localHistory, setLocalHistory] = useState<MetricsSnapshot[]>([]);
   const intervalRef = useRef<number | null>(null);
 
+  // Use shared history if provided (persistent mode), otherwise use local history (on-demand mode)
+  const history = sharedHistory ?? localHistory;
+  const isPersistentMode = sharedHistory !== undefined;
+
+  // Update current metrics from shared history
   useEffect(() => {
+    if (isPersistentMode && sharedHistory && sharedHistory.length > 0) {
+      setMetrics(sharedHistory[sharedHistory.length - 1]);
+    }
+  }, [isPersistentMode, sharedHistory]);
+
+  // On-demand mode: poll metrics when popup is open
+  useEffect(() => {
+    if (isPersistentMode) {
+      // Don't poll in persistent mode - use shared history
+      return;
+    }
+
     const load = async () => {
       try {
         const snap = await fetchMetrics();
         setMetrics(snap);
-        setHistory((prev) => {
+        setLocalHistory((prev) => {
           const arr = [...prev, snap];
           return arr.slice(-100);
         });
@@ -32,7 +54,7 @@ const MetricsPopup: React.FC<{ onClose?: () => void }> = ({ onClose }) => {
     return () => {
       if (intervalRef.current) window.clearInterval(intervalRef.current);
     };
-  }, []);
+  }, [isPersistentMode]);
 
   const hasGPU = metrics?.gpu && metrics.gpu.length > 0;
 
@@ -137,7 +159,7 @@ const BigValue: React.FC<{ value: string; subtitle?: string }> = ({
 );
 
 const MiniChart: React.FC<{ data: number[] }> = ({ data }) => {
-  const width = 220;
+  const width = 100;
   const height = 48;
   const max = Math.max(100, ...data);
   const points = data
@@ -148,8 +170,21 @@ const MiniChart: React.FC<{ data: number[] }> = ({ data }) => {
     })
     .join(" ");
   return (
-    <svg width={width} height={height} className="mini-chart">
-      <polyline points={points} fill="none" stroke="var(--mc-primary)" strokeWidth="2" />
+    <svg
+      width="100%"
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      preserveAspectRatio="none"
+      className="mini-chart"
+      style={{ display: 'block' }}
+    >
+      <polyline
+        points={points}
+        fill="none"
+        stroke="var(--mc-primary)"
+        strokeWidth="2"
+        vectorEffect="non-scaling-stroke"
+      />
     </svg>
   );
 };

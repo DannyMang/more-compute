@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Script from "next/script";
 import Sidebar from "@/components/layout/Sidebar";
 import FolderPopup from "@/components/popups/FolderPopup";
@@ -13,13 +13,20 @@ import {
   PodWebSocketProvider,
   usePodWebSocket,
 } from "@/contexts/PodWebSocketContext";
-import { loadSettings, applyTheme } from "@/lib/settings";
+import { loadSettings, applyTheme, type NotebookSettings } from "@/lib/settings";
+import { fetchMetrics, type MetricsSnapshot } from "@/lib/api";
 import "./globals.css";
 
+const POLL_MS = 3000;
+
 function AppContent({ children }: { children: React.ReactNode }) {
-  const [appSettings, setAppSettings] = useState({});
+  const [appSettings, setAppSettings] = useState<NotebookSettings>(() => loadSettings());
   const [activePopup, setActivePopup] = useState<string | null>(null);
   const { connectionState, gpuPods, connectingPodId } = usePodWebSocket();
+
+  // Persistent metrics collection
+  const [metricsHistory, setMetricsHistory] = useState<MetricsSnapshot[]>([]);
+  const intervalRef = useRef<number | null>(null);
 
   // Apply theme on initial mount
   useEffect(() => {
@@ -27,7 +34,44 @@ function AppContent({ children }: { children: React.ReactNode }) {
     applyTheme(settings.theme);
   }, []);
 
-  const handleSettingsChange = (settings: any) => {
+  // Persistent metrics collection (runs when mode is 'persistent')
+  useEffect(() => {
+    if (appSettings.metricsCollectionMode !== 'persistent') {
+      // Stop collection if mode changes to on-demand
+      if (intervalRef.current) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      // Clear history when switching to on-demand mode
+      setMetricsHistory([]);
+      return;
+    }
+
+    // Start persistent collection
+    const load = async () => {
+      try {
+        const snap = await fetchMetrics();
+        setMetricsHistory((prev) => {
+          const arr = [...prev, snap];
+          return arr.slice(-100); // Keep last 100 snapshots
+        });
+      } catch {
+        // Silently fail if metrics API is unavailable
+      }
+    };
+
+    load(); // Initial load
+    intervalRef.current = window.setInterval(load, POLL_MS);
+
+    return () => {
+      if (intervalRef.current) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [appSettings.metricsCollectionMode]);
+
+  const handleSettingsChange = (settings: NotebookSettings) => {
     console.log("Settings updated:", settings);
     setAppSettings(settings);
   };
@@ -52,7 +96,12 @@ function AppContent({ children }: { children: React.ReactNode }) {
       case "compute":
         return <ComputePopup {...props} />;
       case "metrics":
-        return <MetricsPopup {...props} />;
+        return (
+          <MetricsPopup
+            {...props}
+            sharedHistory={appSettings.metricsCollectionMode === 'persistent' ? metricsHistory : undefined}
+          />
+        );
       case "settings":
         return (
           <SettingsPopup {...props} onSettingsChange={handleSettingsChange} />

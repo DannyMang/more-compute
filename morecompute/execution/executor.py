@@ -120,10 +120,17 @@ class NextZmqExecutor:
         if handler is not None:
             normalized_source = handler._coerce_source_to_text(source_code)  # type: ignore[reportPrivateUsage]
             if handler.is_special_command(normalized_source):
-                # If connected to remote pod, send special commands to remote worker
-                # Otherwise they execute locally which gives wrong results
-                if not self.is_remote:
-                    # Execute special command locally
+                # Check if this is a PURE special command (starts with !, %%, or %)
+                # vs a MIXED command (contains shell commands but also has Python code)
+                stripped = normalized_source.strip()
+                is_pure_special = (stripped.startswith('!') or
+                                 stripped.startswith('%%') or
+                                 stripped.startswith('%'))
+
+                # Only execute PURE special commands locally
+                # Mixed commands must go to worker for proper streaming
+                if not self.is_remote and is_pure_special:
+                    # Execute pure special command locally
                     execution_count = getattr(self, 'execution_count', 0) + 1
                     self.execution_count = execution_count
                     start_time = time.time()
@@ -143,7 +150,7 @@ class NextZmqExecutor:
                     if websocket:
                         await websocket.send_json({'type': 'execution_complete', 'data': {'cell_index': cell_index, 'result': result}})
                     return result
-                # For remote execution, fall through to send via ZMQ
+                # For remote execution OR mixed commands, fall through to send via ZMQ
 
         execution_count = getattr(self, 'execution_count', 0) + 1
         self.execution_count = execution_count

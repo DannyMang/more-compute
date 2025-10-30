@@ -39,9 +39,9 @@ export const CellButton: React.FC<CellButtonProps> = ({
       style={{
         width: '28px',
         height: '28px',
-        border: '1px solid #D9DEE5',
+        border: '1px solid var(--mc-border)',
         borderRadius: '4px',
-        backgroundColor: isHovered ? '#E6E8EC' : 'rgba(243, 244, 246, 0.5)',
+        backgroundColor: isHovered ? 'var(--mc-secondary)' : 'var(--mc-cell-background)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
