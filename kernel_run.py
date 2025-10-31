@@ -24,6 +24,7 @@ class NotebookLauncher:
         self.debug = debug
         self.notebook_path = notebook_path
         self.is_windows = platform.system() == "Windows"
+        self.cleaning_up = False  # Flag to prevent multiple cleanup calls
         root_dir = notebook_path.parent if notebook_path.parent != Path('') else Path.cwd()
         os.environ["MORECOMPUTE_ROOT"] = str(root_dir.resolve())
         os.environ["MORECOMPUTE_NOTEBOOK_PATH"] = str(self.notebook_path)
@@ -262,8 +263,14 @@ class NotebookLauncher:
             self.cleanup()
             sys.exit(1)
 
-    def cleanup(self):
+    def cleanup(self, force=False):
         """Clean up processes on exit"""
+        if self.cleaning_up:
+            return  # Already cleaning up, don't run again
+        self.cleaning_up = True
+
+        timeout = 0.5 if force else 2  # Shorter timeout on force exit
+
         if self.frontend_process:
             try:
                 if self.is_windows:
@@ -274,11 +281,14 @@ class NotebookLauncher:
                         stderr=subprocess.DEVNULL
                     )
                 else:
-                    self.frontend_process.terminate()
-                    try:
-                        self.frontend_process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        self.frontend_process.kill()
+                    if force:
+                        self.frontend_process.kill()  # Force kill immediately
+                    else:
+                        self.frontend_process.terminate()
+                        try:
+                            self.frontend_process.wait(timeout=timeout)
+                        except subprocess.TimeoutExpired:
+                            self.frontend_process.kill()
             except Exception:
                 pass
 
@@ -292,11 +302,14 @@ class NotebookLauncher:
                         stderr=subprocess.DEVNULL
                     )
                 else:
-                    self.backend_process.terminate()
-                    try:
-                        self.backend_process.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        self.backend_process.kill()
+                    if force:
+                        self.backend_process.kill()  # Force kill immediately
+                    else:
+                        self.backend_process.terminate()
+                        try:
+                            self.backend_process.wait(timeout=timeout)
+                        except subprocess.TimeoutExpired:
+                            self.backend_process.kill()
             except Exception:
                 pass
 
@@ -316,8 +329,8 @@ class NotebookLauncher:
                 print("[CTRL-C AGAIN TO EXIT]")
             else:
                 print("\n        Thanks for using MoreCompute!\n")
-                self.cleanup()
-                sys.exit(0)
+                self.cleanup(force=True)  # Force immediate cleanup
+                os._exit(0)  # Hard exit without raising SystemExit
 
         # Windows signal handling is different
         if not self.is_windows:

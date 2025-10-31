@@ -84,8 +84,8 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
           top: "50%",
           left: "50%",
           transform: "translate(-50%, -50%)",
-          backgroundColor: "white",
-          border: "1px solid #d1d5db",
+          backgroundColor: "var(--mc-cell-background)",
+          border: "1px solid var(--mc-border)",
           borderRadius: "8px",
           padding: "16px",
           width: "320px",
@@ -110,7 +110,7 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
               fontSize: "14px",
               fontWeight: 600,
               margin: 0,
-              color: "#111827",
+              color: "var(--mc-text-color)",
             }}
           >
             Filter
@@ -119,7 +119,7 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
             onClick={handleClearAll}
             style={{
               fontSize: "11px",
-              color: "#3b82f6",
+              color: "var(--mc-primary)",
               background: "none",
               border: "none",
               cursor: "pointer",
@@ -142,9 +142,9 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
             width: "100%",
             padding: "8px 10px",
             borderRadius: "6px",
-            border: "1px solid #d1d5db",
-            backgroundColor: "white",
-            color: "#111827",
+            border: "1px solid var(--mc-border)",
+            backgroundColor: "var(--mc-input-background)",
+            color: "var(--mc-text-color)",
             fontSize: "12px",
             marginBottom: "12px",
             cursor: "pointer",
@@ -166,9 +166,9 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
             width: "100%",
             padding: "8px 10px",
             borderRadius: "6px",
-            border: "1px solid #d1d5db",
-            backgroundColor: "white",
-            color: "#111827",
+            border: "1px solid var(--mc-border)",
+            backgroundColor: "var(--mc-input-background)",
+            color: "var(--mc-text-color)",
             fontSize: "12px",
             marginBottom: "12px",
             boxSizing: "border-box",
@@ -182,7 +182,7 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
             overflowY: "auto",
             marginBottom: "16px",
             maxHeight: "240px",
-            border: "1px solid #e5e7eb",
+            border: "1px solid var(--mc-border)",
             borderRadius: "6px",
             padding: "4px",
           }}
@@ -200,12 +200,12 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
                     padding: "8px 6px",
                     cursor: "pointer",
                     fontSize: "12px",
-                    color: "#374151",
+                    color: "var(--mc-text-color)",
                     borderRadius: "4px",
                     transition: "background-color 0.15s",
                   }}
                   onMouseEnter={(e) =>
-                    (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                    (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
                   }
                   onMouseLeave={(e) =>
                     (e.currentTarget.style.backgroundColor = "transparent")
@@ -249,12 +249,12 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
                       padding: "8px 6px",
                       cursor: "pointer",
                       fontSize: "12px",
-                      color: "#374151",
+                      color: "var(--mc-text-color)",
                       borderRadius: "4px",
                       transition: "background-color 0.15s",
                     }}
                     onMouseEnter={(e) =>
-                      (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                      (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
                     }
                     onMouseLeave={(e) =>
                       (e.currentTarget.style.backgroundColor = "transparent")
@@ -303,12 +303,12 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
                       padding: "8px 6px",
                       cursor: "pointer",
                       fontSize: "12px",
-                      color: "#374151",
+                      color: "var(--mc-text-color)",
                       borderRadius: "4px",
                       transition: "background-color 0.15s",
                     }}
                     onMouseEnter={(e) =>
-                      (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                      (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
                     }
                     onMouseLeave={(e) =>
                       (e.currentTarget.style.backgroundColor = "transparent")
@@ -352,12 +352,12 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
                       padding: "8px 6px",
                       cursor: "pointer",
                       fontSize: "12px",
-                      color: "#374151",
+                      color: "var(--mc-text-color)",
                       borderRadius: "4px",
                       transition: "background-color 0.15s",
                     }}
                     onMouseEnter={(e) =>
-                      (e.currentTarget.style.backgroundColor = "#f3f4f6")
+                      (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
                     }
                     onMouseLeave={(e) =>
                       (e.currentTarget.style.backgroundColor = "transparent")
@@ -390,9 +390,9 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
               padding: "8px 16px",
               fontSize: "12px",
               borderRadius: "6px",
-              border: "1px solid #d1d5db",
-              backgroundColor: "white",
-              color: "#374151",
+              border: "1px solid var(--mc-border)",
+              backgroundColor: "var(--mc-secondary)",
+              color: "var(--mc-text-color)",
               cursor: "pointer",
               fontWeight: 500,
             }}
@@ -410,8 +410,8 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
               fontSize: "12px",
               borderRadius: "6px",
               border: "none",
-              backgroundColor: "#3b82f6",
-              color: "white",
+              backgroundColor: "var(--mc-primary)",
+              color: "var(--mc-button-foreground)",
               cursor: "pointer",
               fontWeight: 500,
             }}
