@@ -332,7 +332,14 @@ def worker_main():
                 if lines:
                     last = lines[-1].strip()
                     # Skip comments and empty lines
-                    if last and not last.startswith('#'):
+                    if not last or last.startswith('#'):
+                        last = None
+                    # Skip orphaned closing brackets from multi-line expressions
+                    # e.g., the ')' from: model = func(\n    arg1,\n    arg2\n)
+                    elif last.lstrip().startswith(')') or last.lstrip().startswith('}') or last.lstrip().startswith(']'):
+                        last = None
+
+                    if last:
                         # Check if it looks like a statement (assignment, import, etc)
                         is_statement = False
 

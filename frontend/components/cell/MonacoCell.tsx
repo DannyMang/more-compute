@@ -580,9 +580,9 @@ export const MonacoCell: React.FC<CellProps> = ({
         data-cell-index={index}
       >
         {/* Hover Controls */}
-        {!isMarkdownWithContent && (
-          <div className="cell-hover-controls">
-            <div className="cell-actions-right">
+        <div className="cell-hover-controls">
+          <div className="cell-actions-right">
+            {!isMarkdownWithContent && (
               <CellButton
                 icon={<PlayIcon className="w-6 h-6" />}
                 onClick={(e) => {
@@ -592,35 +592,35 @@ export const MonacoCell: React.FC<CellProps> = ({
                 title={isExecuting ? "Stop execution" : "Run cell"}
                 isLoading={isExecuting}
               />
-              <CellButton
-                icon={<ChevronUpIcon className="w-6 h-6" />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMoveUp(indexRef.current);
-                }}
-                title="Move cell up"
-                disabled={index === 0}
-              />
-              <CellButton
-                icon={<ChevronDownIcon className="w-6 h-6" />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onMoveDown(indexRef.current);
-                }}
-                title="Move cell down"
-                disabled={index === totalCells - 1}
-              />
-              <CellButton
-                icon={<LinkBreak2Icon className="w-5 h-5" />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(indexRef.current);
-                }}
-                title="Delete cell"
-              />
-            </div>
+            )}
+            <CellButton
+              icon={<ChevronUpIcon className="w-6 h-6" />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveUp(indexRef.current);
+              }}
+              title="Move cell up"
+              disabled={index === 0}
+            />
+            <CellButton
+              icon={<ChevronDownIcon className="w-6 h-6" />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMoveDown(indexRef.current);
+              }}
+              title="Move cell down"
+              disabled={index === totalCells - 1}
+            />
+            <CellButton
+              icon={<LinkBreak2Icon className="w-5 h-5" />}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete(indexRef.current);
+              }}
+              title="Delete cell"
+            />
           </div>
-        )}
+        </div>
 
         {/* Cell Content */}
         <div

@@ -480,6 +480,7 @@ body {
 
 .cell:hover {
     box-shadow: 2px 4px 0 var(--mc-secondary-hover);
+    z-index: 11; /* Ensure hovered cell appears above add-cell-line (z-index: 10) */
 }
 
 .cell.active {

@@ -70,9 +70,6 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
     return packages.filter(p => p.name.toLowerCase().includes(q));
   }, [packages, query]);
 
-  if (loading) return <div className="packages-list">Loading...</div>;
-  if (error) return <div className="packages-list">{error}</div>;
-
   return (
     <div className="packages-container">
       <div className="packages-toolbar">
@@ -98,12 +95,26 @@ const PackagesPopup: React.FC<PackagesPopupProps> = ({ onClose }) => {
           <div className="col-version">Version</div>
         </div>
         <div className="packages-list">
-          {filtered.map((pkg) => (
-            <div key={`${pkg.name}@${pkg.version}`} className="package-row">
-              <div className="col-name package-name">{pkg.name}</div>
-              <div className="col-version package-version">{pkg.version}</div>
+          {loading ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--mc-text-color)' }}>
+              Loading packages...
             </div>
-          ))}
+          ) : error ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#dc2626' }}>
+              {error}
+            </div>
+          ) : filtered.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--mc-text-color)', opacity: 0.6 }}>
+              {query ? 'No packages found' : 'No packages installed'}
+            </div>
+          ) : (
+            filtered.map((pkg) => (
+              <div key={`${pkg.name}@${pkg.version}`} className="package-row">
+                <div className="col-name package-name">{pkg.name}</div>
+                <div className="col-version package-version">{pkg.version}</div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>
