@@ -6,6 +6,14 @@
 
 An interactive notebook environment, similar to Marimo and Google Colab, that runs locally. It works with standard `.ipynb` files, similar to Jupyter Lab but more awesome.
 
+
+
+
+https://github.com/user-attachments/assets/8c7ec716-dade-4de2-ad37-71d328129c97
+
+
+
+
 ## Installation
 
 **Prerequisites:** [Node.js](https://nodejs.org/) >= 20.10.0 required for web interface
