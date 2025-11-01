@@ -408,8 +408,8 @@ class PodKernelManager:
                     f"'cd /tmp && "
                     f"MC_ZMQ_CMD_ADDR=tcp://0.0.0.0:{self.remote_cmd_port} "
                     f"MC_ZMQ_PUB_ADDR=tcp://0.0.0.0:{self.remote_pub_port} "
-                    f"nohup python3 /tmp/morecompute/execution/worker.py "
-                    f">/tmp/worker.log 2>&1 </dev/null & "
+                    f"setsid python3 -u /tmp/morecompute/execution/worker.py "
+                    f"</dev/null >/tmp/worker.log 2>&1 & "
                     f"echo $!'"
                 )
             ])

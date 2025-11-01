@@ -111,6 +111,7 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
+    pointer-events: none; /* Allow clicks to pass through */
 }
 
 .connection-banner.provisioning {

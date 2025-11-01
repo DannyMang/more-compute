@@ -86,6 +86,7 @@ class NextZmqExecutor:
             self.worker_proc = subprocess.Popen(
                 [sys.executable, '-m', 'morecompute.execution.worker'],
                 env=env,
+                stdin=subprocess.DEVNULL,  # Explicitly close stdin to prevent fd issues
                 stdout=subprocess.DEVNULL,
                 stderr=None  # Show errors in terminal
             )

@@ -25,6 +25,7 @@ class NotebookLauncher:
         self.notebook_path = notebook_path
         self.is_windows = platform.system() == "Windows"
         self.cleaning_up = False  # Flag to prevent multiple cleanup calls
+        self.frontend_port = int(os.getenv("MORECOMPUTE_FRONTEND_PORT", "2718"))
         root_dir = notebook_path.parent if notebook_path.parent != Path('') else Path.cwd()
         os.environ["MORECOMPUTE_ROOT"] = str(root_dir.resolve())
         os.environ["MORECOMPUTE_NOTEBOOK_PATH"] = str(self.notebook_path)
@@ -244,9 +245,14 @@ class NotebookLauncher:
             fe_stdout = None if self.debug else subprocess.DEVNULL
             fe_stderr = None if self.debug else subprocess.DEVNULL
 
+            # Set PORT environment variable for Next.js
+            frontend_env = os.environ.copy()
+            frontend_env["PORT"] = str(self.frontend_port)
+
             self.frontend_process = subprocess.Popen(
                 [npm_cmd, "run", "dev"],
                 cwd=frontend_dir,
+                env=frontend_env,
                 stdout=fe_stdout,
                 stderr=fe_stderr,
                 shell=self.is_windows,  # CRITICAL for Windows
@@ -256,7 +262,7 @@ class NotebookLauncher:
 
             # Wait a bit then open browser
             time.sleep(3)
-            webbrowser.open("http://localhost:3000")
+            webbrowser.open(f"http://localhost:{self.frontend_port}")
 
         except Exception as e:
             print(f"Failed to start frontend: {e}")
@@ -316,7 +322,7 @@ class NotebookLauncher:
     def run(self):
         """Main run method"""
         print("\n        Edit notebook in your browser!\n")
-        print("        ➜  URL: http://localhost:3000\n")
+        print(f"        ➜  URL: http://localhost:{self.frontend_port}\n")
 
         # Track Ctrl+C presses
         interrupt_count = [0]  # Use list to allow modification in nested function
@@ -366,7 +372,11 @@ class NotebookLauncher:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Launch the MoreCompute notebook")
+    parser = argparse.ArgumentParser(
+        prog="more-compute",
+        description="MoreCompute - Jupyter notebooks with GPU compute",
+        add_help=False,
+    )
     parser.add_argument(
         "--version",
         "-v",
@@ -383,7 +393,13 @@ def build_parser() -> argparse.ArgumentParser:
         "-debug",
         "--debug",
         action="store_true",
-        help="Show backend/frontend logs (hidden by default)",
+        help="Show backend/frontend logs",
+    )
+    parser.add_argument(
+        "-h",
+        "--help",
+        action="store_true",
+        help="Show this help message",
     )
     return parser
 
@@ -413,9 +429,37 @@ def ensure_notebook_exists(notebook_path: Path):
     notebook.save_to_file(str(notebook_path))
 
 
+def print_help():
+    """Print concise help message"""
+    print(f"""Usage: more-compute [OPTIONS] [NOTEBOOK]
+
+MoreCompute - Jupyter notebooks with GPU compute
+
+Getting started:
+
+  * more-compute new              create a new notebook with timestamp
+  * more-compute notebook.ipynb   open or create notebook.ipynb
+
+Options:
+  --version, -v                   Show version and exit
+  --debug                         Show backend/frontend logs
+  --help, -h                      Show this message and exit
+
+Environment variables:
+  MORECOMPUTE_PORT                Backend port (default: 8000)
+  MORECOMPUTE_FRONTEND_PORT       Frontend port (default: 2718)
+  MORECOMPUTE_NOTEBOOK_PATH       Default notebook path
+""")
+
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    # Show help if requested or no arguments provided
+    if args.help or (args.notebook_path is None and os.getenv("MORECOMPUTE_NOTEBOOK_PATH") is None):
+        print_help()
+        sys.exit(0)
+
     raw_notebook_path = args.notebook_path
 
     if raw_notebook_path == "new":
@@ -429,7 +473,8 @@ def main(argv=None):
         raw_notebook_path = notebook_path_env
 
     if raw_notebook_path is None:
-        raw_notebook_path = DEFAULT_NOTEBOOK_NAME
+        print_help()
+        sys.exit(0)
 
     notebook_path = Path(raw_notebook_path).expanduser().resolve()
     ensure_notebook_exists(notebook_path)

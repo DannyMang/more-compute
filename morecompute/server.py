@@ -18,7 +18,7 @@ from .utils.system_environment_util import DeviceMetrics
 from .utils.error_utils import ErrorUtils
 from .utils.cache_util import make_cache_key
 from .utils.notebook_util import coerce_cell_source
-from .utils.config_util import load_api_key_from_env, save_api_key_to_env
+from .utils.config_util import load_api_key, save_api_key
 from .utils.zmq_util import reconnect_zmq_sockets, reset_to_local_zmq
 from .services.prime_intellect import PrimeIntellectService
 from .services.pod_manager import PodKernelManager
@@ -67,7 +67,7 @@ else:
 error_utils = ErrorUtils()
 executor = NextZmqExecutor(error_utils=error_utils)
 metrics = DeviceMetrics()
-prime_api_key = load_api_key_from_env("PRIME_INTELLECT_API_KEY", BASE_DIR / ".env")
+prime_api_key = load_api_key("PRIME_INTELLECT_API_KEY")
 prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
 pod_manager: PodKernelManager | None = None
 data_manager = DataManager(prime_intellect=prime_intellect)
@@ -654,14 +654,14 @@ async def get_gpu_config() -> ConfigStatusResponse:
 
 @app.post("/api/gpu/config", response_model=ApiKeyResponse)
 async def set_gpu_config(request: ApiKeyRequest) -> ApiKeyResponse:
-    """Save Prime Intellect API key to .env file and reinitialize service."""
+    """Save Prime Intellect API key to user config (~/.morecompute/config.json) and reinitialize service."""
     global prime_intellect, pod_monitor
 
     if not request.api_key.strip():
         raise HTTPException(status_code=400, detail="API key is required")
 
     try:
-        save_api_key_to_env("PRIME_INTELLECT_API_KEY", request.api_key, BASE_DIR / ".env")
+        save_api_key("PRIME_INTELLECT_API_KEY", request.api_key)
         prime_intellect = PrimeIntellectService(api_key=request.api_key)
         if prime_intellect:
             pod_monitor = PodMonitor(
