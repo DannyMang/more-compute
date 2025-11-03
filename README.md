@@ -4,7 +4,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An interactive notebook environment, similar to Marimo and Google Colab, that runs locally. It works with standard `.ipynb` files.
+An interactive notebook environment, similar to Marimo and Google Colab, that runs locally. It uses `.py` notebooks with `# %%` cell markers (py:percent format) - perfect for git, compatible with VSCode/PyCharm, and supports UV inline dependencies.
 
 
 
@@ -43,12 +43,29 @@ pip install more-compute
 ## Usage
 
 ```bash
-more-compute notebook.ipynb  # Open existing notebook
-more-compute                 # Create and open new notebook
+more-compute notebook.py     # Open existing notebook
+more-compute new             # Create new notebook
 more-compute --debug         # Show logs
 ```
 
 Opens automatically at http://localhost:8000
+
+### Converting from .ipynb
+
+MoreCompute uses `.py` notebooks (not `.ipynb`). Convert existing notebooks:
+
+```bash
+# Convert with custom output name
+more-compute convert notebook.ipynb -o notebook.py
+
+# Or let it auto-name (notebook.ipynb → notebook.py)
+more-compute convert notebook.ipynb
+
+# Then open
+more-compute notebook.py
+```
+
+The converter automatically extracts dependencies from `!pip install` commands and adds UV inline script metadata.
 
 ## Troubleshooting
 
@@ -85,7 +102,7 @@ cd MORECOMPUTE
 uv venv && source .venv/bin/activate
 uv pip install -e .
 cd frontend && npm install && cd ..
-python kernel_run.py notebook.ipynb
+python kernel_run.py notebook.py
 ```
 
 ## License

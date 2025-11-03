@@ -1,6 +1,8 @@
 import json
+from pathlib import Path
 from typing import List, Dict, Any
 from uuid import uuid4
+from .utils.py_percent_parser import parse_py_percent, generate_py_percent
 
 class Notebook:
     """Manages the state of a notebook's cells."""
@@ -84,10 +86,18 @@ class Notebook:
 
     def load_from_file(self, file_path: str):
         try:
-            with open(file_path, 'r') as f:
-                data = json.load(f)
+            path = Path(file_path)
+
+            # Check file extension
+            if path.suffix == '.py':
+                # Load .py file with py:percent format
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+
+                data = parse_py_percent(content)
                 loaded_cells = data.get('cells', [])
-                # Ensure stable IDs for all cells (back-compat for notebooks without IDs)
+
+                # Ensure stable IDs for all cells
                 self.cells = []
                 for cell in loaded_cells:
                     if not isinstance(cell, dict):
@@ -95,9 +105,40 @@ class Notebook:
                     if 'id' not in cell or not cell['id']:
                         cell['id'] = self._generate_cell_id()
                     self.cells.append(cell)
+
                 self.metadata = data.get('metadata', {})
                 self.file_path = file_path
-        except (FileNotFoundError, json.JSONDecodeError) as e:
+
+            elif path.suffix == '.ipynb':
+                # Block .ipynb files with helpful error
+                raise ValueError(
+                    f"MoreCompute only supports .py notebooks.\n\n"
+                    f"Convert your notebook with:\n"
+                    f"  more-compute convert {path.name} -o {path.stem}.py\n\n"
+                    f"Then open with:\n"
+                    f"  more-compute {path.stem}.py"
+                )
+
+            else:
+                raise ValueError(f"Unsupported file format: {path.suffix}. Use .py files.")
+
+        except FileNotFoundError as e:
+            print(f"Error: File not found: {e}")
+            # Initialize with a default cell if loading fails
+            self.cells = [{
+                'id': self._generate_cell_id(),
+                'cell_type': 'code',
+                'source': '',
+                'metadata': {},
+                'outputs': [],
+                'execution_count': None
+            }]
+            self.metadata = {}
+            self.file_path = file_path
+        except ValueError as e:
+            # Re-raise validation errors (like .ipynb block)
+            raise
+        except Exception as e:
             print(f"Error loading notebook: {e}")
             # Initialize with a default cell if loading fails
             self.cells = [{
@@ -116,8 +157,24 @@ class Notebook:
         if not path_to_save:
             raise ValueError("No file path specified for saving.")
 
-        with open(path_to_save, 'w') as f:
-            f.write(self.to_json())
+        path = Path(path_to_save)
+
+        # Save in appropriate format based on extension
+        if path.suffix == '.py':
+            # Save as py:percent format
+            content = generate_py_percent(self.cells)
+            with open(path_to_save, 'w', encoding='utf-8') as f:
+                f.write(content)
+        elif path.suffix == '.ipynb':
+            # Block saving as .ipynb
+            raise ValueError("MoreCompute only supports .py notebooks. Use .py extension.")
+        else:
+            # Default to .py if no extension
+            path_to_save = str(path.with_suffix('.py'))
+            content = generate_py_percent(self.cells)
+            with open(path_to_save, 'w', encoding='utf-8') as f:
+                f.write(content)
+
         self.file_path = path_to_save
 
     def _generate_cell_id(self) -> str:

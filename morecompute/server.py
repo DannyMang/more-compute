@@ -99,7 +99,23 @@ async def startup_event():
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup services on shutdown."""
-    global lsp_service
+    global lsp_service, executor
+
+    # Shutdown executor and worker process
+    if executor and executor.worker_proc:
+        try:
+            print("[EXECUTOR] Shutting down worker process...", file=sys.stderr, flush=True)
+            executor.worker_proc.terminate()
+            executor.worker_proc.wait(timeout=2)
+            print("[EXECUTOR] Worker process shutdown complete", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[EXECUTOR] Error during worker shutdown, forcing kill: {e}", file=sys.stderr, flush=True)
+            try:
+                executor.worker_proc.kill()
+            except Exception:
+                pass
+
+    # Shutdown LSP service
     if lsp_service:
         try:
             await lsp_service.shutdown()
@@ -534,12 +550,24 @@ class WebSocketManager:
         else:
             # Normal add cell
             self.notebook.add_cell(index=index, cell_type=cell_type, source=source)
+
+        # Save the notebook after adding cell
+        try:
+            self.notebook.save_to_file()
+        except Exception as e:
+            print(f"Warning: Failed to save notebook after adding cell: {e}", file=sys.stderr)
+
         await self.broadcast_notebook_update()
 
     async def _handle_delete_cell(self, websocket: WebSocket, data: dict):
         index = data.get('cell_index')
         if index is not None:
             self.notebook.delete_cell(index)
+            # Save the notebook after deleting cell
+            try:
+                self.notebook.save_to_file()
+            except Exception as e:
+                print(f"Warning: Failed to save notebook after deleting cell: {e}", file=sys.stderr)
             await self.broadcast_notebook_update()
 
     async def _handle_update_cell(self, websocket: WebSocket, data: dict):
