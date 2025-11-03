@@ -193,7 +193,7 @@ class NextZmqExecutor:
                         'output_type': 'error',
                         'ename': 'KeyboardInterrupt',
                         'evalue': 'Execution interrupted by user',
-                        'traceback': ['KeyboardInterrupt: Execution was stopped by user']
+                        'traceback': []  # No traceback needed for user-initiated interrupt
                     }
                 })
                 break
@@ -357,40 +357,86 @@ class NextZmqExecutor:
 
     def reset_kernel(self) -> None:
         """Reset the kernel by shutting down worker and restarting"""
-        # Try graceful shutdown first
+        import sys
+        print(f"[RESET] Starting kernel reset, worker_pid={self.worker_pid}, is_remote={self.is_remote}", file=sys.stderr, flush=True)
+
+        # If connected to remote GPU, DON'T kill the worker - just send shutdown message
+        if self.is_remote:
+            print(f"[RESET] Remote worker - sending shutdown message only", file=sys.stderr, flush=True)
+            try:
+                self.req.setsockopt(zmq.SNDTIMEO, 2000)  # type: ignore[reportAttributeAccessIssue]
+                self.req.setsockopt(zmq.RCVTIMEO, 2000)  # type: ignore[reportAttributeAccessIssue]
+                self.req.send_json({'type': 'shutdown'})  # type: ignore[reportAttributeAccessIssue]
+                _ = cast(dict[str, object], self.req.recv_json())  # type: ignore[reportAttributeAccessIssue]
+                print(f"[RESET] Remote worker acknowledged shutdown", file=sys.stderr, flush=True)
+            except Exception as e:
+                print(f"[RESET] Remote worker shutdown failed: {e}", file=sys.stderr, flush=True)
+            finally:
+                self.req.setsockopt(zmq.SNDTIMEO, -1)  # type: ignore[reportAttributeAccessIssue]
+                self.req.setsockopt(zmq.RCVTIMEO, -1)  # type: ignore[reportAttributeAccessIssue]
+
+            # Reset execution count but don't respawn worker
+            self.execution_count = 0
+            print(f"[RESET] Remote kernel reset complete", file=sys.stderr, flush=True)
+            return
+
+        # Local worker mode - try graceful shutdown first
         try:
             self.req.setsockopt(zmq.SNDTIMEO, 500)  # type: ignore[reportAttributeAccessIssue]
             self.req.setsockopt(zmq.RCVTIMEO, 500)  # type: ignore[reportAttributeAccessIssue]
             self.req.send_json({'type': 'shutdown'})  # type: ignore[reportAttributeAccessIssue]
             _ = cast(dict[str, object], self.req.recv_json())  # type: ignore[reportAttributeAccessIssue]
-        except Exception:
-            pass
+            print(f"[RESET] Sent graceful shutdown message", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[RESET] Graceful shutdown failed: {e}", file=sys.stderr, flush=True)
         finally:
             self.req.setsockopt(zmq.SNDTIMEO, -1)  # type: ignore[reportAttributeAccessIssue]
             self.req.setsockopt(zmq.RCVTIMEO, -1)  # type: ignore[reportAttributeAccessIssue]
 
-        # Force kill if needed
+        # Force kill local worker if needed
         if self.worker_pid:
             try:
+                print(f"[RESET] Sending SIGTERM to worker PID {self.worker_pid}", file=sys.stderr, flush=True)
                 os.kill(self.worker_pid, signal.SIGTERM)
-                time.sleep(0.2)
+                time.sleep(0.3)  # Give it time to shutdown gracefully
                 try:
+                    # Check if still alive
                     os.kill(self.worker_pid, 0)
+                    # Still alive, force kill
+                    print(f"[RESET] Worker still alive, sending SIGKILL", file=sys.stderr, flush=True)
                     os.kill(self.worker_pid, signal.SIGKILL)
+                    time.sleep(0.2)  # Wait for SIGKILL to complete
                 except ProcessLookupError:
-                    pass
-            except Exception:
-                pass
+                    print(f"[RESET] Worker process terminated", file=sys.stderr, flush=True)
+            except Exception as e:
+                print(f"[RESET] Error killing worker: {e}", file=sys.stderr, flush=True)
 
         if self.worker_proc:
             try:
                 self.worker_proc.terminate()
                 self.worker_proc.wait(timeout=1)
+                print(f"[RESET] Worker process terminated via Popen", file=sys.stderr, flush=True)
             except Exception:
                 try:
                     self.worker_proc.kill()
-                except Exception:
-                    pass
+                    print(f"[RESET] Worker process killed via Popen", file=sys.stderr, flush=True)
+                except Exception as e:
+                    print(f"[RESET] Error killing via Popen: {e}", file=sys.stderr, flush=True)
+
+        # Close sockets first, BEFORE recreating them
+        print(f"[RESET] Closing old sockets", file=sys.stderr, flush=True)
+        try:
+            self.req.close(0)  # type: ignore[reportAttributeAccessIssue]
+        except Exception:
+            pass
+        try:
+            self.ctrl.close(0)  # type: ignore[reportAttributeAccessIssue]
+        except Exception:
+            pass
+
+        # Wait for ZMQ to release the sockets (critical!)
+        time.sleep(0.5)
+        print(f"[RESET] Sockets closed, waited for cleanup", file=sys.stderr, flush=True)
 
         # Reset state
         self.execution_count = 0
@@ -399,14 +445,14 @@ class NextZmqExecutor:
 
         # Recreate sockets
         try:
-            self.req.close(0)  # type: ignore[reportAttributeAccessIssue]
+            print(f"[RESET] Creating new sockets", file=sys.stderr, flush=True)
             self.req = self.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             self.req.connect(self.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
-            self.ctrl.close(0)  # type: ignore[reportAttributeAccessIssue]
             self.ctrl = self.ctx.socket(zmq.DEALER)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             self.ctrl.connect(self.ctrl_addr)  # type: ignore[reportAttributeAccessIssue]
-        except Exception:
-            pass
+            print(f"[RESET] New sockets created successfully", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[RESET] Error creating sockets: {e}", file=sys.stderr, flush=True)
 
         # Reset special handler
         if self.special_handler is not None:
@@ -414,6 +460,10 @@ class NextZmqExecutor:
 
         # Respawn worker
         try:
+            print(f"[RESET] Respawning new worker", file=sys.stderr, flush=True)
             self._ensure_worker()
-        except Exception:
-            pass
+            print(f"[RESET] Kernel reset complete, new worker_pid={self.worker_pid}", file=sys.stderr, flush=True)
+        except Exception as e:
+            print(f"[RESET] Error respawning worker: {e}", file=sys.stderr, flush=True)
+            import traceback
+            traceback.print_exc()

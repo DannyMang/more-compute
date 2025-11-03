@@ -611,8 +611,8 @@ export const MonacoCell: React.FC<CellProps> = ({
                 e.stopPropagation();
                 onMoveUp(indexRef.current);
               }}
-              title="Move cell up"
-              disabled={index === 0}
+              title={isExecuting ? "Cannot move while executing" : "Move cell up"}
+              disabled={isExecuting || index === 0}
             />
             <CellButton
               icon={<ChevronDownIcon className="w-6 h-6" />}
@@ -620,16 +620,25 @@ export const MonacoCell: React.FC<CellProps> = ({
                 e.stopPropagation();
                 onMoveDown(indexRef.current);
               }}
-              title="Move cell down"
-              disabled={index === totalCells - 1}
+              title={isExecuting ? "Cannot move while executing" : "Move cell down"}
+              disabled={isExecuting || index === totalCells - 1}
             />
             <CellButton
               icon={<LinkBreak2Icon className="w-5 h-5" />}
               onClick={(e) => {
                 e.stopPropagation();
-                onDelete(indexRef.current);
+                // If cell is executing, interrupt it first
+                if (isExecuting) {
+                  onInterrupt(indexRef.current);
+                  // Wait a bit for interrupt to complete, then delete
+                  setTimeout(() => {
+                    onDelete(indexRef.current);
+                  }, 500);
+                } else {
+                  onDelete(indexRef.current);
+                }
               }}
-              title="Delete cell"
+              title={isExecuting ? "Stop and delete cell" : "Delete cell"}
             />
           </div>
         </div>

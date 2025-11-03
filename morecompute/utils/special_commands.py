@@ -177,7 +177,7 @@ class AsyncSpecialCommandHandler:
                     "output_type": "error",
                     "ename": "KeyboardInterrupt",
                     "evalue": "Execution interrupted by user",
-                    "traceback": ["KeyboardInterrupt: Execution was stopped by user"]
+                    "traceback": []  # No traceback needed for user-initiated interrupt
                 }
             elif return_code != 0:
                 # Non-zero but positive means command error (not interrupt)

@@ -648,8 +648,14 @@ class WebSocketManager:
         # Sending duplicate messages causes the frontend to get confused
 
     async def _handle_reset_kernel(self, websocket: WebSocket, data: dict):
+        import sys
+        print(f"[SERVER] Resetting kernel", file=sys.stderr, flush=True)
         self.executor.reset_kernel()
         self.notebook.clear_all_outputs()
+
+        # Note: We don't save the notebook here - this preserves execution times
+        # from the last session, which is useful for seeing how long things took
+
         # Broadcast kernel restart to all clients
         await self.broadcast_pod_update({
             "type": "kernel_restarted",
@@ -836,9 +842,10 @@ async def _connect_to_pod_background(pod_id: str):
             reconnect_zmq_sockets(
                 executor,
                 cmd_addr=addresses["cmd_addr"],
-                pub_addr=addresses["pub_addr"]
+                pub_addr=addresses["pub_addr"],
+                is_remote=True  # Critical: Tell executor this is a remote worker
             )
-            print(f"[CONNECT BACKGROUND] Successfully connected to pod {pod_id}", file=sys.stderr, flush=True)
+            print(f"[CONNECT BACKGROUND] Successfully connected to pod {pod_id}, executor.is_remote=True", file=sys.stderr, flush=True)
         else:
             # Connection failed - clean up
             print(f"[CONNECT BACKGROUND] Failed to connect: {result}", file=sys.stderr, flush=True)
