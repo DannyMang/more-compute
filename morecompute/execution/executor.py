@@ -17,6 +17,7 @@ class NextZmqExecutor:
     error_utils: "ErrorUtils"
     cmd_addr: str
     pub_addr: str
+    ctrl_addr: str
     execution_count: int
     interrupt_timeout: float
     worker_pid: int | None
@@ -26,12 +27,14 @@ class NextZmqExecutor:
     ctx: object  # zmq.Context - untyped due to zmq type limitations
     req: object  # zmq.Socket - untyped due to zmq type limitations
     sub: object  # zmq.Socket - untyped due to zmq type limitations
+    ctrl: object  # zmq.Socket - control socket for interrupts
     is_remote: bool  # Flag to track if connected to remote worker
 
     def __init__(self, error_utils: "ErrorUtils", cmd_addr: str | None = None, pub_addr: str | None = None, interrupt_timeout: float = 0.5) -> None:
         self.error_utils = error_utils
         self.cmd_addr = cmd_addr or os.getenv('MC_ZMQ_CMD_ADDR', 'tcp://127.0.0.1:5555')
         self.pub_addr = pub_addr or os.getenv('MC_ZMQ_PUB_ADDR', 'tcp://127.0.0.1:5556')
+        self.ctrl_addr = os.getenv('MC_ZMQ_CTRL_ADDR', self.cmd_addr.replace('5555', '5557'))
         self.execution_count = 0
         self.interrupt_timeout = interrupt_timeout
         self.worker_pid = None
@@ -46,6 +49,9 @@ class NextZmqExecutor:
         self.sub = self.ctx.socket(zmq.SUB)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
         self.sub.connect(self.pub_addr)  # type: ignore[reportAttributeAccessIssue]
         self.sub.setsockopt_string(zmq.SUBSCRIBE, '')  # type: ignore[reportAttributeAccessIssue]
+        # Control socket for interrupts (DEALER to connect to worker's ROUTER)
+        self.ctrl = self.ctx.socket(zmq.DEALER)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+        self.ctrl.connect(self.ctrl_addr)  # type: ignore[reportAttributeAccessIssue]
         self._ensure_worker()
 
     def _ensure_special_handler(self) -> None:
@@ -66,7 +72,9 @@ class NextZmqExecutor:
         try:
             tmp.connect(self.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
             tmp.send_json({'type': 'ping'})  # type: ignore[reportAttributeAccessIssue]
-            _ = cast(dict[str, object], tmp.recv_json())  # type: ignore[reportAttributeAccessIssue]
+            resp = cast(dict[str, object], tmp.recv_json())  # type: ignore[reportAttributeAccessIssue]
+            # Store worker PID even if already running (for force-kill)
+            self.worker_pid = resp.get('pid')  # type: ignore[assignment]
         except Exception:
             #worker not responding, need to start it
             pass
@@ -80,6 +88,7 @@ class NextZmqExecutor:
         env = os.environ.copy()
         env.setdefault('MC_ZMQ_CMD_ADDR', self.cmd_addr)
         env.setdefault('MC_ZMQ_PUB_ADDR', self.pub_addr)
+        env.setdefault('MC_ZMQ_CTRL_ADDR', self.ctrl_addr)
         try:
             # Keep track of the worker process
             # Redirect stderr to see errors during development
@@ -148,8 +157,10 @@ class NextZmqExecutor:
                         normalized_source, result, start_time, execution_count, websocket, cell_index
                     )
                     result['execution_time'] = f"{(time.time()-start_time)*1000:.1f}ms"
+                    print(f"[EXECUTOR] Sending execution_complete for cell {cell_index}, status={result.get('status')}, has_error={result.get('error') is not None}", file=sys.stderr, flush=True)
                     if websocket:
                         await websocket.send_json({'type': 'execution_complete', 'data': {'cell_index': cell_index, 'result': result}})
+                        print(f"[EXECUTOR] Sent execution_complete successfully", file=sys.stderr, flush=True)
                     return result
                 # For remote execution OR mixed commands, fall through to send via ZMQ
 
@@ -163,10 +174,18 @@ class NextZmqExecutor:
         # Consume pub until we see complete for this cell
         start_time = time.time()
         max_wait = 300.0  # 5 minute timeout for really long operations
+        interrupted_time = None  # Track when interrupt was sent
         while True:
             # Check if this cell was interrupted
-            if self.interrupted_cell == cell_index:
-                print(f"[EXECUTE] Cell {cell_index} was interrupted, breaking out of execution loop", file=sys.stderr, flush=True)
+            if self.interrupted_cell == cell_index and interrupted_time is None:
+                print(f"[EXECUTE] Cell {cell_index} was interrupted, waiting for subprocess to be killed...", file=sys.stderr, flush=True)
+                interrupted_time = time.time()
+                # Don't break immediately - wait for execution_complete from worker
+                # Give worker 5 seconds to kill subprocess and send completion
+
+            # If interrupted and waited long enough, force break
+            if interrupted_time and (time.time() - interrupted_time > 5.0):
+                print(f"[EXECUTE] Cell {cell_index} interrupt timeout, breaking out", file=sys.stderr, flush=True)
                 self.interrupted_cell = None  # Clear the flag
                 result.update({
                     'status': 'error',
@@ -215,6 +234,10 @@ class NextZmqExecutor:
             elif t == 'execution_complete' and msg.get('cell_index') == cell_index:
                 result.update(msg.get('result') or {})
                 result.setdefault('execution_count', execution_count)
+                # Clear interrupted flag if this was interrupted
+                if self.interrupted_cell == cell_index:
+                    print(f"[EXECUTE] Cell {cell_index} completed after interrupt", file=sys.stderr, flush=True)
+                    self.interrupted_cell = None
                 break
 
         # Try to receive the reply from REQ socket (if worker is still alive)
@@ -248,7 +271,7 @@ class NextZmqExecutor:
         return result
 
     async def interrupt_kernel(self, cell_index: int | None = None) -> None:
-        """Interrupt the kernel with escalation to force-kill if needed"""
+        """Interrupt the kernel using the control socket"""
         import sys
         print(f"[INTERRUPT] Starting interrupt for cell {cell_index}", file=sys.stderr, flush=True)
 
@@ -261,32 +284,22 @@ class NextZmqExecutor:
         if isinstance(cell_index, int):
             payload['cell_index'] = cell_index
 
-        # Try graceful interrupt, but don't trust it for blocking I/O
+        # Send interrupt on control socket (non-blocking)
         try:
-            # Very short timeout since we'll force-kill anyway
-            self.req.setsockopt(zmq.SNDTIMEO, 100)  # type: ignore[reportAttributeAccessIssue]
-            self.req.setsockopt(zmq.RCVTIMEO, 100)  # type: ignore[reportAttributeAccessIssue]
-            self.req.send_json(payload)  # type: ignore[reportAttributeAccessIssue]
-            _ = cast(dict[str, object], self.req.recv_json())  # type: ignore[reportAttributeAccessIssue]
-            print(f"[INTERRUPT] Sent interrupt signal to worker", file=sys.stderr, flush=True)
+            self.ctrl.setsockopt(zmq.SNDTIMEO, 1000)  # type: ignore[reportAttributeAccessIssue]
+            self.ctrl.setsockopt(zmq.RCVTIMEO, 1000)  # type: ignore[reportAttributeAccessIssue]
+            self.ctrl.send_json(payload)  # type: ignore[reportAttributeAccessIssue]
+            _ = cast(dict[str, object], self.ctrl.recv_json())  # type: ignore[reportAttributeAccessIssue]
+            print(f"[INTERRUPT] Sent interrupt signal to worker via control socket", file=sys.stderr, flush=True)
         except Exception as e:
             print(f"[INTERRUPT] Could not send interrupt signal: {e}", file=sys.stderr, flush=True)
+            # If control socket fails, try force-kill immediately
+            print(f"[INTERRUPT] Force killing worker immediately...", file=sys.stderr, flush=True)
+            await self._force_kill_worker()
         finally:
             # Reset timeouts
-            self.req.setsockopt(zmq.SNDTIMEO, -1)  # type: ignore[reportAttributeAccessIssue]
-            self.req.setsockopt(zmq.RCVTIMEO, -1)  # type: ignore[reportAttributeAccessIssue]
-
-        # Wait briefly to see if worker responds, but DON'T read from pub socket
-        # (execute_cell is already reading from it - we'd steal messages!)
-        # Instead, just wait a moment and force-kill if needed
-        print(f"[INTERRUPT] Waiting {self.interrupt_timeout}s before force-kill...", file=sys.stderr, flush=True)
-        await asyncio.sleep(self.interrupt_timeout)
-
-        # For blocking I/O operations, interrupt rarely works - just force-kill
-        # The interrupted_cell flag will let execute_cell break out gracefully
-        print(f"[INTERRUPT] Force killing worker to ensure stop...", file=sys.stderr, flush=True)
-        await self._force_kill_worker()
-        print(f"[INTERRUPT] Force kill completed", file=sys.stderr, flush=True)
+            self.ctrl.setsockopt(zmq.SNDTIMEO, -1)  # type: ignore[reportAttributeAccessIssue]
+            self.ctrl.setsockopt(zmq.RCVTIMEO, -1)  # type: ignore[reportAttributeAccessIssue]
 
         # Interrupt special handler
         if self.special_handler:
@@ -325,13 +338,16 @@ class NextZmqExecutor:
         # CRITICAL: Reset socket state - close and recreate
         # The REQ socket may be waiting for a reply from the dead worker
         try:
-            print(f"[FORCE_KILL] Resetting REQ socket", file=sys.stderr, flush=True)
+            print(f"[FORCE_KILL] Resetting REQ and CTRL sockets", file=sys.stderr, flush=True)
             self.req.close(0)  # type: ignore[reportAttributeAccessIssue]
             self.req = self.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             self.req.connect(self.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
-            print(f"[FORCE_KILL] REQ socket reset complete", file=sys.stderr, flush=True)
+            self.ctrl.close(0)  # type: ignore[reportAttributeAccessIssue]
+            self.ctrl = self.ctx.socket(zmq.DEALER)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            self.ctrl.connect(self.ctrl_addr)  # type: ignore[reportAttributeAccessIssue]
+            print(f"[FORCE_KILL] Socket reset complete", file=sys.stderr, flush=True)
         except Exception as e:
-            print(f"[FORCE_KILL] Error resetting socket: {e}", file=sys.stderr, flush=True)
+            print(f"[FORCE_KILL] Error resetting sockets: {e}", file=sys.stderr, flush=True)
 
         # Respawn worker
         try:
@@ -386,6 +402,9 @@ class NextZmqExecutor:
             self.req.close(0)  # type: ignore[reportAttributeAccessIssue]
             self.req = self.ctx.socket(zmq.REQ)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
             self.req.connect(self.cmd_addr)  # type: ignore[reportAttributeAccessIssue]
+            self.ctrl.close(0)  # type: ignore[reportAttributeAccessIssue]
+            self.ctrl = self.ctx.socket(zmq.DEALER)  # type: ignore[reportUnknownMemberType, reportAttributeAccessIssue]
+            self.ctrl.connect(self.ctrl_addr)  # type: ignore[reportAttributeAccessIssue]
         except Exception:
             pass
 

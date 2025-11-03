@@ -14,6 +14,12 @@
 # ### News
 
 # %% [markdown]
+# ### Installation
+
+# %% [markdown]
+# ### Unsloth
+
+# %% [markdown]
 # Unsloth's [Docker image](https://hub.docker.com/r/unsloth/unsloth) is here! Start training with no setup & environment issues. [Read our Guide](https://docs.unsloth.ai/new/how-to-train-llms-with-unsloth-and-docker).
 #
 # [gpt-oss RL](https://docs.unsloth.ai/new/gpt-oss-reinforcement-learning) is now supported with the fastest inference & lowest VRAM. Try our [new notebook](https://colab.research.google.com/github/unslothai/notebooks/blob/main/nb/gpt-oss-(20B)-GRPO.ipynb) which creates kernels!
@@ -31,10 +37,7 @@ import os, re
 !pip install --no-deps trl==0.22.2
 
 # %% [markdown]
-# ### Installation
-
-# %% [markdown]
-# ### Unsloth
+# We now add LoRA adapters so we only need to update 1 to 10% of all parameters!
 
 # %%
 from unsloth import FastLanguageModel
@@ -66,9 +69,6 @@ model, tokenizer = FastLanguageModel.from_pretrained(
     load_in_4bit = load_in_4bit,
     # token = "hf_...", # use one if using gated models like meta-llama/Llama-2-7b-hf
 )
-
-# %% [markdown]
-# We now add LoRA adapters so we only need to update 1 to 10% of all parameters!
 
 # %%
 model = FastLanguageModel.get_peft_model(

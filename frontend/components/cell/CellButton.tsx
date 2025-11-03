@@ -22,7 +22,8 @@ export const CellButton: React.FC<CellButtonProps> = ({
   const [isHovered, setIsHovered] = useState(false);
 
   const handleClick = (e: React.MouseEvent) => {
-    if (onClick && !disabled && !isLoading) {
+    if (onClick && !disabled) {
+      // Allow clicks even when loading (for stop/interrupt functionality)
       onClick(e);
     }
   };
@@ -34,7 +35,7 @@ export const CellButton: React.FC<CellButtonProps> = ({
       onClick={handleClick}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
-      disabled={disabled || isLoading}
+      disabled={disabled}
       title={title}
       style={{
         width: '28px',
@@ -45,9 +46,9 @@ export const CellButton: React.FC<CellButtonProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        cursor: disabled || isLoading ? 'not-allowed' : 'pointer',
+        cursor: disabled ? 'not-allowed' : 'pointer',
         transition: 'background-color 0.15s ease',
-        opacity: disabled ? 0.5 : 1
+        opacity: disabled ? 0.5 : isLoading ? 0.8 : 1
       }}
     >
       {icon}

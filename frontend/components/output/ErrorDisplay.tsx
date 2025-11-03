@@ -165,7 +165,20 @@ const TypedErrorDisplay: FC<{ error: ErrorOutput }> = ({ error }) => {
             margin: 0
           }}
         >
-          {error.traceback?.join('\n') || ''}
+          {/* Always show error name and message */}
+          {error.ename && (
+            <div style={{ fontWeight: 600, marginBottom: '4px' }}>
+              {error.ename}: {error.evalue}
+            </div>
+          )}
+          {/* Show traceback if available */}
+          {error.traceback && error.traceback.length > 0 && (
+            <div>{error.traceback.join('\n')}</div>
+          )}
+          {/* Fallback if no traceback */}
+          {(!error.traceback || error.traceback.length === 0) && !error.ename && (
+            <div>An unknown error occurred</div>
+          )}
         </div>
       </div>
     </div>

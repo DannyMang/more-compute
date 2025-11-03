@@ -12,6 +12,7 @@ import {
   UpdateIcon,
   LinkBreak2Icon,
   PlayIcon,
+  StopIcon,
   ChevronUpIcon,
   ChevronDownIcon,
 } from "@radix-ui/react-icons";
@@ -269,13 +270,13 @@ export const MonacoCell: React.FC<CellProps> = ({
       onExecute(indexRef.current);
       setIsEditing(false);
     } else {
-      if (isExecuting) {
-        onInterrupt(indexRef.current);
-      } else {
-        onExecute(indexRef.current);
-      }
+      onExecute(indexRef.current);
     }
-  }, [cell.cell_type, isExecuting, onExecute, onInterrupt]);
+  }, [cell.cell_type, onExecute]);
+
+  const handleInterrupt = useCallback(() => {
+    onInterrupt(indexRef.current);
+  }, [onInterrupt]);
 
   const handleCellClick = () => {
     onSetActive(indexRef.current);
@@ -583,15 +584,26 @@ export const MonacoCell: React.FC<CellProps> = ({
         <div className="cell-hover-controls">
           <div className="cell-actions-right">
             {!isMarkdownWithContent && (
-              <CellButton
-                icon={<PlayIcon className="w-6 h-6" />}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleExecute();
-                }}
-                title={isExecuting ? "Stop execution" : "Run cell"}
-                isLoading={isExecuting}
-              />
+              <>
+                <CellButton
+                  icon={<PlayIcon className="w-6 h-6" />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleExecute();
+                  }}
+                  title="Run cell"
+                  disabled={isExecuting}
+                />
+                <CellButton
+                  icon={<StopIcon className="w-6 h-6" />}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleInterrupt();
+                  }}
+                  title="Stop execution"
+                  disabled={!isExecuting}
+                />
+              </>
             )}
             <CellButton
               icon={<ChevronUpIcon className="w-6 h-6" />}

@@ -457,12 +457,34 @@ class WebSocketManager:
 
     async def handle_message_loop(self, websocket: WebSocket):
         """Main loop to handle incoming WebSocket messages."""
+        tasks = set()
+
+        def task_done_callback(task):
+            tasks.discard(task)
+            # Check for exceptions in completed tasks
+            try:
+                exc = task.exception()
+                if exc:
+                    print(f"[SERVER] Task raised exception: {exc}", file=sys.stderr, flush=True)
+                    import traceback
+                    traceback.print_exception(type(exc), exc, exc.__traceback__)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                print(f"[SERVER] Error in task_done_callback: {e}", file=sys.stderr, flush=True)
+
         while True:
             try:
                 message = await websocket.receive_json()
-                await self._handle_message(websocket, message)
+                # Process messages concurrently so interrupts can arrive during execution
+                task = asyncio.create_task(self._handle_message(websocket, message))
+                tasks.add(task)
+                task.add_done_callback(task_done_callback)
             except WebSocketDisconnect:
                 self.disconnect(websocket)
+                # Cancel all pending tasks
+                for task in tasks:
+                    task.cancel()
                 break
             except Exception as e:
                 await self._send_error(websocket, f"Unhandled error: {e}")
@@ -615,49 +637,24 @@ class WebSocketManager:
         print(f"[SERVER] Interrupt request received for cell {cell_index}", file=sys.stderr, flush=True)
 
         # Perform the interrupt (this may take up to 1 second)
+        # The execution handler will send the appropriate error and completion messages
         await self.executor.interrupt_kernel(cell_index=cell_index)
 
-        print(f"[SERVER] Interrupt completed, sending error message", file=sys.stderr, flush=True)
+        print(f"[SERVER] Interrupt completed, execution handler will send completion messages", file=sys.stderr, flush=True)
 
-        # Inform all clients that the currently running cell (if any) is interrupted
-        try:
-            await websocket.send_json({
-                "type": "execution_error",
-                "data": {
-                    "cell_index": cell_index,
-                    "error": {
-                        "output_type": "error",
-                        "ename": "KeyboardInterrupt",
-                        "evalue": "Execution interrupted by user",
-                        "traceback": ["KeyboardInterrupt: Execution was stopped by user"]
-                    }
-                }
-            })
-            await websocket.send_json({
-                "type": "execution_complete",
-                "data": {
-                    "cell_index": cell_index,
-                    "result": {
-                        "status": "error",
-                        "execution_count": None,
-                        "execution_time": "interrupted",
-                        "outputs": [],
-                        "error": {
-                            "output_type": "error",
-                            "ename": "KeyboardInterrupt",
-                            "evalue": "Execution interrupted by user",
-                            "traceback": ["KeyboardInterrupt: Execution was stopped by user"]
-                        }
-                    }
-                }
-            })
-            print(f"[SERVER] Error messages sent for cell {cell_index}", file=sys.stderr, flush=True)
-        except Exception as e:
-            print(f"[SERVER] Failed to send error messages: {e}", file=sys.stderr, flush=True)
+        # Note: We don't send completion messages here anymore because:
+        # 1. For shell commands: AsyncSpecialCommandHandler._execute_shell_command sends them
+        # 2. For Python code: The worker sends them
+        # Sending duplicate messages causes the frontend to get confused
 
     async def _handle_reset_kernel(self, websocket: WebSocket, data: dict):
         self.executor.reset_kernel()
         self.notebook.clear_all_outputs()
+        # Broadcast kernel restart to all clients
+        await self.broadcast_pod_update({
+            "type": "kernel_restarted",
+            "data": {}
+        })
         await self.broadcast_notebook_update()
 
     async def _send_error(self, websocket: WebSocket, error_message: str):

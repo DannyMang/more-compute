@@ -73,6 +73,8 @@ class Notebook:
             if cell.get('cell_type') == 'code':
                 cell['outputs'] = []
                 cell['execution_count'] = None
+                cell['execution_time'] = None
+                cell['error'] = None
 
     def to_json(self) -> str:
         # Basic notebook format
