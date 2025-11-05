@@ -4,14 +4,10 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An interactive notebook environment, similar to Marimo and Google Colab, that runs locally. It works with standard `.ipynb` files.
-
-
+An interactive notebook environment, similar to Marimo and Google Colab, that runs locally. It uses `.py` notebooks with `# %%` cell markers (py:percent format) - perfect for git, compatible with VSCode/PyCharm, and supports UV inline dependencies.
 
 
 https://github.com/user-attachments/assets/8c7ec716-dade-4de2-ad37-71d328129c97
-
-
 
 
 ## Installation
@@ -43,12 +39,43 @@ pip install more-compute
 ## Usage
 
 ```bash
-more-compute notebook.ipynb  # Open existing notebook
-more-compute                 # Create and open new notebook
+more-compute notebook.py     # Open existing notebook
+more-compute new             # Create new notebook
 more-compute --debug         # Show logs
 ```
 
 Opens automatically at http://localhost:8000
+
+### Converting Between Formats
+
+MoreCompute uses `.py` notebooks with `# %%` cell markers, but you can convert to/from `.ipynb`:
+
+**From .ipynb to .py:**
+```bash
+# Auto-detect output name (notebook.ipynb -> notebook.py)
+more-compute convert notebook.ipynb
+
+# Or specify output
+more-compute convert notebook.ipynb -o my_notebook.py
+
+# Then open in MoreCompute
+more-compute my_notebook.py
+```
+
+The converter automatically extracts dependencies from `!pip install` commands and adds UV inline script metadata.
+
+**From .py to .ipynb:**
+```bash
+# Auto-detect output name (notebook.py -> notebook.ipynb)
+more-compute convert notebook.py
+
+# Or specify output
+more-compute convert notebook.py -o colab_notebook.ipynb
+
+# Upload to Google Colab or open in Jupyter
+```
+
+This makes your notebooks compatible with Google Colab, Jupyter, and other tools that require `.ipynb` format.
 
 ## Troubleshooting
 
@@ -71,12 +98,6 @@ $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 # Restart PowerShell
 ```
 
-**Port in use:**
-```bash
-export MORECOMPUTE_PORT=8080  # macOS/Linux
-$env:MORECOMPUTE_PORT = "8080"  # Windows
-```
-
 ## Development
 
 ```bash
@@ -85,7 +106,7 @@ cd MORECOMPUTE
 uv venv && source .venv/bin/activate
 uv pip install -e .
 cd frontend && npm install && cd ..
-python kernel_run.py notebook.ipynb
+more-compute notebook.py
 ```
 
 ## License

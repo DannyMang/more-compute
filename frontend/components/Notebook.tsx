@@ -276,10 +276,18 @@ function notebookReducer(
     case "EXECUTION_COMPLETE": {
       const payload = action.payload || {};
       const cell_index = payload.cell_index;
+
+      console.log(`[EXECUTION_COMPLETE] Processing completion for cell ${cell_index}`, payload);
+
       // Support both shapes: { result: {...} } and flat payload {...}
       const result = payload && payload.result ? payload.result : payload || {};
+
+      console.log(`[EXECUTION_COMPLETE] result.status=${result.status}, result.error=`, result.error);
+
+      // ALWAYS remove cell from executingCells when completion arrives
       const newExecuting = new Set(state.executingCells);
       newExecuting.delete(cell_index);
+
       return {
         ...state,
         executingCells: newExecuting,
@@ -310,8 +318,13 @@ function notebookReducer(
 
     case "EXECUTION_ERROR": {
       const { cell_index, error } = action.payload;
+
+      console.log(`[EXECUTION_ERROR] Processing error for cell ${cell_index}`);
+
+      // ALWAYS remove cell from executingCells when error arrives
       const newExecuting = new Set(state.executingCells);
       newExecuting.delete(cell_index);
+
       const normalizedError = normalizeError(error);
       return {
         ...state,
@@ -348,6 +361,8 @@ function notebookReducer(
           ...cell,
           outputs: [],
           execution_count: null,
+          execution_time: null,
+          error: null,
         })),
       };
 
@@ -435,6 +450,10 @@ export const Notebook: React.FC<NotebookProps> = ({
     dispatch({ type: "NOTEBOOK_UPDATED", payload: data });
   }, []);
 
+  const handleKernelRestarted = useCallback(() => {
+    dispatch({ type: "RESET_KERNEL" });
+  }, []);
+
   const handleHeartbeat = useCallback((data: any) => {
     // Heartbeat received - execution still in progress
     // Cell spinner already showing via executingCells set
@@ -486,6 +505,7 @@ export const Notebook: React.FC<NotebookProps> = ({
     ws.on("disconnect", () => handleKernelStatusUpdate("disconnected"));
     ws.on("notebook_loaded", handleNotebookLoaded);
     ws.on("notebook_updated", handleNotebookUpdate);
+    ws.on("kernel_restarted", handleKernelRestarted);
     ws.on("execution_start", handleExecutionStart);
     ws.on("stream_output", handleStreamOutput);
     ws.on("execution_complete", handleExecutionComplete);
@@ -499,6 +519,7 @@ export const Notebook: React.FC<NotebookProps> = ({
     handleKernelStatusUpdate,
     handleNotebookLoaded,
     handleNotebookUpdate,
+    handleKernelRestarted,
     handleExecutionStart,
     handleStreamOutput,
     handleExecuteResult,

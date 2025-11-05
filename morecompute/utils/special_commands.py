@@ -26,6 +26,10 @@ class AsyncSpecialCommandHandler:
         self.captured_outputs = {}  # Store captured outputs from %%capture
         self.cell_magic_handlers = CellMagicHandlers(globals_dict, self)
         self.line_magic_handlers = LineMagicHandlers(globals_dict)
+        self.current_process: Optional[asyncio.subprocess.Process] = None  # Track current async subprocess for interrupts
+        self.current_process_sync: Optional[subprocess.Popen] = None  # Track current sync subprocess for interrupts
+        self.sync_interrupted: bool = False  # Flag to indicate sync process was interrupted
+        self.stream_tasks: list = []  # Track streaming tasks for cancellation
 
     def is_special_command(self, source_code: Union[str, list, tuple]) -> bool:
         """Check if the source code is a special command or contains shell commands"""
@@ -52,6 +56,9 @@ class AsyncSpecialCommandHandler:
                                     websocket: Optional[WebSocket] = None,
                                     cell_index: Optional[int] = None) -> Dict[str, Any]:
         """Execute a special command and return the result"""
+        # Reset interrupt flag at start of execution
+        self.sync_interrupted = False
+
         text = self._coerce_source_to_text(source_code)
         stripped = text.strip()
 
@@ -103,15 +110,8 @@ class AsyncSpecialCommandHandler:
             env = prepare_shell_environment(command)
             cmd_parts = prepare_shell_command(command)
 
-            # Send execution start notification
-            if websocket:
-                await websocket.send_json({
-                    "type": "execution_start",
-                    "data": {
-                        "command": f"!{command}",
-                        **({"cell_index": cell_index} if cell_index is not None else {})
-                    }
-                })
+            # Note: execution_start is sent by the executor, not here
+            # Sending it twice confuses the frontend
 
             # Create subprocess with streaming
             process = await asyncio.create_subprocess_exec(
@@ -122,34 +122,78 @@ class AsyncSpecialCommandHandler:
                 cwd=os.getcwd()
             )
 
-            # Stream output concurrently
-            stdout_task = asyncio.create_task(
-                self._stream_output(process.stdout, "stdout", result, websocket, cell_index)
-            )
-            stderr_task = asyncio.create_task(
-                self._stream_output(process.stderr, "stderr", result, websocket, cell_index)
-            )
+            # Track process for interrupt handling
+            self.current_process = process
+            print(f"[SPECIAL_CMD] Started subprocess PID={process.pid}", file=sys.stderr, flush=True)
 
-            # Wait for both streams to complete
-            await asyncio.gather(stdout_task, stderr_task)
+            try:
+                # Stream output concurrently
+                stdout_task = asyncio.create_task(
+                    self._stream_output(process.stdout, "stdout", result, websocket, cell_index)
+                )
+                stderr_task = asyncio.create_task(
+                    self._stream_output(process.stderr, "stderr", result, websocket, cell_index)
+                )
 
-            # Wait for process completion
-            return_code = await process.wait()
+                # Track tasks for interruption
+                self.stream_tasks = [stdout_task, stderr_task]
 
-            # Send completion notification
-            if websocket:
-                await websocket.send_json({
-                    "type": "execution_complete",
-                    "data": {
-                        "return_code": return_code,
-                        "status": "error" if return_code != 0 else "ok",
-                        **({"cell_index": cell_index} if cell_index is not None else {})
-                    }
-                })
+                print(f"[SPECIAL_CMD] Waiting for stream tasks to complete...", file=sys.stderr, flush=True)
+                # Wait for both streams to complete
+                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+
+                print(f"[SPECIAL_CMD] Streams complete, waiting for process to exit...", file=sys.stderr, flush=True)
+                # Wait for process completion
+                return_code = await process.wait()
+                print(f"[SPECIAL_CMD] Process exited with code {return_code}", file=sys.stderr, flush=True)
+            except asyncio.CancelledError:
+                # Task was cancelled - treat as interrupt
+                print(f"[SPECIAL_CMD] Task cancelled, treating as interrupt", file=sys.stderr, flush=True)
+                return_code = -15  # SIGTERM
+            except Exception as e:
+                print(f"[SPECIAL_CMD] Exception during execution: {e}", file=sys.stderr, flush=True)
+                import traceback
+                traceback.print_exc()
+                # Set error result
+                result["status"] = "error"
+                result["error"] = {
+                    "output_type": "error",
+                    "ename": type(e).__name__,
+                    "evalue": str(e),
+                    "traceback": traceback.format_exc().split('\n')
+                }
+                return_code = -1
+            finally:
+                # Clear process reference when done
+                self.current_process = None
+                self.stream_tasks = []
+                print(f"[SPECIAL_CMD] Cleared process reference", file=sys.stderr, flush=True)
+
+            # Check if process was interrupted (negative return code means killed by signal)
+            if return_code < 0:
+                print(f"[SPECIAL_CMD] Process was interrupted (return_code={return_code}), setting KeyboardInterrupt error", file=sys.stderr, flush=True)
+                result["status"] = "error"
+                result["error"] = {
+                    "output_type": "error",
+                    "ename": "KeyboardInterrupt",
+                    "evalue": "Execution interrupted by user",
+                    "traceback": []  # No traceback needed for user-initiated interrupt
+                }
+            elif return_code != 0:
+                # Non-zero but positive means command error (not interrupt)
+                result["status"] = "error"
+                result["error"] = {
+                    "output_type": "error",
+                    "ename": "ShellCommandError",
+                    "evalue": f"Command failed with return code {return_code}",
+                    "traceback": [f"Shell command '{command}' failed"]
+                }
+
+            print(f"[SPECIAL_CMD] Returning result: status={result['status']}, return_code={return_code}", file=sys.stderr, flush=True)
 
             # If pip install/uninstall occurred, notify clients to refresh packages
             try:
-                if websocket and (command.startswith('pip install') or command.startswith('pip uninstall') or 'pip install' in command or 'pip uninstall' in command):
+                if websocket and return_code == 0 and (command.startswith('pip install') or command.startswith('pip uninstall') or 'pip install' in command or 'pip uninstall' in command):
                     # Small delay to ensure pip finishes writing metadata to disk
                     await asyncio.sleep(0.5)
                     await websocket.send_json({
@@ -158,21 +202,6 @@ class AsyncSpecialCommandHandler:
                     })
             except Exception:
                 pass
-
-            # Check if command failed
-            if return_code != 0:
-                result["status"] = "error"
-                # Only add generic error if we don't already have detailed stderr output
-                # The detailed stderr is already in result["outputs"] from streaming
-                has_stderr = any(o.get("name") == "stderr" and o.get("text", "").strip()
-                               for o in result.get("outputs", []))
-                if not has_stderr:
-                    # No detailed error output, add generic error
-                    result["error"] = {
-                        "ename": "ShellCommandError",
-                        "evalue": f"Command failed with return code {return_code}",
-                        "traceback": [f"Shell command failed: {command}"]
-                    }
 
         except Exception as e:
             result["status"] = "error"
@@ -195,8 +224,56 @@ class AsyncSpecialCommandHandler:
         return result
 
     async def interrupt(self):
-        # Placeholder for future process-based interruption logic
-        return
+        """Interrupt the currently running subprocess"""
+        # Cancel stream tasks first
+        for task in self.stream_tasks:
+            if not task.done():
+                print(f"[SPECIAL_CMD] Cancelling stream task", file=sys.stderr, flush=True)
+                task.cancel()
+
+        # Interrupt async subprocess
+        if self.current_process:
+            try:
+                print(f"[SPECIAL_CMD] Interrupting async subprocess PID={self.current_process.pid}", file=sys.stderr, flush=True)
+                self.current_process.terminate()
+
+                # Give it a moment to terminate gracefully
+                try:
+                    await asyncio.wait_for(self.current_process.wait(), timeout=1.0)
+                    print(f"[SPECIAL_CMD] Async subprocess terminated gracefully", file=sys.stderr, flush=True)
+                except asyncio.TimeoutError:
+                    # Force kill if it doesn't terminate
+                    print(f"[SPECIAL_CMD] Async subprocess didn't terminate, force killing", file=sys.stderr, flush=True)
+                    self.current_process.kill()
+                    await self.current_process.wait()
+                    print(f"[SPECIAL_CMD] Async subprocess killed", file=sys.stderr, flush=True)
+
+            except Exception as e:
+                print(f"[SPECIAL_CMD] Error interrupting async subprocess: {e}", file=sys.stderr, flush=True)
+
+        # Interrupt sync subprocess
+        if self.current_process_sync:
+            try:
+                print(f"[SPECIAL_CMD] Interrupting sync subprocess PID={self.current_process_sync.pid}", file=sys.stderr, flush=True)
+                self.sync_interrupted = True  # Set flag so shell commands know to stop
+                self.current_process_sync.terminate()
+
+                # Give it a moment to terminate gracefully
+                try:
+                    self.current_process_sync.wait(timeout=1.0)
+                    print(f"[SPECIAL_CMD] Sync subprocess terminated gracefully", file=sys.stderr, flush=True)
+                except subprocess.TimeoutExpired:
+                    # Force kill if it doesn't terminate
+                    print(f"[SPECIAL_CMD] Sync subprocess didn't terminate, force killing", file=sys.stderr, flush=True)
+                    self.current_process_sync.kill()
+                    self.current_process_sync.wait()
+                    print(f"[SPECIAL_CMD] Sync subprocess killed", file=sys.stderr, flush=True)
+
+            except Exception as e:
+                print(f"[SPECIAL_CMD] Error interrupting sync subprocess: {e}", file=sys.stderr, flush=True)
+
+        if not self.current_process and not self.current_process_sync:
+            print(f"[SPECIAL_CMD] No subprocess to interrupt", file=sys.stderr, flush=True)
 
     async def _stream_output(self, stream, stream_type: str, result: Dict[str, Any],
                            websocket: Optional[WebSocket] = None,

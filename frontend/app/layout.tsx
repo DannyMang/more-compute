@@ -8,6 +8,7 @@ import PackagesPopup from "@/components/popups/PackagesPopup";
 import ComputePopup from "@/components/popups/ComputePopup";
 import MetricsPopup from "@/components/popups/MetricsPopup";
 import SettingsPopup from "@/components/popups/SettingsPopup";
+import ConfirmModal from "@/components/modals/ConfirmModal";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
 import {
   PodWebSocketProvider,
@@ -22,6 +23,7 @@ const POLL_MS = 3000;
 function AppContent({ children }: { children: React.ReactNode }) {
   const [appSettings, setAppSettings] = useState<NotebookSettings>(() => loadSettings());
   const [activePopup, setActivePopup] = useState<string | null>(null);
+  const [showRestartModal, setShowRestartModal] = useState(false);
   const { connectionState, gpuPods, connectingPodId } = usePodWebSocket();
 
   // Persistent metrics collection
@@ -82,6 +84,15 @@ function AppContent({ children }: { children: React.ReactNode }) {
 
   const closePopup = () => {
     setActivePopup(null);
+  };
+
+  const handleRestartKernel = () => {
+    // Send reset kernel command via WebSocket
+    const ws = new WebSocket('ws://127.0.0.1:8000/ws');
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'reset_kernel' }));
+      setTimeout(() => ws.close(), 100);
+    };
   };
 
   const renderPopup = () => {
@@ -176,7 +187,28 @@ function AppContent({ children }: { children: React.ReactNode }) {
               id="kernel-status-dot"
               className="status-dot connecting"
             ></span>
-            <span id="kernel-status-text" className="status-text">
+            <span
+              id="kernel-status-text"
+              className="status-text"
+              data-original-text="Connecting..."
+              style={{
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              onMouseEnter={(e) => {
+                const originalText = e.currentTarget.textContent || '';
+                e.currentTarget.setAttribute('data-original-text', originalText);
+                e.currentTarget.textContent = 'Restart Kernel';
+                e.currentTarget.style.color = 'var(--mc-primary)';
+              }}
+              onMouseLeave={(e) => {
+                const originalText = e.currentTarget.getAttribute('data-original-text') || 'Connecting...';
+                e.currentTarget.textContent = originalText;
+                e.currentTarget.style.color = '';
+              }}
+              onClick={() => setShowRestartModal(true)}
+              title="Click to restart kernel"
+            >
               Connecting...
             </span>
           </div>
@@ -197,6 +229,16 @@ function AppContent({ children }: { children: React.ReactNode }) {
           />
         </div>
       </div>
+      <ConfirmModal
+        isOpen={showRestartModal}
+        onClose={() => setShowRestartModal(false)}
+        onConfirm={handleRestartKernel}
+        title="Restart Kernel"
+        message="Are you sure you want to restart the kernel? All variables will be lost."
+        confirmLabel="Restart"
+        cancelLabel="Cancel"
+        isDangerous={true}
+      />
     </>
   );
 }

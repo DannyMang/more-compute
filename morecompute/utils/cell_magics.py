@@ -248,6 +248,11 @@ class CellMagicHandlers:
                     env=env
                 )
 
+                # Track process for interrupt handling
+                if hasattr(cell_magic_handler, 'special_handler'):
+                    cell_magic_handler.special_handler.current_process_sync = process
+                    print(f"[CELL_MAGIC] Tracking sync subprocess PID={process.pid}", file=sys.stderr, flush=True)
+
                 # Read and print output line by line (real-time streaming)
                 def read_stream(stream, output_type):
                     """Read stream line by line and print immediately"""
@@ -276,12 +281,38 @@ class CellMagicHandlers:
                 stdout_thread.start()
                 stderr_thread.start()
 
-                # Wait for process to complete
-                return_code = process.wait()
+                # Wait for process to complete, checking if it was killed
+                try:
+                    # Poll with timeout to detect if process was killed externally
+                    while process.poll() is None:
+                        try:
+                            process.wait(timeout=0.1)
+                        except subprocess.TimeoutExpired:
+                            # Check if interrupted
+                            if hasattr(cell_magic_handler, 'special_handler'):
+                                if cell_magic_handler.special_handler.sync_interrupted:
+                                    # Process was killed by interrupt handler
+                                    print(f"[CELL_MAGIC] Process was interrupted, raising KeyboardInterrupt", file=sys.stderr, flush=True)
+                                    raise KeyboardInterrupt("Execution interrupted by user")
+
+                    return_code = process.returncode
+                except KeyboardInterrupt:
+                    # Kill process if KeyboardInterrupt
+                    try:
+                        process.kill()
+                        process.wait()
+                    except Exception:
+                        pass
+                    raise
 
                 # Wait for output threads to finish
-                stdout_thread.join()
-                stderr_thread.join()
+                stdout_thread.join(timeout=1)
+                stderr_thread.join(timeout=1)
+
+                # Clear process reference
+                if hasattr(cell_magic_handler, 'special_handler'):
+                    cell_magic_handler.special_handler.current_process_sync = None
+                    print(f"[CELL_MAGIC] Cleared sync subprocess reference", file=sys.stderr, flush=True)
 
                 return return_code
 

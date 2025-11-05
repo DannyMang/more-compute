@@ -406,21 +406,40 @@ def build_parser() -> argparse.ArgumentParser:
 
 def ensure_notebook_exists(notebook_path: Path):
     if notebook_path.exists():
-        if notebook_path.suffix != '.ipynb':
+        # File exists, check extension
+        if notebook_path.suffix == '.ipynb':
             raise ValueError(
-                f"Error: '{notebook_path}' is not a notebook file.\n"
-                f"Notebook files must have a .ipynb extension.\n"
-                f"Example: more-compute {notebook_path}.ipynb"
+                f"Error: MoreCompute only supports .py notebooks.\n\n"
+                f"Convert your notebook with:\n"
+                f"  more-compute convert {notebook_path.name} -o {notebook_path.stem}.py\n\n"
+                f"Then open with:\n"
+                f"  more-compute {notebook_path.stem}.py"
+            )
+        elif notebook_path.suffix != '.py':
+            raise ValueError(
+                f"Error: '{notebook_path}' is not a Python notebook file.\n"
+                f"Notebook files must have a .py extension.\n"
+                f"Example: more-compute {notebook_path.stem}.py"
             )
         return
 
-    if notebook_path.suffix != '.ipynb':
+    # File doesn't exist, create it
+    if notebook_path.suffix == '.ipynb':
         raise ValueError(
-            f"Error: '{notebook_path}' does not have the .ipynb extension.\n"
-            f"Notebook files must end with .ipynb\n\n"
+            f"Error: MoreCompute only supports .py notebooks.\n\n"
+            f"Convert your notebook with:\n"
+            f"  more-compute convert {notebook_path.name} -o {notebook_path.stem}.py\n\n"
+            f"Or create a new notebook:\n"
+            f"  more-compute new"
+        )
+
+    if notebook_path.suffix != '.py':
+        raise ValueError(
+            f"Error: '{notebook_path}' does not have the .py extension.\n"
+            f"Notebook files must end with .py\n\n"
             f"Did you mean?\n"
-            f"  more-compute {notebook_path}.ipynb\n\n"
-            f"Or to create a new notebook with timestamp:\n"
+            f"  more-compute {notebook_path}.py\n\n"
+            f"Or to create a new notebook:\n"
             f"  more-compute new"
         )
 
@@ -431,14 +450,18 @@ def ensure_notebook_exists(notebook_path: Path):
 
 def print_help():
     """Print concise help message"""
-    print(f"""Usage: more-compute [OPTIONS] [NOTEBOOK]
+    print(f"""Usage: more-compute [OPTIONS] [COMMAND] [NOTEBOOK]
 
-MoreCompute - Jupyter notebooks with GPU compute
+MoreCompute - Python notebooks with GPU compute
 
 Getting started:
 
   * more-compute new              create a new notebook with timestamp
-  * more-compute notebook.ipynb   open or create notebook.ipynb
+  * more-compute notebook.py      open or create notebook.py
+
+Commands:
+  convert NOTEBOOK -o OUTPUT      convert .ipynb to .py format
+    Example: more-compute convert notebook.ipynb -o notebook.py
 
 Options:
   --version, -v                   Show version and exit
@@ -449,9 +472,69 @@ Environment variables:
   MORECOMPUTE_PORT                Backend port (default: 8000)
   MORECOMPUTE_FRONTEND_PORT       Frontend port (default: 2718)
   MORECOMPUTE_NOTEBOOK_PATH       Default notebook path
+
+Note: MoreCompute uses .py notebooks (not .ipynb). Convert existing notebooks with:
+  more-compute convert notebook.ipynb -o notebook.py
 """)
 
 def main(argv=None):
+    # Handle convert command before argparse (to avoid parsing -o flag)
+    argv_to_check = argv if argv is not None else sys.argv[1:]
+    if len(argv_to_check) > 0 and argv_to_check[0] == "convert":
+        # Parse convert arguments
+        if len(sys.argv) < 3:
+            print("Error: convert command requires input file")
+            print("\nUsage:")
+            print("  more-compute convert notebook.ipynb         # -> notebook.py")
+            print("  more-compute convert notebook.py            # -> notebook.ipynb")
+            print("  more-compute convert notebook.ipynb -o out.py")
+            sys.exit(1)
+
+        input_file = Path(sys.argv[2])
+        output_file = None
+
+        # Parse -o flag
+        if len(sys.argv) >= 5 and sys.argv[3] == "-o":
+            output_file = Path(sys.argv[4])
+        else:
+            # Auto-detect output extension based on input
+            if input_file.suffix == '.ipynb':
+                output_file = input_file.with_suffix('.py')
+            elif input_file.suffix == '.py':
+                output_file = input_file.with_suffix('.ipynb')
+            else:
+                print(f"Error: Unsupported file type: {input_file.suffix}")
+                print("Supported: .ipynb, .py")
+                sys.exit(1)
+
+        if not input_file.exists():
+            print(f"Error: File not found: {input_file}")
+            sys.exit(1)
+
+        # Perform conversion based on input type
+        if input_file.suffix == '.ipynb':
+            from morecompute.utils.notebook_converter import convert_ipynb_to_py
+            try:
+                convert_ipynb_to_py(input_file, output_file)
+                sys.exit(0)
+            except Exception as e:
+                print(f"Error converting notebook: {e}")
+                sys.exit(1)
+        elif input_file.suffix == '.py':
+            from morecompute.utils.notebook_converter import convert_py_to_ipynb
+            try:
+                convert_py_to_ipynb(input_file, output_file)
+                sys.exit(0)
+            except Exception as e:
+                print(f"Error converting notebook: {e}")
+                sys.exit(1)
+        else:
+            print(f"Error: Can only convert .ipynb or .py files")
+            print(f"Got: {input_file.suffix}")
+            sys.exit(1)
+
+
+    # Parse arguments for non-convert commands
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -462,10 +545,11 @@ def main(argv=None):
 
     raw_notebook_path = args.notebook_path
 
+    # Handle "new" command
     if raw_notebook_path == "new":
         from datetime import datetime
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        raw_notebook_path = f"notebook_{timestamp}.ipynb"
+        raw_notebook_path = f"notebook_{timestamp}.py"
         print(f"Creating new notebook: {raw_notebook_path}")
 
     notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
@@ -477,7 +561,13 @@ def main(argv=None):
         sys.exit(0)
 
     notebook_path = Path(raw_notebook_path).expanduser().resolve()
-    ensure_notebook_exists(notebook_path)
+
+    try:
+        ensure_notebook_exists(notebook_path)
+    except ValueError as e:
+        # Print clean error message without traceback
+        print(str(e), file=sys.stderr)
+        sys.exit(1)
 
     launcher = NotebookLauncher(
         notebook_path=notebook_path,
