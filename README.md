@@ -4,7 +4,7 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An interactive notebook environment, similar to Marimo and Google Colab, that runs locally. It uses `.py` notebooks with `# %%` cell markers (py:percent format) - perfect for git, compatible with VSCode/PyCharm, and supports UV inline dependencies.
+An interactive Python notebook environment, similar to Marimo and Google Colab, that runs locally.
 
 
 https://github.com/user-attachments/assets/8c7ec716-dade-4de2-ad37-71d328129c97
