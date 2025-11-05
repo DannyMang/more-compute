@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "MoreCompute Team", email = "hello@morecompute.dev"}
+    {name = "Daniel Ung", email = "daniel.haidang.ung@gmail.com"}
 ]
 keywords = ["jupyter", "notebook", "gpu", "computing", "interactive"]
 classifiers = [

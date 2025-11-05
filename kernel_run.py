@@ -1,8 +1,20 @@
 #!/usr/bin/env python3
 
+import sys
+if sys.version_info < (3, 10):
+    print(f"Error: more-compute requires Python 3.10 or higher.")
+    print(f"You are using Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+    print()
+    print("To fix this:")
+    print("  1. Uninstall: uv tool uninstall more-compute")
+    print("  2. Reinstall with specific version: uv tool install more-compute==0.4.1")
+    print("     (uv will automatically download Python 3.10+ for you)")
+    print()
+    print("Or upgrade your system Python: https://www.python.org/downloads/")
+    sys.exit(1)
+
 import argparse
 import subprocess
-import sys
 import os
 import time
 import signal
