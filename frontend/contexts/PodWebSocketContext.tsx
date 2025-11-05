@@ -95,7 +95,7 @@ export const PodWebSocketProvider: React.FC<PodWebSocketProviderProps> = ({ chil
       wsRef.current = null;
     }
 
-    const wsUrl = 'ws://127.0.0.1:8000/ws';
+    const wsUrl = 'ws://127.0.0.1:3141/ws';
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

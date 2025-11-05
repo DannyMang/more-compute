@@ -492,7 +492,7 @@ export const Notebook: React.FC<NotebookProps> = ({
     wsRef.current = ws;
     handleKernelStatusUpdate("connecting");
 
-    ws.connect("ws://127.0.0.1:8000/ws")
+    ws.connect("ws://127.0.0.1:3141/ws")
       .then(() => {
         ws.loadNotebook(notebookName || "default");
       })

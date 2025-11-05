@@ -44,7 +44,7 @@ more-compute new             # Create new notebook
 more-compute --debug         # Show logs
 ```
 
-Opens automatically at http://localhost:8000
+Opens automatically at http://localhost:3141
 
 ### Converting Between Formats
 

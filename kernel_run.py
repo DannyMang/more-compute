@@ -33,8 +33,8 @@ class NotebookLauncher:
     def start_backend(self):
         """Start the FastAPI backend server"""
         try:
-            # Force a stable port (default 8000); if busy, ask to free it
-            chosen_port = int(os.getenv("MORECOMPUTE_PORT", "8000"))
+            # Force a stable port (default 3141); if busy, ask to free it
+            chosen_port = int(os.getenv("MORECOMPUTE_PORT", "3141"))
             self._ensure_port_available(chosen_port)
             cmd = [
                 sys.executable,
@@ -469,7 +469,7 @@ Options:
   --help, -h                      Show this message and exit
 
 Environment variables:
-  MORECOMPUTE_PORT                Backend port (default: 8000)
+  MORECOMPUTE_PORT                Backend port (default: 3141)
   MORECOMPUTE_FRONTEND_PORT       Frontend port (default: 2718)
   MORECOMPUTE_NOTEBOOK_PATH       Default notebook path
 

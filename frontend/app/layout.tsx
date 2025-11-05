@@ -88,7 +88,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 
   const handleRestartKernel = () => {
     // Send reset kernel command via WebSocket
-    const ws = new WebSocket('ws://127.0.0.1:8000/ws');
+    const ws = new WebSocket('ws://127.0.0.1:3141/ws');
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'reset_kernel' }));
       setTimeout(() => ws.close(), 100);

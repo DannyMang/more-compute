@@ -53,12 +53,12 @@ export class WebSocketService {
     };
   }
 
-  connect(url: string = 'ws://localhost:8000'): Promise<void> {
+  connect(url: string = 'ws://localhost:3141'): Promise<void> {
     return new Promise((resolve, reject) => {
       // For development, connect directly to the backend WebSocket
       const wsUrl = process.env.NODE_ENV === 'production'
         ? '/ws'
-        : 'ws://localhost:8000/ws';
+        : 'ws://localhost:3141/ws';
 
       // Use native WebSocket for FastAPI compatibility
       const ws = new WebSocket(wsUrl);
