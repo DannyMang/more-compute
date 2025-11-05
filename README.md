@@ -71,32 +71,13 @@ more-compute convert notebook.py
 
 # Or specify output
 more-compute convert notebook.py -o colab_notebook.ipynb
-
-# Upload to Google Colab or open in Jupyter
 ```
 
 This makes your notebooks compatible with Google Colab, Jupyter, and other tools that require `.ipynb` format.
 
 ## Troubleshooting
 
-**Command not found:**
-```bash
-uv tool update-shell  # Fixes PATH automatically
-```
-
-**Manual PATH fix (macOS/Linux):**
-```bash
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-```
-
-**Manual PATH fix (Windows):**
-```powershell
-$pythonScripts = python -c "import site; print(site.USER_BASE)"
-$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-[Environment]::SetEnvironmentVariable("Path", "$userPath;$pythonScripts\Scripts", "User")
-# Restart PowerShell
-```
+will add things here as things progress...
 
 ## Development
 
