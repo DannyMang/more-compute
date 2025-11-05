@@ -1,5 +1,9 @@
 include README.md
+include LICENSE
 recursive-include morecompute/static *
 recursive-include frontend *
 prune frontend/node_modules
 prune frontend/.next
+global-exclude .DS_Store
+global-exclude *.pyc
+global-exclude __pycache__

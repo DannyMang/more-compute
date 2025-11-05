@@ -484,7 +484,10 @@ def main(argv=None):
         # Parse convert arguments
         if len(sys.argv) < 3:
             print("Error: convert command requires input file")
-            print("\nUsage: more-compute convert notebook.ipynb -o notebook.py")
+            print("\nUsage:")
+            print("  more-compute convert notebook.ipynb         # -> notebook.py")
+            print("  more-compute convert notebook.py            # -> notebook.ipynb")
+            print("  more-compute convert notebook.ipynb -o out.py")
             sys.exit(1)
 
         input_file = Path(sys.argv[2])
@@ -494,26 +497,42 @@ def main(argv=None):
         if len(sys.argv) >= 5 and sys.argv[3] == "-o":
             output_file = Path(sys.argv[4])
         else:
-            # Default output: same name with .py extension
-            output_file = input_file.with_suffix('.py')
+            # Auto-detect output extension based on input
+            if input_file.suffix == '.ipynb':
+                output_file = input_file.with_suffix('.py')
+            elif input_file.suffix == '.py':
+                output_file = input_file.with_suffix('.ipynb')
+            else:
+                print(f"Error: Unsupported file type: {input_file.suffix}")
+                print("Supported: .ipynb, .py")
+                sys.exit(1)
 
         if not input_file.exists():
             print(f"Error: File not found: {input_file}")
             sys.exit(1)
 
-        if input_file.suffix != '.ipynb':
-            print(f"Error: Can only convert .ipynb files")
+        # Perform conversion based on input type
+        if input_file.suffix == '.ipynb':
+            from morecompute.utils.notebook_converter import convert_ipynb_to_py
+            try:
+                convert_ipynb_to_py(input_file, output_file)
+                sys.exit(0)
+            except Exception as e:
+                print(f"Error converting notebook: {e}")
+                sys.exit(1)
+        elif input_file.suffix == '.py':
+            from morecompute.utils.notebook_converter import convert_py_to_ipynb
+            try:
+                convert_py_to_ipynb(input_file, output_file)
+                sys.exit(0)
+            except Exception as e:
+                print(f"Error converting notebook: {e}")
+                sys.exit(1)
+        else:
+            print(f"Error: Can only convert .ipynb or .py files")
             print(f"Got: {input_file.suffix}")
             sys.exit(1)
 
-        # Perform conversion
-        from morecompute.utils.notebook_converter import convert_ipynb_to_py
-        try:
-            convert_ipynb_to_py(input_file, output_file)
-            sys.exit(0)
-        except Exception as e:
-            print(f"Error during conversion: {e}")
-            sys.exit(1)
 
     # Parse arguments for non-convert commands
     parser = build_parser()

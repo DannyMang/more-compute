@@ -4,7 +4,7 @@ import json
 import re
 from pathlib import Path
 from typing import List, Set
-from .py_percent_parser import generate_py_percent
+from .py_percent_parser import generate_py_percent, parse_py_percent
 
 
 def extract_pip_dependencies(notebook_data: dict) -> Set[str]:
@@ -95,3 +95,35 @@ def convert_ipynb_to_py(ipynb_path: Path, output_path: Path, include_uv_deps: bo
     if include_uv_deps and dependencies:
         print(f"  Found dependencies: {', '.join(sorted(dependencies))}")
         print(f"  Run with: more-compute {output_path.name}")
+
+
+def convert_py_to_ipynb(py_path: Path, output_path: Path) -> None:
+    """
+    Convert .py notebook to .ipynb format.
+
+    Args:
+        py_path: Path to input .py file
+        output_path: Path to output .ipynb file
+    """
+    # Read .py file
+    with open(py_path, 'r', encoding='utf-8') as f:
+        py_content = f.read()
+
+    # Parse py:percent format to notebook structure
+    notebook_data = parse_py_percent(py_content)
+
+    # Ensure source is in list format (Jupyter notebook standard)
+    for cell in notebook_data.get('cells', []):
+        source = cell.get('source', '')
+        if isinstance(source, str):
+            # Split into lines and keep newlines (Jupyter format)
+            lines = source.split('\n')
+            # Add \n to each line except the last
+            cell['source'] = [line + '\n' for line in lines[:-1]] + ([lines[-1]] if lines[-1] else [])
+
+    # Write .ipynb file
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(notebook_data, f, indent=1, ensure_ascii=False)
+
+    print(f"Converted {py_path.name} -> {output_path.name}")
+    print(f"  Upload to Google Colab or open in Jupyter")

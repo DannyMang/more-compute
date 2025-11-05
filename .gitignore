@@ -20,6 +20,12 @@ wheels/
 *.egg
 MANIFEST
 
+# Build tools
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.pyc
+
 # Virtual environments
 venv/
 env/
