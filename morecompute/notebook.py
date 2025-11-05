@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 from uuid import uuid4
 from .utils.py_percent_parser import parse_py_percent, generate_py_percent
+from .utils.notebook_converter import detect_colab_format, parse_colab_py
 
 class Notebook:
     """Manages the state of a notebook's cells."""
@@ -92,11 +93,29 @@ class Notebook:
 
             # Check file extension
             if path.suffix == '.py':
-                # Load .py file with py:percent format
+                # Load .py file - auto-detect format
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
 
-                data = parse_py_percent(content)
+                # Detect if it's Colab format (docstrings) or py:percent format (# %%)
+                if detect_colab_format(content):
+                    print(f" Detected Colab format - auto-converting to py:percent")
+                    # Parse Colab format (docstrings as markdown)
+                    loaded_cells = parse_colab_py(content)
+                    data = {
+                        'cells': loaded_cells,
+                        'metadata': {
+                            'kernelspec': {
+                                'display_name': 'Python 3',
+                                'language': 'python',
+                                'name': 'python3'
+                            }
+                        }
+                    }
+                else:
+                    # Parse py:percent format (# %% markers)
+                    data = parse_py_percent(content)
+
                 loaded_cells = data.get('cells', [])
 
                 # Ensure stable IDs for all cells

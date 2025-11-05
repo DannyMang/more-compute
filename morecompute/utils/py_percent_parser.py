@@ -8,6 +8,10 @@ def parse_py_percent(content: str) -> Dict:
     """
     Parse py:percent format Python file into notebook structure.
 
+    Supports multiple formats:
+        # %% - VSCode/PyCharm format
+        # In[N]: - JupyterLab export format
+
     Format:
         # %%
         code cell content
@@ -23,9 +27,15 @@ def parse_py_percent(content: str) -> Dict:
     """
     cells = []
 
-    # Split by cell markers (# %%)
-    # Keep the marker in the split to determine cell type
-    parts = re.split(r'(# %%.*?\n)', content)
+    # Check if using JupyterLab In[] format
+    has_in_markers = bool(re.search(r'# In\[\d+\]:', content))
+
+    if has_in_markers:
+        # Parse JupyterLab # In[N]: format
+        parts = re.split(r'(# In\[\d+\]:.*?\n)', content)
+    else:
+        # Parse VSCode # %% format
+        parts = re.split(r'(# %%.*?\n)', content)
 
     # First part before any cell marker (usually imports/metadata)
     if parts[0].strip():
