@@ -1,7 +1,7 @@
 # more-compute
 
 [![PyPI version](https://badge.fury.io/py/more-compute.svg)](https://pypi.org/project/more-compute/)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 An interactive Python notebook environment, similar to Marimo and Google Colab, that runs locally.
@@ -12,7 +12,9 @@ https://github.com/user-attachments/assets/8c7ec716-dade-4de2-ad37-71d328129c97
 
 ## Installation
 
-**Prerequisites:** [Node.js](https://nodejs.org/) >= 20.10.0 required for web interface
+**Prerequisites:**
+- [Node.js](https://nodejs.org/) >= 20.10.0 required for web interface
+- Python >= 3.10 (uv installs this automatically, pip users need to install manually)
 
 ### Using uv (Recommended)
 
