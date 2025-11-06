@@ -74,6 +74,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
   const [connectionHealth, setConnectionHealth] = useState<"healthy" | "unhealthy" | "unknown">("unknown");
   const [searchQuery, setSearchQuery] = useState("");
   const [discoveredPod, setDiscoveredPod] = useState<GPUPod | null>(null);
+  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
 
   // Filter popup state
   const [showFilterPopup, setShowFilterPopup] = useState(false);
@@ -218,6 +219,16 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
       setPods(pods);
     } catch (err) {
       console.error("Failed to load GPU pods:", err);
+      // If 401 error, API key is invalid - allow user to reset it
+      if (err instanceof Error && err.message.includes("401")) {
+        setApiConfigured(false);
+        setShowApiKeyInput(true);
+        setErrorModal({
+          isOpen: true,
+          title: "Invalid API Key",
+          message: "Your API key is invalid or has expired. Please enter a new API key to continue.",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -561,8 +572,10 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
     try {
       await setGpuApiKey(apiKey);
       setApiConfigured(true);
+      setShowApiKeyInput(false);
       setApiKey("");
       await loadGPUPods();
+      await loadAvailableGPUs();
     } catch (err) {
       setSaveError(
         err instanceof Error ? err.message : "Failed to save API key",
@@ -681,26 +694,43 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
               <h3 className="runtime-section-title" style={{ fontSize: "12px", fontWeight: 500 }}>
                 Remote GPU Pods
               </h3>
-              {apiConfigured && (
-                <button
-                  className="runtime-btn runtime-btn-secondary"
-                  onClick={handleConnectToPrimeIntellect}
-                  style={{
-                    fontSize: "11px",
-                    padding: "6px 12px",
-                    backgroundColor: "#000",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "8px",
-                    cursor: "pointer"
-                  }}
-                >
-                  Manage
-                </button>
+              {apiConfigured && !showApiKeyInput && (
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    className="runtime-btn runtime-btn-secondary"
+                    onClick={() => setShowApiKeyInput(true)}
+                    style={{
+                      fontSize: "11px",
+                      padding: "6px 12px",
+                      backgroundColor: "var(--text-secondary)",
+                      color: "white",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Reset API Key
+                  </button>
+                  <button
+                    className="runtime-btn runtime-btn-secondary"
+                    onClick={handleConnectToPrimeIntellect}
+                    style={{
+                      fontSize: "11px",
+                      padding: "6px 12px",
+                      backgroundColor: "var(--mc-text-color)",
+                      color: "var(--mc-cell-background)",
+                      border: "none",
+                      borderRadius: "8px",
+                      cursor: "pointer"
+                    }}
+                  >
+                    Manage
+                  </button>
+                </div>
               )}
             </div>
 
-            {apiConfigured === false ? (
+            {(apiConfigured === false || showApiKeyInput) ? (
               <div className="runtime-empty-state" style={{ padding: "6px" }}>
                 <p
                   style={{
@@ -750,8 +780,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                       flex: 1,
                       fontSize: "11px",
                       padding: "6px 12px",
-                      backgroundColor: "#000",
-                      color: "white",
+                      backgroundColor: "var(--mc-text-color)",
+                      color: "var(--mc-cell-background)",
                       border: "none",
                       borderRadius: "8px",
                       cursor: "pointer"
@@ -765,8 +795,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     style={{
                       fontSize: "11px",
                       padding: "6px 12px",
-                      backgroundColor: "#000",
-                      color: "white",
+                      backgroundColor: "var(--mc-text-color)",
+                      color: "var(--mc-cell-background)",
                       border: "none",
                       borderRadius: "8px",
                       cursor: "pointer"
@@ -788,19 +818,19 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
             ) : !connectedPodId && discoveredPod ? (
               <div style={{ padding: "8px 0" }}>
                 <div style={{
-                  backgroundColor: "#fff3cd",
-                  border: "1px solid #ffc107",
+                  backgroundColor: "rgba(251, 191, 36, 0.1)",
+                  border: "1px solid rgba(251, 191, 36, 0.3)",
                   borderRadius: "8px",
                   padding: "12px",
                   marginBottom: "8px"
                 }}>
-                  <div style={{ fontSize: "11px", fontWeight: 600, color: "#856404", marginBottom: "4px" }}>
+                  <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--mc-text-color)", marginBottom: "4px" }}>
                     ⚠️ Running Pod Detected
                   </div>
-                  <div style={{ fontSize: "10px", color: "#856404", marginBottom: "8px" }}>
+                  <div style={{ fontSize: "10px", color: "var(--text-secondary)", marginBottom: "8px" }}>
                     Found a running pod but not connected (backend may have restarted). This pod is still costing money!
                   </div>
-                  <div style={{ fontSize: "10px", marginBottom: "8px" }}>
+                  <div style={{ fontSize: "10px", marginBottom: "8px", color: "var(--mc-text-color)" }}>
                     <span style={{ fontWeight: 500 }}>{discoveredPod.name}</span> • {discoveredPod.gpuType} • ${discoveredPod.costPerHour.toFixed(2)}/hour
                   </div>
                   <div style={{ display: "flex", gap: "6px" }}>
@@ -811,8 +841,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                         flex: 1,
                         fontSize: "10px",
                         padding: "6px 12px",
-                        backgroundColor: "#ffc107",
-                        color: "#000",
+                        backgroundColor: "rgba(251, 191, 36, 0.8)",
+                        color: "var(--mc-text-color)",
                         border: "none",
                         borderRadius: "8px",
                         cursor: "pointer",
@@ -828,7 +858,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                       style={{
                         fontSize: "10px",
                         padding: "6px 12px",
-                        backgroundColor: "#dc2626",
+                        backgroundColor: "rgba(220, 38, 38, 0.9)",
                         color: "white",
                         border: "none",
                         borderRadius: "8px",
@@ -855,7 +885,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                               <span style={{
                                 marginLeft: "6px",
                                 fontSize: "9px",
-                                backgroundColor: "#10b981",
+                                backgroundColor: "rgba(16, 185, 129, 0.9)",
                                 color: "white",
                                 padding: "2px 6px",
                                 borderRadius: "4px"
@@ -877,8 +907,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                                 style={{
                                   fontSize: "10px",
                                   padding: "6px 12px",
-                                  backgroundColor: "#000",
-                                  color: "white",
+                                  backgroundColor: "var(--mc-text-color)",
+                                  color: "var(--mc-cell-background)",
                                   border: "none",
                                   borderRadius: "8px",
                                   cursor: "pointer"
@@ -893,7 +923,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                                 style={{
                                   fontSize: "10px",
                                   padding: "6px 12px",
-                                  backgroundColor: "#dc2626",
+                                  backgroundColor: "rgba(220, 38, 38, 0.9)",
                                   color: "white",
                                   border: "none",
                                   borderRadius: "8px",
@@ -912,7 +942,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                                 style={{
                                   fontSize: "10px",
                                   padding: "6px 12px",
-                                  backgroundColor: "#10b981",
+                                  backgroundColor: "rgba(16, 185, 129, 0.9)",
                                   color: "white",
                                   border: "none",
                                   borderRadius: "8px",
@@ -928,7 +958,7 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                                 style={{
                                   fontSize: "10px",
                                   padding: "6px 12px",
-                                  backgroundColor: "#dc2626",
+                                  backgroundColor: "rgba(220, 38, 38, 0.9)",
                                   color: "white",
                                   border: "none",
                                   borderRadius: "8px",
@@ -975,10 +1005,10 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     flex: 1,
                     padding: "6px 12px",
                     fontSize: "11px",
-                    border: "1px solid #d1d5db",
+                    border: "1px solid var(--mc-border)",
                     borderRadius: "8px",
-                    backgroundColor: "var(--background)",
-                    color: "var(--text)",
+                    backgroundColor: "var(--mc-background)",
+                    color: "var(--mc-text-color)",
                     outline: "none",
                   }}
                 />
@@ -989,8 +1019,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                     padding: "6px 12px",
                     fontSize: "11px",
                     position: "relative",
-                    backgroundColor: "#000",
-                    color: "white",
+                    backgroundColor: "var(--mc-text-color)",
+                    color: "var(--mc-cell-background)",
                     border: "none",
                     borderRadius: "8px",
                     cursor: "pointer"
@@ -1119,8 +1149,8 @@ const ComputePopup: React.FC<ComputePopupProps> = ({ onClose }) => {
                               fontSize: "10px",
                               padding: "6px 16px",
                               whiteSpace: "nowrap",
-                              backgroundColor: "#000",
-                              color: "white",
+                              backgroundColor: "var(--mc-text-color)",
+                              color: "var(--mc-cell-background)",
                               border: "none",
                               borderRadius: "8px",
                               cursor: "pointer"
