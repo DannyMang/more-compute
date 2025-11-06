@@ -39,6 +39,7 @@ ENV/
 # IDE
 .vscode/
 .idea/
+.zed/
 *.swp
 *.swo
 *~
