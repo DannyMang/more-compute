@@ -58,7 +58,6 @@ def _inject_shell_command_function(globals_dict: dict):
 
             # Check if already interrupted before starting new command
             if _interrupt_requested:
-                print(f"[WORKER] Shell command skipped due to previous interrupt", file=sys.stderr, flush=True)
                 raise KeyboardInterrupt("Execution was interrupted")
 
             # Prepare command and environment (using shared utilities)
@@ -80,12 +79,6 @@ def _inject_shell_command_function(globals_dict: dict):
             _current_subprocess = process
             if os.name != 'nt':
                 _current_process_group = os.getpgid(process.pid)
-                # Also create a new process group for clean killing
-                print(f"[WORKER] Started subprocess PID={process.pid}, PGID={_current_process_group}", file=sys.stderr, flush=True)
-            else:
-                print(f"[WORKER] Started subprocess PID={process.pid}", file=sys.stderr, flush=True)
-
-            sys.stderr.flush()
 
             try:
                 # Stream output line by line
@@ -120,7 +113,6 @@ def _inject_shell_command_function(globals_dict: dict):
                     except subprocess.TimeoutExpired:
                         # Check if interrupted
                         if _interrupt_requested:
-                            print(f"[WORKER] Interrupt detected, killing subprocess", file=sys.stderr, flush=True)
                             try:
                                 process.kill()
                             except Exception:
@@ -135,7 +127,6 @@ def _inject_shell_command_function(globals_dict: dict):
                             except Exception:
                                 pass
                             # Don't wait for process or threads - raise immediately
-                            print(f"[WORKER] Raising KeyboardInterrupt immediately", file=sys.stderr, flush=True)
                             raise KeyboardInterrupt("Execution interrupted by user")
 
                 # Normal completion - join threads briefly
@@ -235,63 +226,34 @@ def control_thread_main(ctrl, current_cell_ref):
     """Run control channel in separate thread (Jupyter pattern)"""
     global _interrupt_requested, _current_subprocess, _current_process_group
 
-    print(f"[CONTROL] Control thread started", file=sys.stderr, flush=True)
-
     while True:
         try:
             # Block waiting for control messages
             identity = ctrl.recv()
             msg = ctrl.recv_json()
 
-            print(f"[CONTROL] Received: {msg}", file=sys.stderr, flush=True)
-
             mtype = msg.get('type')
             if mtype == 'interrupt':
                 requested_cell = msg.get('cell_index')
                 current_cell = current_cell_ref[0]
 
-                print(f"[CONTROL] Interrupt check: requested={requested_cell}, current={current_cell}, subprocess={_current_subprocess}, pgid={_current_process_group}", file=sys.stderr)
-                sys.stderr.flush()
-
                 if requested_cell is None or requested_cell == current_cell:
-                    print(f"[CONTROL] ✓ Match! Processing interrupt for cell {requested_cell}", file=sys.stderr)
-                    sys.stderr.flush()
-
                     # Set global flag
                     _interrupt_requested = True
 
                     # Send SIGINT to process group (Jupyter pattern)
                     if _current_process_group and os.name != 'nt':
                         try:
-                            print(f"[CONTROL] Sending SIGINT to process group {_current_process_group}", file=sys.stderr)
-                            sys.stderr.flush()
                             os.killpg(_current_process_group, signal.SIGINT)
-                            print(f"[CONTROL] SIGINT sent successfully", file=sys.stderr)
-                            sys.stderr.flush()
-                        except Exception as e:
-                            print(f"[CONTROL] Failed to kill process group: {e}", file=sys.stderr)
-                            sys.stderr.flush()
+                        except Exception:
+                            pass
 
                     # Also kill subprocess directly
                     if _current_subprocess:
                         try:
-                            print(f"[CONTROL] Killing subprocess PID={_current_subprocess.pid}", file=sys.stderr)
-                            sys.stderr.flush()
                             _current_subprocess.kill()
-                            print(f"[CONTROL] Subprocess killed", file=sys.stderr)
-                            sys.stderr.flush()
-                        except Exception as e:
-                            print(f"[CONTROL] Failed to kill subprocess: {e}", file=sys.stderr)
-                            sys.stderr.flush()
-
-                    # Don't send SIGINT to self - let the execution thread finish gracefully
-                    # Sending SIGINT here can interrupt the execution thread before it sends
-                    # completion messages, leaving the frontend in a confused state
-                    print(f"[CONTROL] Interrupt signal sent, waiting for execution thread to finish", file=sys.stderr)
-                    sys.stderr.flush()
-                else:
-                    print(f"[CONTROL] ✗ NO MATCH! Ignoring interrupt (requested cell {requested_cell} != current cell {current_cell})", file=sys.stderr)
-                    sys.stderr.flush()
+                        except Exception:
+                            pass
 
                 # Reply
                 ctrl.send(identity, zmq.SNDMORE)
@@ -302,26 +264,17 @@ def control_thread_main(ctrl, current_cell_ref):
                 ctrl.send_json({'ok': True, 'pid': os.getpid()})
                 break
 
-        except Exception as e:
-            print(f"[CONTROL] Error: {e}", file=sys.stderr, flush=True)
-            import traceback
-            traceback.print_exc()
+        except Exception:
+            pass
 
 
 def worker_main():
     global _current_subprocess, _interrupt_requested, _current_process_group
 
-    print(f"[WORKER] ========================================", file=sys.stderr, flush=True)
-    print(f"[WORKER] Starting THREADED worker (new code!)", file=sys.stderr, flush=True)
-    print(f"[WORKER] PID: {os.getpid()}", file=sys.stderr, flush=True)
-    print(f"[WORKER] ========================================", file=sys.stderr, flush=True)
-
     _setup_signals()
     cmd_addr = os.environ['MC_ZMQ_CMD_ADDR']
     pub_addr = os.environ['MC_ZMQ_PUB_ADDR']
     ctrl_addr = os.environ.get('MC_ZMQ_CTRL_ADDR', cmd_addr.replace('5555', '5557'))
-
-    print(f"[WORKER] Binding to control socket: {ctrl_addr}", file=sys.stderr, flush=True)
 
     ctx = zmq.Context.instance()
     rep = ctx.socket(zmq.REP)
@@ -341,7 +294,6 @@ def worker_main():
     # Start control thread (Jupyter pattern)
     ctrl_thread = threading.Thread(target=control_thread_main, args=(ctrl, current_cell_ref), daemon=True)
     ctrl_thread.start()
-    print(f"[WORKER] Started control thread", file=sys.stderr, flush=True)
 
     # Persistent REPL state
     g = {"__name__": "__main__"}
@@ -380,9 +332,7 @@ def worker_main():
             cell_index = msg.get('cell_index')
             requested_count = msg.get('execution_count')
 
-            print(f"[WORKER] Setting current_cell_ref[0] = {cell_index}", file=sys.stderr, flush=True)
             current_cell_ref[0] = cell_index  # Update for control thread
-            print(f"[WORKER] Confirmed current_cell_ref[0] = {current_cell_ref[0]}", file=sys.stderr, flush=True)
 
             if isinstance(requested_count, int):
                 exec_count = requested_count - 1
@@ -404,7 +354,6 @@ def worker_main():
 
                 try:
                     shell_cmd = code.strip()[1:].strip()
-                    print(f"[WORKER] Executing shell: {shell_cmd[:50]}...", file=sys.stderr, flush=True)
 
                     # Run shell command with streaming
                     process = subprocess.Popen(
@@ -453,7 +402,6 @@ def worker_main():
                                 break
                             except subprocess.TimeoutExpired:
                                 if _interrupt_requested:
-                                    print(f"[WORKER] Interrupt detected, killing shell process", file=sys.stderr, flush=True)
                                     try:
                                         process.kill()
                                     except Exception:
@@ -468,7 +416,6 @@ def worker_main():
                                     except Exception:
                                         pass
                                     # Set interrupted status immediately
-                                    print(f"[WORKER] Setting error status for interrupted shell command", file=sys.stderr, flush=True)
                                     status = 'error'
                                     error_payload = {
                                         'ename': 'KeyboardInterrupt',
@@ -484,8 +431,6 @@ def worker_main():
                             stdout_thread.join(timeout=0.1)
                             stderr_thread.join(timeout=0.1)
 
-                            print(f"[WORKER] Shell process finished: return_code={return_code}", file=sys.stderr, flush=True)
-
                             # Check return code
                             if return_code != 0:
                                 status = 'error'
@@ -494,7 +439,6 @@ def worker_main():
                                     'evalue': f'Command failed with return code {return_code}',
                                     'traceback': [f'Shell command failed: {shell_cmd}']
                                 }
-                                print(f"[WORKER] Set error_payload to ShellCommandError", file=sys.stderr, flush=True)
                     except KeyboardInterrupt:
                         status = 'error'
                         error_payload = {
@@ -511,17 +455,12 @@ def worker_main():
                     error_payload = {'ename': type(exc).__name__, 'evalue': str(exc), 'traceback': traceback.format_exc().split('\n')}
 
                 duration_ms = f"{(time.time()-start)*1000:.1f}ms"
-                print(f"[WORKER] Sending completion messages: status={status}, error={error_payload is not None}", file=sys.stderr, flush=True)
                 if error_payload:
                     pub.send_json({'type': 'execution_error', 'cell_index': cell_index, 'error': error_payload})
-                    print(f"[WORKER] Sent execution_error", file=sys.stderr, flush=True)
                 pub.send_json({'type': 'execution_complete', 'cell_index': cell_index, 'result': {'status': status, 'execution_count': exec_count, 'execution_time': duration_ms, 'outputs': [], 'error': error_payload}})
-                print(f"[WORKER] Sent execution_complete", file=sys.stderr, flush=True)
                 rep.send_json({'ok': True, 'pid': os.getpid()})
 
-                print(f"[WORKER] Clearing current_cell_ref[0] (was {current_cell_ref[0]})", file=sys.stderr, flush=True)
                 current_cell_ref[0] = None
-                print(f"[WORKER] Confirmed current_cell_ref[0] = {current_cell_ref[0]}", file=sys.stderr, flush=True)
                 continue
 
             # Regular Python code execution
@@ -590,17 +529,12 @@ def worker_main():
                 sys.stdout, sys.stderr = old_out, old_err
             exec_count += 1
             duration_ms = f"{(time.time()-start)*1000:.1f}ms"
-            print(f"[WORKER] Sending completion messages (Python): status={status}, error={error_payload is not None}", file=sys.stderr, flush=True)
             if error_payload:
                 pub.send_json({'type': 'execution_error', 'cell_index': cell_index, 'error': error_payload})
-                print(f"[WORKER] Sent execution_error", file=sys.stderr, flush=True)
             pub.send_json({'type': 'execution_complete', 'cell_index': cell_index, 'result': {'status': status, 'execution_count': exec_count, 'execution_time': duration_ms, 'outputs': [], 'error': error_payload}})
-            print(f"[WORKER] Sent execution_complete", file=sys.stderr, flush=True)
             rep.send_json({'ok': True, 'pid': os.getpid()})
 
-            print(f"[WORKER] Clearing current_cell_ref[0] (was {current_cell_ref[0]})", file=sys.stderr, flush=True)
             current_cell_ref[0] = None
-            print(f"[WORKER] Confirmed current_cell_ref[0] = {current_cell_ref[0]}", file=sys.stderr, flush=True)
 
     try:
         rep.close(0); pub.close(0); ctrl.close(0)

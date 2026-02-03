@@ -97,9 +97,7 @@ class PrimeIntellectService:
         """
         Create a new pod
         """
-        import sys
         payload = pod_request.model_dump(exclude_none=True)
-        print(f"[PI SERVICE] Creating pod with payload: {payload}", file=sys.stderr, flush=True)
 
         response = await self._make_request(
             "POST",
@@ -294,9 +292,7 @@ class PrimeIntellectService:
             Disk response with disk details
 
         """
-        import sys
         payload = disk_request.model_dump(exclude_none=True)
-        print(f"[PI SERVICE] Creating disk with payload: + {payload}", file=sys.stderr, flush=True)
         response = await self._make_request("POST", "/disks/", json_data=payload)
         return DiskResponse.model_validate(response)
 

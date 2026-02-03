@@ -14,7 +14,6 @@ export class WebSocketService {
         this.ws = new WebSocket(this.url);
         
         this.ws.onopen = () => {
-          console.log('Connected to server');
           this.reconnectAttempts = 0;
           this.emit('connect', null);
           resolve();
@@ -26,8 +25,7 @@ export class WebSocketService {
           reject(error);
         };
 
-        this.ws.onclose = (ev) => {
-          console.log('Disconnected from server', { code: ev.code, reason: ev.reason, wasClean: ev.wasClean });
+        this.ws.onclose = () => {
           this.emit('disconnect', null);
           this.handleDisconnect();
         };
@@ -35,10 +33,9 @@ export class WebSocketService {
         this.ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('[WS RECV]', data);
             this.handleMessage(data);
-          } catch (error) {
-            console.error('Failed to parse message:', error);
+          } catch {
+            // Failed to parse message
           }
         };
       } catch (error) {
@@ -115,9 +112,8 @@ export class WebSocketService {
     // Attempt to reconnect
     if (this.reconnectAttempts < this.maxReconnectAttempts) {
       this.reconnectAttempts++;
-      console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
       setTimeout(() => {
-        this.connect(this.url).catch(console.error);
+        this.connect(this.url).catch(() => {});
       }, 1000 * this.reconnectAttempts);
     }
   }

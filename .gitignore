@@ -64,3 +64,9 @@ node_modules/
 # Temporary files
 *.tmp
 *.temp
+
+# Generated notebooks
+notebook_*.py
+
+# Docker
+notebooks/

@@ -13,8 +13,8 @@ https://github.com/user-attachments/assets/8c7ec716-dade-4de2-ad37-71d328129c97
 ## Installation
 
 **Prerequisites:**
-- [Node.js](https://nodejs.org/) >= 20.10.0 required for web interface
-- Python >= 3.10 (uv installs this automatically, pip users need to install manually)
+- [Node.js](https://nodejs.org/) v20 (see `.nvmrc`)
+- Python 3.12 (see `.python-version`)
 
 ### Using uv (Recommended)
 
@@ -46,7 +46,7 @@ more-compute new             # Create new notebook
 more-compute --debug         # Show logs
 ```
 
-Opens automatically at http://localhost:3141
+Opens automatically at http://localhost:2718
 
 ### Converting Between Formats
 
@@ -83,14 +83,59 @@ will add things here as things progress...
 
 ## Development
 
+### Option 1: Devcontainer 
+
+Works on **Mac**, **Windows**, and **Linux** with identical environments.
+
+**Prerequisites:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) and VS Code/Cursor with the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers).
+
+1. Clone the repo and open in VS Code/Cursor
+2. Press `Cmd/Ctrl + Shift + P` → "Dev Containers: Reopen in Container"
+3. Wait for the container to build (first time takes a few minutes)
+4. Run `more-compute new` in the terminal
+
+### Option 2: Docker (No IDE Required)
+
 ```bash
+# Build the image
+docker build -t morecompute .
+
+# Run with your notebooks mounted
+docker run -p 3141:3141 -p 2718:2718 -v $(pwd):/notebooks morecompute
+```
+
+### Option 3: Native Setup
+
+**Prerequisites:**
+- Python 3.12 (install via [pyenv](https://github.com/pyenv/pyenv): `pyenv install 3.12`)
+- Node.js 20 (install via [nvm](https://github.com/nvm-sh/nvm): `nvm install 20`)
+
+```bash
+# Clone and enter directory
 git clone https://github.com/DannyMang/MORECOMPUTE.git
 cd MORECOMPUTE
-uv venv && source .venv/bin/activate
+
+# Use pinned versions
+pyenv local 3.12  # or: pyenv install 3.12 && pyenv local 3.12
+nvm use           # reads .nvmrc automatically
+
+# Create virtual environment and install
+uv venv && source .venv/bin/activate  # Windows: .venv\Scripts\activate
 uv pip install -e .
-cd frontend && npm install && cd ..
+
+# Install frontend dependencies
+cd frontend && npm ci && cd ..  # npm ci uses package-lock.json for exact versions
+
+# Run
 more-compute notebook.py
 ```
+
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MORECOMPUTE_PORT` | 3141 | Backend API port |
+| `MORECOMPUTE_FRONTEND_PORT` | 2718 | Frontend UI port |
 
 ## License
 

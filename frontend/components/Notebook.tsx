@@ -277,12 +277,8 @@ function notebookReducer(
       const payload = action.payload || {};
       const cell_index = payload.cell_index;
 
-      console.log(`[EXECUTION_COMPLETE] Processing completion for cell ${cell_index}`, payload);
-
       // Support both shapes: { result: {...} } and flat payload {...}
       const result = payload && payload.result ? payload.result : payload || {};
-
-      console.log(`[EXECUTION_COMPLETE] result.status=${result.status}, result.error=`, result.error);
 
       // ALWAYS remove cell from executingCells when completion arrives
       const newExecuting = new Set(state.executingCells);
@@ -318,8 +314,6 @@ function notebookReducer(
 
     case "EXECUTION_ERROR": {
       const { cell_index, error } = action.payload;
-
-      console.log(`[EXECUTION_ERROR] Processing error for cell ${cell_index}`);
 
       // ALWAYS remove cell from executingCells when error arrives
       const newExecuting = new Set(state.executingCells);
@@ -361,7 +355,7 @@ function notebookReducer(
           ...cell,
           outputs: [],
           execution_count: null,
-          execution_time: null,
+          execution_time: undefined,
           error: null,
         })),
       };
@@ -400,10 +394,6 @@ export const Notebook: React.FC<NotebookProps> = ({
   const deletionQueueRef = useRef<DeletedCell[]>([]);
   const [showUndoHint, setShowUndoHint] = useState(false);
 
-  // DEBUG: Verify new code is loaded
-  useEffect(() => {
-    console.log("✅ NEW NOTEBOOK CODE LOADED - Undo functionality available");
-  }, []);
 
   useEffect(() => {
     const body = document.body;
@@ -454,10 +444,9 @@ export const Notebook: React.FC<NotebookProps> = ({
     dispatch({ type: "RESET_KERNEL" });
   }, []);
 
-  const handleHeartbeat = useCallback((data: any) => {
+  const handleHeartbeat = useCallback((_data: any) => {
     // Heartbeat received - execution still in progress
     // Cell spinner already showing via executingCells set
-    console.log("[Heartbeat]", data?.message || "Execution in progress");
   }, []);
 
   const handleKernelStatusUpdate = useCallback(
@@ -599,7 +588,6 @@ export const Notebook: React.FC<NotebookProps> = ({
   const undoDelete = useCallback(() => {
     const deletedCell = deletionQueueRef.current.shift(); // Get most recent deletion
     if (!deletedCell) {
-      console.log("No deletions to undo");
       return;
     }
 

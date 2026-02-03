@@ -18,19 +18,35 @@ from .utils.system_environment_util import DeviceMetrics
 from .utils.error_utils import ErrorUtils
 from .utils.cache_util import make_cache_key
 from .utils.notebook_util import coerce_cell_source
-from .utils.config_util import load_api_key, save_api_key
+from .utils.config_util import load_api_key, save_api_key, get_active_provider as get_active_provider_name, set_active_provider as set_active_provider_name
 from .utils.zmq_util import reconnect_zmq_sockets, reset_to_local_zmq
-from .services.prime_intellect import PrimeIntellectService
 from .services.pod_manager import PodKernelManager
 from .services.data_manager import DataManager
 from .services.pod_monitor import PodMonitor
 from .services.lsp_service import LSPService
+from .services.claude_service import ClaudeService, ClaudeContext as ClaudeCtx, ProposedEdit
+from .services.providers import (
+    list_providers as list_all_providers,
+    get_provider,
+    configure_provider,
+    get_active_provider,
+    set_active_provider,
+    refresh_provider,
+    BaseGPUProvider,
+)
 from .models.api_models import (
     ApiKeyRequest,
     ApiKeyResponse,
     ConfigStatusResponse,
     CreatePodRequest,
     PodResponse,
+    ProviderInfo,
+    ProviderListResponse,
+    ProviderConfigRequest,
+    SetActiveProviderRequest,
+    GpuAvailabilityResponse,
+    PodListResponse,
+    CreatePodWithProviderRequest,
 )
 
 
@@ -49,7 +65,7 @@ def resolve_path(requested_path: str) -> Path:
     return target
 
 
-app = FastAPI()
+app = FastAPI(redirect_slashes=False)
 gpu_cache = TTLCache(maxsize=50, ttl = 60)
 pod_cache = TTLCache(maxsize = 100, ttl = 300)
 packages_cache = TTLCache(maxsize=1, ttl=300)  # 5 minutes cache for packages
@@ -67,20 +83,22 @@ else:
 error_utils = ErrorUtils()
 executor = NextZmqExecutor(error_utils=error_utils)
 metrics = DeviceMetrics()
-prime_api_key = load_api_key("PRIME_INTELLECT_API_KEY")
-prime_intellect = PrimeIntellectService(api_key=prime_api_key) if prime_api_key else None
 pod_manager: PodKernelManager | None = None
-data_manager = DataManager(prime_intellect=prime_intellect)
+pod_connection_error: str | None = None  # Store connection errors for status endpoint
+data_manager = DataManager()
 pod_monitor: PodMonitor | None = None
-if prime_intellect:
-    pod_monitor = PodMonitor(
-        prime_intellect=prime_intellect,
-        pod_cache=pod_cache,
-        update_callback=lambda msg: manager.broadcast_pod_update(msg)
-    )
 
 # LSP service for Python autocomplete
 lsp_service: LSPService | None = None
+
+# Claude AI service
+claude_api_key = load_api_key("CLAUDE_API_KEY")
+claude_service: ClaudeService | None = None
+if claude_api_key:
+    try:
+        claude_service = ClaudeService(api_key=claude_api_key)
+    except ImportError:
+        pass  # anthropic package not installed
 
 
 @app.on_event("startup")
@@ -90,9 +108,7 @@ async def startup_event():
     try:
         lsp_service = LSPService(workspace_root=BASE_DIR)
         await lsp_service.start()
-        print("[LSP] Pyright language server started successfully", file=sys.stderr, flush=True)
-    except Exception as e:
-        print(f"[LSP] Failed to start language server: {e}", file=sys.stderr, flush=True)
+    except Exception:
         lsp_service = None
 
 
@@ -104,12 +120,9 @@ async def shutdown_event():
     # Shutdown executor and worker process
     if executor and executor.worker_proc:
         try:
-            print("[EXECUTOR] Shutting down worker process...", file=sys.stderr, flush=True)
             executor.worker_proc.terminate()
             executor.worker_proc.wait(timeout=2)
-            print("[EXECUTOR] Worker process shutdown complete", file=sys.stderr, flush=True)
-        except Exception as e:
-            print(f"[EXECUTOR] Error during worker shutdown, forcing kill: {e}", file=sys.stderr, flush=True)
+        except Exception:
             try:
                 executor.worker_proc.kill()
             except Exception:
@@ -119,9 +132,8 @@ async def shutdown_event():
     if lsp_service:
         try:
             await lsp_service.shutdown()
-            print("[LSP] Language server shutdown complete", file=sys.stderr, flush=True)
-        except Exception as e:
-            print(f"[LSP] Error during shutdown: {e}", file=sys.stderr, flush=True)
+        except Exception:
+            pass
 
 
 @app.get("/api/packages")
@@ -159,12 +171,9 @@ async def list_installed_packages(force_refresh: bool = False):
                     result = {"packages": packages}
                     packages_cache[cache_key] = result
                     return result
-                else:
-                    print(f"[API/PACKAGES] Remote command failed (code {returncode}): {stderr}", file=sys.stderr, flush=True)
-                    # Fall through to local packages
-            except Exception as e:
-                print(f"[API/PACKAGES] Failed to fetch remote packages: {e}", file=sys.stderr, flush=True)
-                # Fall through to local packages
+                # Fall through to local packages on error
+            except Exception:
+                pass  # Fall through to local packages
 
         # Local packages (fallback or when not connected)
         packages = []
@@ -238,12 +247,9 @@ print(json.dumps({
                 if returncode == 0 and stdout.strip():
                     import json
                     return json.loads(stdout)
-                else:
-                    print(f"[API/METRICS] Remote command failed (code {returncode}): {stderr}", file=sys.stderr, flush=True)
-                    # Fall through to local metrics
-            except Exception as e:
-                print(f"[API/METRICS] Failed to fetch remote metrics: {e}", file=sys.stderr, flush=True)
-                # Fall through to local metrics
+                # Fall through to local metrics on error
+            except Exception:
+                pass  # Fall through to local metrics
 
         # Local metrics (fallback or when not connected)
         return metrics.get_all_devices()
@@ -463,15 +469,11 @@ class WebSocketManager:
             tasks.discard(task)
             # Check for exceptions in completed tasks
             try:
-                exc = task.exception()
-                if exc:
-                    print(f"[SERVER] Task raised exception: {exc}", file=sys.stderr, flush=True)
-                    import traceback
-                    traceback.print_exception(type(exc), exc, exc.__traceback__)
+                task.exception()
             except asyncio.CancelledError:
                 pass
-            except Exception as e:
-                print(f"[SERVER] Error in task_done_callback: {e}", file=sys.stderr, flush=True)
+            except Exception:
+                pass
 
         while True:
             try:
@@ -503,6 +505,9 @@ class WebSocketManager:
             "reset_kernel": self._handle_reset_kernel,
             "load_notebook": self._handle_load_notebook,
             "save_notebook": self._handle_save_notebook,
+            "claude_message": self._handle_claude_message,
+            "claude_apply_edit": self._handle_claude_apply_edit,
+            "claude_reject_edit": self._handle_claude_reject_edit,
         }
 
         handler = handlers.get(message_type)
@@ -529,8 +534,6 @@ class WebSocketManager:
             result = await self.executor.execute_cell(cell_index, source, websocket)
         except Exception as e:
             error_msg = str(e)
-            print(f"[SERVER ERROR] execute_cell failed: {error_msg}", file=sys.stderr, flush=True)
-
             # Send error to frontend
             result = {
                 'status': 'error',
@@ -608,8 +611,8 @@ class WebSocketManager:
             # Save the notebook after moving cells
             try:
                 self.notebook.save_to_file()
-            except Exception as e:
-                print(f"Warning: Failed to save notebook after moving cell: {e}", file=sys.stderr)
+            except Exception:
+                pass  # Silently continue if save fails
             await self.broadcast_notebook_update()
 
     async def _handle_load_notebook(self, websocket: WebSocket, data: dict):
@@ -634,13 +637,9 @@ class WebSocketManager:
             cell_index = None
 
         import sys
-        print(f"[SERVER] Interrupt request received for cell {cell_index}", file=sys.stderr, flush=True)
-
         # Perform the interrupt (this may take up to 1 second)
         # The execution handler will send the appropriate error and completion messages
         await self.executor.interrupt_kernel(cell_index=cell_index)
-
-        print(f"[SERVER] Interrupt completed, execution handler will send completion messages", file=sys.stderr, flush=True)
 
         # Note: We don't send completion messages here anymore because:
         # 1. For shell commands: AsyncSpecialCommandHandler._execute_shell_command sends them
@@ -648,8 +647,6 @@ class WebSocketManager:
         # Sending duplicate messages causes the frontend to get confused
 
     async def _handle_reset_kernel(self, websocket: WebSocket, data: dict):
-        import sys
-        print(f"[SERVER] Resetting kernel", file=sys.stderr, flush=True)
         self.executor.reset_kernel()
         self.notebook.clear_all_outputs()
 
@@ -662,6 +659,120 @@ class WebSocketManager:
             "data": {}
         })
         await self.broadcast_notebook_update()
+
+    async def _handle_claude_message(self, websocket: WebSocket, data: dict):
+        """Handle a message to Claude and stream the response."""
+        import uuid
+
+        if not claude_service:
+            await websocket.send_json({
+                "type": "claude_error",
+                "data": {"error": "Claude API key not configured. Please configure it in the Claude panel."}
+            })
+            return
+
+        message = data.get("message", "")
+        history = data.get("history", [])
+        model = data.get("model", "sonnet")  # Default to sonnet
+
+        if not message.strip():
+            await websocket.send_json({
+                "type": "claude_error",
+                "data": {"error": "Message cannot be empty"}
+            })
+            return
+
+        # Build context from notebook state
+        cells = self.notebook.cells
+        context = ClaudeCtx(
+            cells=cells,
+            gpu_info=None,  # Could fetch metrics here if needed
+            metrics=None,
+            packages=None
+        )
+
+        # Generate message ID
+        message_id = str(uuid.uuid4())
+
+        # Send stream start
+        await websocket.send_json({
+            "type": "claude_stream_start",
+            "data": {"messageId": message_id}
+        })
+
+        full_response = []
+        try:
+            async for chunk in claude_service.stream_response(message, context, history, model=model):
+                full_response.append(chunk)
+                await websocket.send_json({
+                    "type": "claude_stream_chunk",
+                    "data": {"messageId": message_id, "chunk": chunk}
+                })
+
+            # Parse edit blocks from full response
+            full_text = "".join(full_response)
+            proposed_edits = ClaudeService.parse_edit_blocks(full_text, cells)
+
+            # Convert edits to serializable format
+            edits_data = [
+                {
+                    "id": str(uuid.uuid4()),
+                    "cellIndex": edit.cell_index,
+                    "originalCode": edit.original_code,
+                    "newCode": edit.new_code,
+                    "explanation": edit.explanation,
+                    "status": "pending"
+                }
+                for edit in proposed_edits
+            ]
+
+            await websocket.send_json({
+                "type": "claude_stream_end",
+                "data": {
+                    "messageId": message_id,
+                    "fullResponse": full_text,
+                    "proposedEdits": edits_data
+                }
+            })
+
+        except Exception as e:
+            await websocket.send_json({
+                "type": "claude_error",
+                "data": {"error": f"Error communicating with Claude: {str(e)}"}
+            })
+
+    async def _handle_claude_apply_edit(self, websocket: WebSocket, data: dict):
+        """Apply a proposed edit to a cell."""
+        cell_index = data.get("cellIndex")
+        new_code = data.get("newCode", "")
+        edit_id = data.get("editId", "")
+
+        if cell_index is None or not (0 <= cell_index < len(self.notebook.cells)):
+            await websocket.send_json({
+                "type": "claude_error",
+                "data": {"error": f"Invalid cell index: {cell_index}"}
+            })
+            return
+
+        # Update the cell source
+        self.notebook.update_cell(cell_index, new_code)
+
+        # Broadcast the notebook update
+        await self.broadcast_notebook_update()
+
+        await websocket.send_json({
+            "type": "claude_edit_applied",
+            "data": {"editId": edit_id, "cellIndex": cell_index}
+        })
+
+    async def _handle_claude_reject_edit(self, websocket: WebSocket, data: dict):
+        """Reject a proposed edit (just acknowledge, no action needed on notebook)."""
+        edit_id = data.get("editId", "")
+
+        await websocket.send_json({
+            "type": "claude_edit_rejected",
+            "data": {"editId": edit_id}
+        })
 
     async def _send_error(self, websocket: WebSocket, error_message: str):
         await websocket.send_json({"type": "error", "data": {"error": error_message}})
@@ -676,74 +787,177 @@ async def websocket_endpoint(websocket: WebSocket):
     await manager.handle_message_loop(websocket)
 
 
-# GPU connection API
-@app.get("/api/gpu/config", response_model=ConfigStatusResponse)
-async def get_gpu_config() -> ConfigStatusResponse:
-    """Check if Prime Intellect API is configured."""
-    return ConfigStatusResponse(configured=prime_intellect is not None)
+# ============================================================================
+# Multi-Provider GPU API
+# ============================================================================
+
+@app.get("/api/gpu/providers")
+async def list_gpu_providers():
+    """List all available GPU providers with their configuration status."""
+    providers = list_all_providers()
+    active = get_active_provider_name()
+
+    return {
+        "providers": [
+            {
+                "name": p.name,
+                "display_name": p.display_name,
+                "api_key_env_name": p.api_key_env_name,
+                "supports_ssh": p.supports_ssh,
+                "dashboard_url": p.dashboard_url,
+                "configured": p.configured,
+                "is_active": p.is_active
+            }
+            for p in providers
+        ],
+        "active_provider": active
+    }
 
 
-@app.post("/api/gpu/config", response_model=ApiKeyResponse)
-async def set_gpu_config(request: ApiKeyRequest) -> ApiKeyResponse:
-    """Save Prime Intellect API key to user config (~/.morecompute/config.json) and reinitialize service."""
-    global prime_intellect, pod_monitor
+@app.post("/api/gpu/providers/{provider_name}/config")
+async def configure_gpu_provider(provider_name: str, request: ProviderConfigRequest):
+    """Configure a GPU provider with API key."""
+    global pod_monitor
 
-    if not request.api_key.strip():
-        raise HTTPException(status_code=400, detail="API key is required")
+    # Handle Modal's special case (requires two tokens)
+    if provider_name == "modal" and request.token_secret:
+        # Save token secret separately
+        save_api_key("MODAL_TOKEN_SECRET", request.token_secret)
 
-    try:
-        save_api_key("PRIME_INTELLECT_API_KEY", request.api_key)
-        prime_intellect = PrimeIntellectService(api_key=request.api_key)
-        if prime_intellect:
+    success = configure_provider(provider_name, request.api_key, make_active=request.make_active)
+
+    if not success:
+        raise HTTPException(status_code=400, detail=f"Provider '{provider_name}' not found")
+
+    # If this is being set as active, update the pod monitor
+    if request.make_active:
+        provider = get_provider(provider_name)
+        if provider:
             pod_monitor = PodMonitor(
-                prime_intellect=prime_intellect,
+                provider_service=provider,
                 pod_cache=pod_cache,
                 update_callback=lambda msg: manager.broadcast_pod_update(msg)
             )
 
-        return ApiKeyResponse(configured=True, message="API key saved successfully")
+    return {
+        "configured": True,
+        "provider": provider_name,
+        "is_active": request.make_active
+    }
 
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to save API key: {exc}")
+
+@app.post("/api/gpu/providers/active")
+async def set_active_gpu_provider(request: SetActiveProviderRequest):
+    """Set the active GPU provider."""
+    success = set_active_provider(request.provider)
+    if not success:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot activate provider '{request.provider}'. Make sure it is configured with a valid API key."
+        )
+
+    # Update pod monitor with new provider
+    global pod_monitor
+    provider = get_provider(request.provider)
+    if provider:
+        pod_monitor = PodMonitor(
+            provider_service=provider,
+            pod_cache=pod_cache,
+            update_callback=lambda msg: manager.broadcast_pod_update(msg)
+        )
+
+    return {
+        "active_provider": request.provider,
+        "success": True
+    }
 
 
-@app.get("/api/gpu/availability")
-async def get_gpu_availability(
+@app.get("/api/gpu/providers/{provider_name}/availability")
+async def get_provider_gpu_availability(
+    provider_name: str,
     regions: list[str] | None = None,
     gpu_count: int | None = None,
     gpu_type: str | None = None,
-    security: str | None = None
+    # RunPod specific filters
+    secure_cloud: bool | None = None,
+    community_cloud: bool | None = None,
+    # Vast.ai specific filters
+    verified: bool | None = None,
+    min_reliability: float | None = None,
+    min_gpu_ram: float | None = None
 ):
-    """Get available GPU resources from Prime Intellect."""
-    if not prime_intellect:
-        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    """Get available GPU resources from a specific provider.
+
+    Args:
+        provider_name: Provider identifier (runpod, lambda_labs, vastai)
+        regions: Filter by region
+        gpu_count: Filter by GPU count
+        gpu_type: Filter by GPU type (partial match)
+        secure_cloud: RunPod - only show Secure Cloud GPUs
+        community_cloud: RunPod - only show Community Cloud GPUs
+        verified: Vast.ai - only show verified hosts
+        min_reliability: Vast.ai - minimum reliability score (0.0-1.0)
+        min_gpu_ram: Vast.ai - minimum GPU RAM in GB
+    """
+    provider = get_provider(provider_name)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+
+    if not provider.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider.PROVIDER_DISPLAY_NAME} API key not configured"
+        )
 
     cache_key = make_cache_key(
-        "gpu_avail",
-        regions = regions,
-        gpu_count = gpu_count,
-        gpu_type = gpu_type,
-        security=security
+        f"gpu_avail_{provider_name}",
+        regions=regions,
+        gpu_count=gpu_count,
+        gpu_type=gpu_type,
+        secure_cloud=secure_cloud,
+        community_cloud=community_cloud,
+        verified=verified,
+        min_reliability=min_reliability,
+        min_gpu_ram=min_gpu_ram
     )
 
     if cache_key in gpu_cache:
         return gpu_cache[cache_key]
 
-    #cache miss
-    result = await prime_intellect.get_gpu_availability(regions, gpu_count, gpu_type, security)
+    result = await provider.get_gpu_availability(
+        regions=regions,
+        gpu_count=gpu_count,
+        gpu_type=gpu_type,
+        secure_cloud=secure_cloud,
+        community_cloud=community_cloud,
+        verified=verified,
+        min_reliability=min_reliability,
+        min_gpu_ram=min_gpu_ram
+    )
     gpu_cache[cache_key] = result
     return result
 
-@app.get("/api/gpu/pods")
-async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int = 0):
-    """Get list of user's GPU pods."""
-    if not prime_intellect:
-        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+
+@app.get("/api/gpu/providers/{provider_name}/pods")
+async def get_provider_pods(
+    provider_name: str,
+    status: str | None = None,
+    limit: int = 100,
+    offset: int = 0
+):
+    """Get list of pods from a specific provider."""
+    provider = get_provider(provider_name)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+
+    if not provider.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider.PROVIDER_DISPLAY_NAME} API key not configured"
+        )
 
     cache_key = make_cache_key(
-        "gpu_pod",
+        f"gpu_pods_{provider_name}",
         status=status,
         limit=limit,
         offset=offset
@@ -752,28 +966,37 @@ async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int 
     if cache_key in pod_cache:
         return pod_cache[cache_key]
 
-    # Cache miss: fetch from API
-    result = await prime_intellect.get_pods(status, limit, offset)
+    result = await provider.get_pods(status=status, limit=limit, offset=offset)
     pod_cache[cache_key] = result
     return result
 
 
-@app.post("/api/gpu/pods")
-async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
-    """Create a new GPU pod."""
-    import sys
+@app.post("/api/gpu/providers/{provider_name}/pods")
+async def create_provider_pod(provider_name: str, pod_request: CreatePodRequest):
+    """Create a new GPU pod with a specific provider."""
+    provider = get_provider(provider_name)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
 
-    if not prime_intellect or not pod_monitor:
-        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
-
-    print(f"[CREATE POD] Received request: {pod_request.model_dump()}", file=sys.stderr, flush=True)
+    if not provider.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider.PROVIDER_DISPLAY_NAME} API key not configured"
+        )
 
     try:
-        result = await prime_intellect.create_pod(pod_request)
-        print(f"[CREATE POD] Success: {result}", file=sys.stderr, flush=True)
+        result = await provider.create_pod(pod_request)
 
         # Clear cache and start monitoring
         pod_cache.clear()
+
+        # Create/update pod monitor for this provider and start monitoring
+        global pod_monitor
+        pod_monitor = PodMonitor(
+            provider_service=provider,
+            pod_cache=pod_cache,
+            update_callback=lambda msg: manager.broadcast_pod_update(msg)
+        )
         await pod_monitor.start_monitoring(result.id)
 
         return result
@@ -782,30 +1005,263 @@ async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
         if e.status_code == 402:
             raise HTTPException(
                 status_code=402,
-                detail="Insufficient funds in your Prime Intellect wallet. Please add credits at https://app.primeintellect.ai/dashboard/billing"
+                detail=f"Insufficient funds in your {provider.PROVIDER_DISPLAY_NAME} account."
             )
         elif e.status_code in (401, 403):
             raise HTTPException(
                 status_code=e.status_code,
-                detail="Authentication failed. Please check your Prime Intellect API key."
+                detail=f"Authentication failed. Please check your {provider.PROVIDER_DISPLAY_NAME} API key."
             )
         else:
-            print(f"[CREATE POD] Error: {e}", file=sys.stderr, flush=True)
+            raise
+
+
+@app.get("/api/gpu/providers/{provider_name}/pods/{pod_id}")
+async def get_provider_pod(provider_name: str, pod_id: str):
+    """Get details of a specific pod from a provider."""
+    provider = get_provider(provider_name)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+
+    if not provider.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider.PROVIDER_DISPLAY_NAME} API key not configured"
+        )
+
+    return await provider.get_pod(pod_id)
+
+
+@app.delete("/api/gpu/providers/{provider_name}/pods/{pod_id}")
+async def delete_provider_pod(provider_name: str, pod_id: str):
+    """Delete a pod from a specific provider."""
+    provider = get_provider(provider_name)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+
+    if not provider.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider.PROVIDER_DISPLAY_NAME} API key not configured"
+        )
+
+    result = await provider.delete_pod(pod_id)
+    pod_cache.clear()
+    return result
+
+
+@app.get("/api/gpu/providers/{provider_name}/ssh-keys")
+async def get_provider_ssh_keys(provider_name: str):
+    """Get list of SSH keys registered with a provider (Lambda Labs only)."""
+    provider = get_provider(provider_name)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+
+    if not provider.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider.PROVIDER_DISPLAY_NAME} API key not configured"
+        )
+
+    # Only Lambda Labs supports listing SSH keys via API
+    if provider_name != "lambda_labs":
+        return {
+            "supported": False,
+            "message": f"{provider.PROVIDER_DISPLAY_NAME} does not support listing SSH keys via API. Please check your provider's dashboard.",
+            "dashboard_url": provider.DASHBOARD_URL
+        }
+
+    try:
+        # Get detailed SSH key info
+        detailed_keys = await provider.get_ssh_keys_detailed()
+        key_names = await provider._get_ssh_key_ids()
+
+        return {
+            "supported": True,
+            "ssh_keys": key_names,
+            "ssh_keys_detailed": detailed_keys,
+            "selected_key": key_names[0] if key_names else None,
+            "note": "ed25519 keys are preferred. The first key shown will be used when creating new instances."
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to fetch SSH keys: {str(e)}")
+
+
+@app.post("/api/gpu/providers/{provider_name}/pods/{pod_id}/connect")
+async def connect_to_provider_pod(provider_name: str, pod_id: str):
+    """Connect to a GPU pod from a specific provider."""
+    global pod_manager
+
+    provider = get_provider(provider_name)
+    if not provider:
+        raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found")
+
+    if not provider.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail=f"{provider.PROVIDER_DISPLAY_NAME} API key not configured"
+        )
+
+    if not provider.SUPPORTS_SSH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{provider.PROVIDER_DISPLAY_NAME} does not support SSH connections. Use the provider's SDK for code execution."
+        )
+
+    if pod_manager is None:
+        pod_manager = PodKernelManager(provider_service=provider)
+    else:
+        # Update the provider on the pod manager
+        pod_manager.provider_service = provider
+        pod_manager.provider_type = provider_name
+
+    # Start the connection in the background
+    asyncio.create_task(_connect_to_pod_background(pod_id))
+
+    return {
+        "status": "connecting",
+        "message": "Connection initiated. Check status endpoint for updates.",
+        "pod_id": pod_id,
+        "provider": provider_name
+    }
+
+
+# ============================================================================
+# Legacy GPU API (Prime Intellect - for backwards compatibility)
+# ============================================================================
+
+# GPU connection API (legacy endpoints - use provider system)
+@app.get("/api/gpu/config", response_model=ConfigStatusResponse)
+async def get_gpu_config() -> ConfigStatusResponse:
+    """Check if any GPU provider is configured."""
+    active_provider = get_active_provider()
+    if active_provider and active_provider.is_configured:
+        return ConfigStatusResponse(configured=True)
+    return ConfigStatusResponse(configured=False)
+
+
+@app.post("/api/gpu/config", response_model=ApiKeyResponse)
+async def set_gpu_config(request: ApiKeyRequest) -> ApiKeyResponse:
+    """Legacy endpoint - use /api/gpu/providers/{provider}/config instead."""
+    raise HTTPException(
+        status_code=400,
+        detail="Please use /api/gpu/providers/{provider}/config to configure a specific provider"
+    )
+
+
+@app.get("/api/gpu/availability")
+async def get_gpu_availability(
+    regions: list[str] | None = None,
+    gpu_count: int | None = None,
+    gpu_type: str | None = None,
+    # RunPod specific filters
+    secure_cloud: bool | None = None,
+    community_cloud: bool | None = None,
+    # Vast.ai specific filters
+    verified: bool | None = None,
+    min_reliability: float | None = None,
+    min_gpu_ram: float | None = None
+):
+    """Get available GPU resources from active provider."""
+    active_provider = get_active_provider()
+    if not active_provider or not active_provider.is_configured:
+        raise HTTPException(status_code=503, detail="No GPU provider configured. Please select and configure a provider.")
+
+    cache_key = make_cache_key(
+        f"gpu_avail_{active_provider.PROVIDER_NAME}",
+        regions=regions,
+        gpu_count=gpu_count,
+        gpu_type=gpu_type,
+        secure_cloud=secure_cloud,
+        community_cloud=community_cloud,
+        verified=verified,
+        min_reliability=min_reliability,
+        min_gpu_ram=min_gpu_ram
+    )
+
+    if cache_key in gpu_cache:
+        return gpu_cache[cache_key]
+
+    result = await active_provider.get_gpu_availability(
+        regions=regions,
+        gpu_count=gpu_count,
+        gpu_type=gpu_type,
+        secure_cloud=secure_cloud,
+        community_cloud=community_cloud,
+        verified=verified,
+        min_reliability=min_reliability,
+        min_gpu_ram=min_gpu_ram
+    )
+    gpu_cache[cache_key] = result
+    return result
+
+@app.get("/api/gpu/pods")
+async def get_gpu_pods(status: str | None = None, limit: int = 100, offset: int = 0):
+    """Get list of user's GPU pods from active provider."""
+    active_provider = get_active_provider()
+    if not active_provider or not active_provider.is_configured:
+        raise HTTPException(status_code=503, detail="No GPU provider configured. Please select and configure a provider.")
+
+    cache_key = make_cache_key(
+        f"gpu_pod_{active_provider.PROVIDER_NAME}",
+        status=status,
+        limit=limit,
+        offset=offset
+    )
+
+    if cache_key in pod_cache:
+        return pod_cache[cache_key]
+
+    result = await active_provider.get_pods(status=status, limit=limit, offset=offset)
+    pod_cache[cache_key] = result
+    return result
+
+
+@app.post("/api/gpu/pods")
+async def create_gpu_pod(pod_request: CreatePodRequest) -> PodResponse:
+    """Create a new GPU pod with active provider."""
+    active_provider = get_active_provider()
+    if not active_provider or not active_provider.is_configured:
+        raise HTTPException(status_code=503, detail="No GPU provider configured. Please select and configure a provider.")
+
+    try:
+        result = await active_provider.create_pod(pod_request)
+
+        # Clear cache and start monitoring
+        pod_cache.clear()
+        if pod_monitor:
+            await pod_monitor.start_monitoring(result.id)
+
+        return result
+
+    except HTTPException as e:
+        if e.status_code == 402:
+            raise HTTPException(
+                status_code=402,
+                detail=f"Insufficient funds. Please add credits to your {active_provider.PROVIDER_DISPLAY_NAME} account."
+            )
+        elif e.status_code in (401, 403):
+            raise HTTPException(
+                status_code=e.status_code,
+                detail=f"Authentication failed. Please check your {active_provider.PROVIDER_DISPLAY_NAME} API key."
+            )
+        else:
             raise
 
 
 @app.get("/api/gpu/pods/{pod_id}")
 async def get_gpu_pod(pod_id: str) -> PodResponse:
     """Get details of a specific GPU pod."""
-    if not prime_intellect:
-        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    active_provider = get_active_provider()
+    if not active_provider or not active_provider.is_configured:
+        raise HTTPException(status_code=503, detail="No GPU provider configured. Please select and configure a provider.")
 
-    cache_key = make_cache_key("gpu_pod_detail", pod_id=pod_id)
+    cache_key = make_cache_key(f"gpu_pod_detail_{active_provider.PROVIDER_NAME}", pod_id=pod_id)
 
     if cache_key in pod_cache:
         return pod_cache[cache_key]
 
-    result = await prime_intellect.get_pod(pod_id)
+    result = await active_provider.get_pod(pod_id)
     pod_cache[cache_key] = result
     return result
 
@@ -813,22 +1269,23 @@ async def get_gpu_pod(pod_id: str) -> PodResponse:
 @app.delete("/api/gpu/pods/{pod_id}")
 async def delete_gpu_pod(pod_id: str):
     """Delete a GPU pod."""
-    if not prime_intellect:
-        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    active_provider = get_active_provider()
+    if not active_provider or not active_provider.is_configured:
+        raise HTTPException(status_code=503, detail="No GPU provider configured. Please select and configure a provider.")
 
-    result = await prime_intellect.delete_pod(pod_id)
+    result = await active_provider.delete_pod(pod_id)
     pod_cache.clear()
     return result
 
 
 async def _connect_to_pod_background(pod_id: str):
     """Background task to connect to pod without blocking the HTTP response."""
-    global pod_manager
-    import sys
+    global pod_manager, pod_connection_error
+
+    # Clear any previous error
+    pod_connection_error = None
 
     try:
-        print(f"[CONNECT BACKGROUND] Starting connection to pod {pod_id}", file=sys.stderr, flush=True)
-
         # Disconnect from any existing pod first
         # TO-DO have to fix this for multi-gpu
         if pod_manager and pod_manager.pod is not None:
@@ -845,21 +1302,21 @@ async def _connect_to_pod_background(pod_id: str):
                 pub_addr=addresses["pub_addr"],
                 is_remote=True  # Critical: Tell executor this is a remote worker
             )
-            print(f"[CONNECT BACKGROUND] Successfully connected to pod {pod_id}, executor.is_remote=True", file=sys.stderr, flush=True)
         else:
-            # Connection failed - clean up
-            print(f"[CONNECT BACKGROUND] Failed to connect: {result}", file=sys.stderr, flush=True)
+            # Connection failed - store the error message
+            error_msg = result.get("message", "Connection failed")
+            pod_connection_error = error_msg
             if pod_manager and pod_manager.pod:
                 await pod_manager.disconnect()
 
     except Exception as e:
-        print(f"[CONNECT BACKGROUND] Error: {e}", file=sys.stderr, flush=True)
+        pod_connection_error = str(e)
         # Clean up on error
         if pod_manager and pod_manager.pod:
             try:
                 await pod_manager.disconnect()
-            except Exception as cleanup_err:
-                print(f"[CONNECT BACKGROUND] Cleanup error: {cleanup_err}", file=sys.stderr, flush=True)
+            except Exception:
+                pass
 
 
 @app.post("/api/gpu/pods/{pod_id}/connect")
@@ -867,11 +1324,12 @@ async def connect_to_pod(pod_id: str):
     """Connect to a GPU pod and establish SSH tunnel for remote execution."""
     global pod_manager
 
-    if not prime_intellect:
-        raise HTTPException(status_code=503, detail="Prime Intellect API key not configured")
+    active_provider = get_active_provider()
+    if not active_provider or not active_provider.is_configured:
+        raise HTTPException(status_code=503, detail="No GPU provider configured. Please select and configure a provider.")
 
     if pod_manager is None:
-        pod_manager = PodKernelManager(pi_service=prime_intellect)
+        pod_manager = PodKernelManager(provider_service=active_provider)
 
     # Start the connection in the background
     asyncio.create_task(_connect_to_pod_background(pod_id))
@@ -905,9 +1363,21 @@ async def get_pod_connection_status():
     """
     Get status of current pod connection.
 
-    Returns connection status AND any running pods from Prime Intellect API.
+    Returns connection status AND any running pods from the active provider's API.
     This ensures we don't lose track of running pods after backend restart.
     """
+    global pod_connection_error
+
+    # Check if there's a connection error to report
+    if pod_connection_error:
+        error_msg = pod_connection_error
+        pod_connection_error = None  # Clear after reporting
+        return {
+            "connected": False,
+            "pod": None,
+            "error": error_msg
+        }
+
     # Check local connection state first
     local_status = None
     if pod_manager is not None:
@@ -915,10 +1385,11 @@ async def get_pod_connection_status():
         if local_status.get("connected"):
             return local_status
 
-    # If not locally connected, check Prime Intellect API for any running pods
-    if prime_intellect:
+    # If not locally connected, check the active provider's API for any running pods
+    active_provider = get_active_provider()
+    if active_provider and active_provider.is_configured:
         try:
-            pods_response = await prime_intellect.get_pods(status=None, limit=100, offset=0)
+            pods_response = await active_provider.get_pods(status=None, limit=100, offset=0)
             pods = pods_response.get("data", [])
 
             # Find any ACTIVE pods with SSH connection info
@@ -942,10 +1413,11 @@ async def get_pod_connection_status():
                         "price_hr": first_pod.get("priceHr"),
                         "ssh_connection": first_pod.get("sshConnection")
                     },
+                    "provider": active_provider.PROVIDER_NAME,
                     "message": "Found running pod but not connected. Backend may have restarted."
                 }
-        except Exception as e:
-            print(f"[CONNECTION STATUS] Error checking Prime Intellect API: {e}", file=sys.stderr, flush=True)
+        except Exception:
+            pass
 
     # No connection and no running pods found
     return {"connected": False, "pod": None}
@@ -964,7 +1436,8 @@ async def get_worker_logs():
     if not host_part:
         raise HTTPException(status_code=500, detail="Invalid SSH connection")
 
-    ssh_host = host_part.split("@")[1]
+    # Extract user and host from user@host
+    ssh_user, ssh_host = host_part.split("@")
     ssh_port = ssh_parts[ssh_parts.index("-p") + 1] if "-p" in ssh_parts else "22"
 
     ssh_key = pod_manager._get_ssh_key()
@@ -975,7 +1448,7 @@ async def get_worker_logs():
         "-o", "StrictHostKeyChecking=no",
         "-o", "UserKnownHostsFile=/dev/null",
         "-o", "BatchMode=yes",
-        f"root@{ssh_host}",
+        f"{ssh_user}@{ssh_host}",
         "cat /tmp/worker.log 2>&1 || echo 'No worker log found'"
     ])
 
@@ -1100,15 +1573,16 @@ async def create_dataset_disk(request: Request):
     Returns:
         Dict with disk_id, mount_path, instructions
     """
-    if not prime_intellect:
-        raise HTTPException(status_code=503, detail="Prime Intellect API not configured")
+    active_provider = get_active_provider()
+    if not active_provider or not active_provider.is_configured:
+        raise HTTPException(status_code=503, detail="No GPU provider configured. Please select and configure a provider.")
 
     try:
         body = await request.json()
         pod_id = body.get("pod_id")
         disk_name = body.get("disk_name")
         size_gb = body.get("size_gb")
-        provider_type = body.get("provider_type", "runpod")
+        provider_type = body.get("provider_type", active_provider.PROVIDER_NAME)
 
         if not pod_id or not disk_name or not size_gb:
             raise HTTPException(status_code=400, detail="pod_id, disk_name, and size_gb are required")
@@ -1155,3 +1629,37 @@ async def get_subset_code(
         return result
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to generate subset code: {exc}")
+
+
+# ============================================================================
+# Claude AI API
+# ============================================================================
+
+@app.get("/api/claude/config")
+async def get_claude_config():
+    """Check if Claude API is configured."""
+    return {"configured": claude_service is not None}
+
+
+@app.post("/api/claude/config")
+async def set_claude_config(request: Request):
+    """Save Claude API key to user config and reinitialize service."""
+    global claude_service
+
+    body = await request.json()
+    api_key = body.get("api_key", "").strip()
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API key is required")
+
+    try:
+        # Test the API key by creating a service
+        test_service = ClaudeService(api_key=api_key)
+        # If successful, save and use it
+        save_api_key("CLAUDE_API_KEY", api_key)
+        claude_service = test_service
+        return {"configured": True, "message": "Claude API key saved successfully"}
+    except ImportError as e:
+        raise HTTPException(status_code=500, detail=f"anthropic package not installed: {e}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid API key. Please check your credentials.")

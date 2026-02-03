@@ -18,7 +18,9 @@ import {
 } from "@radix-ui/react-icons";
 import { Check, X } from "lucide-react";
 import { loadMonacoThemes } from "@/lib/monaco-themes";
-import { loadSettings } from "@/lib/settings";
+import { loadSettings, type NotebookSettings } from "@/lib/settings";
+import { useClaude } from "@/contexts/ClaudeContext";
+import { useInlineDiff } from "@/hooks/useInlineDiff";
 
 interface CellProps {
   cell: CellType;
@@ -230,12 +232,103 @@ export const MonacoCell: React.FC<CellProps> = ({
   const disposablesRef = useRef<monaco.IDisposable[]>([]);
   const isUnmountingRef = useRef(false);
 
+  // Claude AI integration
+  const { pendingEdits, applyEdit, rejectEdit } = useClaude();
+  const pendingEdit = pendingEdits.get(index);
+
   const [isEditing, setIsEditing] = useState(
     () => cell.cell_type === "code" || !cell.source?.trim()
   );
   const [elapsedLabel, setElapsedLabel] = useState<string | null>(
     cell.execution_time ?? null
   );
+
+  // Track if we've applied the pending edit preview
+  const appliedEditIdRef = useRef<string | null>(null);
+  const originalCodeRef = useRef<string | null>(null);
+  const isApplyingPreviewRef = useRef(false);
+
+  // Handle pending edit: show new code in editor (only if claudeAutoPreview is enabled)
+  useEffect(() => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const model = editor.getModel();
+    if (!model) return;
+
+    // Check if auto-preview is enabled in settings
+    const settings = loadSettings();
+    const autoPreviewEnabled = settings.claudeAutoPreview;
+
+    if (pendingEdit && pendingEdit.status === "pending" && autoPreviewEnabled) {
+      // Only apply if we haven't already applied this edit's preview
+      if (appliedEditIdRef.current !== pendingEdit.id) {
+        // Store original code for reverting
+        originalCodeRef.current = model.getValue();
+        // Update editor to show new code (skip the onUpdate callback)
+        const currentValue = model.getValue();
+        if (currentValue !== pendingEdit.newCode) {
+          isApplyingPreviewRef.current = true;
+          model.setValue(pendingEdit.newCode);
+          isApplyingPreviewRef.current = false;
+        }
+        appliedEditIdRef.current = pendingEdit.id;
+      }
+    } else if (appliedEditIdRef.current && !pendingEdit) {
+      // Edit was rejected or cleared - restore original if we have it
+      // Note: If applied, the notebook update will sync the content anyway
+      appliedEditIdRef.current = null;
+      originalCodeRef.current = null;
+    }
+  }, [pendingEdit]);
+
+  // Custom handlers for diff that restore original on reject
+  const handleApplyEdit = useCallback((editId: string) => {
+    appliedEditIdRef.current = null;
+    originalCodeRef.current = null;
+    applyEdit(editId);
+  }, [applyEdit]);
+
+  const handleRejectEdit = useCallback((editId: string) => {
+    const editor = editorRef.current;
+    const model = editor?.getModel();
+
+    // Restore original code before rejecting
+    if (model && originalCodeRef.current !== null) {
+      const original = originalCodeRef.current;
+      // Clear refs before setting value to prevent re-triggering preview
+      appliedEditIdRef.current = null;
+      originalCodeRef.current = null;
+      // Restore original - we DO want to trigger onUpdate here to sync state
+      model.setValue(original);
+    } else {
+      appliedEditIdRef.current = null;
+      originalCodeRef.current = null;
+    }
+
+    rejectEdit(editId);
+  }, [rejectEdit]);
+
+  // Check if auto-preview is enabled (for diff decorations)
+  const [autoPreviewEnabled, setAutoPreviewEnabled] = useState(() => loadSettings().claudeAutoPreview);
+
+  // Listen for settings changes
+  useEffect(() => {
+    const handleSettingsChange = () => {
+      setAutoPreviewEnabled(loadSettings().claudeAutoPreview);
+    };
+    window.addEventListener('storage', handleSettingsChange);
+    return () => window.removeEventListener('storage', handleSettingsChange);
+  }, []);
+
+  // Inline diff for Claude AI edits (only when auto-preview is enabled)
+  const { hasDiff } = useInlineDiff({
+    editor: editorRef.current,
+    cellIndex: index,
+    pendingEdit: autoPreviewEnabled ? pendingEdit : undefined, // Only pass edit if auto-preview enabled
+    onApply: handleApplyEdit,
+    onReject: handleRejectEdit,
+  });
 
   // ============================================================================
   // UTILITIES
@@ -359,7 +452,8 @@ export const MonacoCell: React.FC<CellProps> = ({
 
     // Handle content changes
     const changeDisposable = editor.onDidChangeModelContent(() => {
-      if (!isUnmountingRef.current) {
+      // Skip update during preview application or unmounting
+      if (!isUnmountingRef.current && !isApplyingPreviewRef.current) {
         onUpdate(indexRef.current, editor.getValue());
       }
     });
@@ -577,7 +671,7 @@ export const MonacoCell: React.FC<CellProps> = ({
 
       {/* Main Cell Container */}
       <div
-        className={`cell ${isActive ? "active" : ""} ${isExecuting ? "executing" : ""} ${isMarkdownWithContent ? "markdown-display-mode" : ""}`}
+        className={`cell ${isActive ? "active" : ""} ${isExecuting ? "executing" : ""} ${isMarkdownWithContent ? "markdown-display-mode" : ""} ${hasDiff ? "has-pending-diff" : ""}`}
         data-cell-index={index}
       >
         {/* Hover Controls */}
@@ -687,7 +781,7 @@ export const MonacoCell: React.FC<CellProps> = ({
                     },
                     contextmenu: true,
                     folding: cell.cell_type === "code",
-                    glyphMargin: false,
+                    glyphMargin: hasDiff,
                     lineDecorationsWidth: 0,
                     lineNumbersMinChars: 3,
                     renderLineHighlight: "none", // Remove grey rectangle
@@ -698,7 +792,7 @@ export const MonacoCell: React.FC<CellProps> = ({
                     overviewRulerBorder: false,
                     overviewRulerLanes: 0,
                     // NOTE: fixedOverflowWidgets has known positioning bugs in 2024 - disabled
-                    padding: { top: 8, bottom: 8, left: 8 }, // All padding managed by Monaco
+                    padding: { top: 8, bottom: 8 }, // All padding managed by Monaco
                     scrollbar: {
                       vertical: "auto",
                       horizontal: "auto",

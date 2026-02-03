@@ -2,5 +2,5 @@
 MoreCompute: An interactive, real-time Python notebook
 """
 
-__version__ = "0.1.0"
+from morecompute.__version__ import __version__
 

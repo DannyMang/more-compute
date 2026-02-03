@@ -11,6 +11,8 @@ export interface GPUPod {
   region: string;
   costPerHour: number;
   sshConnection: string | null;
+  provider?: string;  // Provider name (e.g., "runpod", "lambda_labs", "prime_intellect")
+  gpuCount?: number;  // Number of GPUs
 }
 
 export type ConnectionState = 'provisioning' | 'deploying' | 'connected' | null;
@@ -99,7 +101,6 @@ export const PodWebSocketProvider: React.FC<PodWebSocketProviderProps> = ({ chil
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {
-      console.log('[PodWebSocket] Connected');
       setIsConnected(true);
       reconnectAttemptsRef.current = 0;
     };
@@ -116,8 +117,17 @@ export const PodWebSocketProvider: React.FC<PodWebSocketProviderProps> = ({ chil
 
           if (isFullyReady) {
             uiStatus = "running";
-          } else if (podData.status === "ACTIVE" || podData.status === "PROVISIONING" || podData.status === "PENDING") {
+          } else if (podData.status === "ACTIVE" || podData.status === "PROVISIONING" || podData.status === "PENDING" || podData.status === "STARTING") {
             uiStatus = "starting";
+          }
+
+          // Check for auto-connect callback - do this OUTSIDE of setGpuPods to avoid closure issues
+          const callback = autoConnectCallbacksRef.current.get(podData.pod_id);
+          if (callback && isFullyReady) {
+            autoConnectCallbacksRef.current.delete(podData.pod_id);
+            setTimeout(() => {
+              callback(podData.pod_id);
+            }, 5000);
           }
 
           // Update pod in the list
@@ -127,7 +137,6 @@ export const PodWebSocketProvider: React.FC<PodWebSocketProviderProps> = ({ chil
             if (existingPodIndex >= 0) {
               // Update existing pod
               const updatedPods = [...prevPods];
-              const wasStarting = prevPods[existingPodIndex].status === "starting";
 
               updatedPods[existingPodIndex] = {
                 id: podData.pod_id,
@@ -137,21 +146,9 @@ export const PodWebSocketProvider: React.FC<PodWebSocketProviderProps> = ({ chil
                 region: prevPods[existingPodIndex].region,
                 costPerHour: podData.price_hr,
                 sshConnection: podData.ssh_connection || null,
+                provider: podData.provider || prevPods[existingPodIndex].provider,
+                gpuCount: podData.gpu_count || prevPods[existingPodIndex].gpuCount,
               };
-
-              // Trigger auto-connect callback if pod just became ready
-              // Small delay to ensure SSH is accepting connections
-              if (wasStarting && isFullyReady) {
-                console.log(`[PodWebSocket] Pod ${podData.pod_id} is ready, scheduling auto-connect in 5s`);
-                const callback = autoConnectCallbacksRef.current.get(podData.pod_id);
-                if (callback) {
-                  setTimeout(() => {
-                    console.log(`[PodWebSocket] Triggering auto-connect for pod ${podData.pod_id}`);
-                    callback(podData.pod_id);
-                  }, 5000); // Short delay, backend now handles retries
-                  autoConnectCallbacksRef.current.delete(podData.pod_id);
-                }
-              }
 
               return updatedPods;
             } else {
@@ -166,6 +163,8 @@ export const PodWebSocketProvider: React.FC<PodWebSocketProviderProps> = ({ chil
                   region: "Unknown",
                   costPerHour: podData.price_hr,
                   sshConnection: podData.ssh_connection || null,
+                  provider: podData.provider,
+                  gpuCount: podData.gpu_count,
                 },
               ];
             }
@@ -182,21 +181,17 @@ export const PodWebSocketProvider: React.FC<PodWebSocketProviderProps> = ({ chil
     };
 
     ws.onclose = () => {
-      console.log('[PodWebSocket] Disconnected');
       setIsConnected(false);
       wsRef.current = null;
 
       // Attempt to reconnect with exponential backoff
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
-        console.log(`[PodWebSocket] Reconnecting in ${delay}ms (attempt ${reconnectAttemptsRef.current + 1}/${maxReconnectAttempts})`);
 
         reconnectTimeoutRef.current = setTimeout(() => {
           reconnectAttemptsRef.current++;
           connectWebSocket();
         }, delay);
-      } else {
-        console.log('[PodWebSocket] Max reconnect attempts reached');
       }
     };
 

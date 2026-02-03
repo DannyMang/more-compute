@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  morecompute:
+    build: .
+    ports:
+      - "3141:3141"
+      - "2718:2718"
+    volumes:
+      - ./notebooks:/notebooks
+    environment:
+      - MORECOMPUTE_PORT=3141
+      - MORECOMPUTE_FRONTEND_PORT=2718

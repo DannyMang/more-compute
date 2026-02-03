@@ -67,7 +67,6 @@ export class WebSocketService {
       this.socket = this.createSocketWrapper(ws);
 
       this.socket.on('connect', () => {
-        console.log('Connected to server');
         resolve();
       });
 
@@ -77,7 +76,7 @@ export class WebSocketService {
       });
 
       this.socket.on('disconnect', () => {
-        console.log('Disconnected from server');
+        // Disconnected from server
       });
 
       // Set up event forwarding

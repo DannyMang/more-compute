@@ -14,6 +14,8 @@ import {
   PodWebSocketProvider,
   usePodWebSocket,
 } from "@/contexts/PodWebSocketContext";
+import { ClaudeProvider, useClaude } from "@/contexts/ClaudeContext";
+import ClaudePanel from "@/components/panels/ClaudePanel";
 import { loadSettings, applyTheme, type NotebookSettings } from "@/lib/settings";
 import { fetchMetrics, type MetricsSnapshot } from "@/lib/api";
 import "./globals.css";
@@ -25,6 +27,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
   const [activePopup, setActivePopup] = useState<string | null>(null);
   const [showRestartModal, setShowRestartModal] = useState(false);
   const { connectionState, gpuPods, connectingPodId } = usePodWebSocket();
+  const { isPanelOpen: isClaudePanelOpen } = useClaude();
 
   // Persistent metrics collection
   const [metricsHistory, setMetricsHistory] = useState<MetricsSnapshot[]>([]);
@@ -74,7 +77,6 @@ function AppContent({ children }: { children: React.ReactNode }) {
   }, [appSettings.metricsCollectionMode]);
 
   const handleSettingsChange = (settings: NotebookSettings) => {
-    console.log("Settings updated:", settings);
     setAppSettings(settings);
   };
 
@@ -213,7 +215,13 @@ function AppContent({ children }: { children: React.ReactNode }) {
             </span>
           </div>
         </div>
-        <div className="main-content">{children}</div>
+        <div
+          className="main-content"
+          style={{ marginRight: isClaudePanelOpen ? '400px' : '0' }}
+        >
+          {children}
+        </div>
+        <ClaudePanel />
         <div style={{ display: "none" }}>
           <span id="connection-status">Connected</span>
           <span id="kernel-status">Ready</span>
@@ -267,7 +275,9 @@ export default function RootLayout({
       </head>
       <body data-notebook-path={notebookPath} data-notebook-root={notebookRoot}>
         <PodWebSocketProvider>
-          <AppContent>{children}</AppContent>
+          <ClaudeProvider>
+            <AppContent>{children}</AppContent>
+          </ClaudeProvider>
         </PodWebSocketProvider>
         <Script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js" />
         <Script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/python/python.min.js" />

@@ -555,6 +555,19 @@ def main(argv=None):
         print_help()
         sys.exit(0)
 
+    # Check for updates (non-blocking, in background thread)
+    def check_updates_background():
+        try:
+            from morecompute.utils.version_check import check_for_updates
+            update_msg = check_for_updates(__version__)
+            if update_msg:
+                print(update_msg)
+        except Exception:
+            pass  # Don't fail if version check fails
+
+    update_thread = threading.Thread(target=check_updates_background, daemon=True)
+    update_thread.start()
+
     raw_notebook_path = args.notebook_path
 
     # Handle "new" command

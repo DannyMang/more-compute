@@ -127,6 +127,17 @@ class Notebook:
                         cell['id'] = self._generate_cell_id()
                     self.cells.append(cell)
 
+                # Ensure at least one empty cell exists 
+                if not self.cells:
+                    self.cells.append({
+                        'id': self._generate_cell_id(),
+                        'cell_type': 'code',
+                        'source': '',
+                        'metadata': {},
+                        'outputs': [],
+                        'execution_count': None
+                    })
+
                 self.metadata = data.get('metadata', {})
                 self.file_path = file_path
 

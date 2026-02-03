@@ -195,3 +195,65 @@ class AvailabilityQuery(BaseModel):
     gpu_count: int | None = None
     gpu_type: str | None = None
     security: str | None = None
+
+
+# ============================================================================
+# Multi-Provider API Models
+# ============================================================================
+
+class ProviderInfo(BaseModel):
+    """Information about a GPU cloud provider."""
+    name: str  # Internal name (e.g., "runpod")
+    display_name: str  # Human-readable name (e.g., "RunPod")
+    api_key_env_name: str  # Environment variable name
+    supports_ssh: bool  # Whether provider supports SSH connections
+    dashboard_url: str  # URL to get API key
+    configured: bool = False  # Whether API key is configured
+    is_active: bool = False  # Whether this is the currently active provider
+
+
+class ProviderListResponse(BaseModel):
+    """Response model for listing providers."""
+    providers: list[ProviderInfo]
+    active_provider: str | None = None
+
+
+class ProviderConfigRequest(BaseModel):
+    """Request model for configuring a provider API key."""
+    api_key: str
+    token_secret: str | None = None  # For Modal which requires two tokens
+    make_active: bool = False  # Whether to make this the active provider
+
+
+class SetActiveProviderRequest(BaseModel):
+    """Request model for setting the active provider."""
+    provider: str
+
+
+class GpuAvailabilityResponse(BaseModel):
+    """Response model for GPU availability."""
+    data: list[dict]
+    total_count: int
+    provider: str
+    note: str | None = None
+
+
+class PodListResponse(BaseModel):
+    """Response model for listing pods."""
+    data: list[dict]
+    total_count: int
+    offset: int
+    limit: int
+    provider: str
+
+
+class PodWithProvider(PodResponse):
+    """Pod response with provider information."""
+    provider: str = "prime_intellect"
+
+
+class CreatePodWithProviderRequest(BaseModel):
+    """Request to create a pod with explicit provider selection."""
+    pod: PodConfig
+    provider_name: str  # Provider to use (e.g., "runpod", "lambda_labs")
+    team: TeamConfig | None = None

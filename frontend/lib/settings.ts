@@ -111,11 +111,13 @@ export type MetricsCollectionMode = 'persistent' | 'on-demand';
 export type NotebookSettings = {
   theme: keyof typeof THEMES;
   metricsCollectionMode: MetricsCollectionMode;
+  claudeAutoPreview: boolean; // Whether to auto-preview Claude's code edits in cells
 };
 
 export const DEFAULT_SETTINGS: NotebookSettings = {
   theme: 'light',
   metricsCollectionMode: 'on-demand', // Only collect metrics when popup is open to save memory
+  claudeAutoPreview: false, // OFF by default - users must explicitly enable auto-preview
 };
 
 const STORAGE_KEY = 'morecompute-settings';
@@ -134,6 +136,9 @@ export function loadSettings(): NotebookSettings {
       metricsCollectionMode: parsed.metricsCollectionMode === 'on-demand' || parsed.metricsCollectionMode === 'persistent'
         ? parsed.metricsCollectionMode
         : DEFAULT_SETTINGS.metricsCollectionMode,
+      claudeAutoPreview: typeof parsed.claudeAutoPreview === 'boolean'
+        ? parsed.claudeAutoPreview
+        : DEFAULT_SETTINGS.claudeAutoPreview,
     };
 
     // Save cleaned settings back to localStorage

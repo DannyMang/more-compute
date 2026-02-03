@@ -7,43 +7,63 @@ interface FilterPopupProps {
   filters: GpuAvailabilityParams;
   onFiltersChange: (filters: GpuAvailabilityParams) => void;
   onApply: () => void;
+  providerName?: string;
 }
 
+// Common GPU types across providers
 const GPU_TYPES = [
-  { value: "H100_80GB", label: "H100 80GB" },
-  { value: "H200_96GB", label: "H200 96GB" },
-  { value: "GH200_96GB", label: "GH200 96GB" },
-  { value: "H200_141GB", label: "H200 141GB" },
-  { value: "B200_180GB", label: "B200 180GB" },
-  { value: "A100_80GB", label: "A100 80GB" },
-  { value: "A100_40GB", label: "A100 40GB" },
-  { value: "A10_24GB", label: "A10 24GB" },
-  { value: "A30_24GB", label: "A30 24GB" },
-  { value: "A40_48GB", label: "A40 48GB" },
-  { value: "RTX4090_24GB", label: "RTX 4090 24GB" },
-  { value: "RTX5090_32GB", label: "RTX 5090 32GB" },
-  { value: "RTX4080_16GB", label: "RTX 4080 16GB" },
-  { value: "RTX4080Ti_16GB", label: "RTX 4080 Ti 16GB" },
-  { value: "RTX4070Ti_12GB", label: "RTX 4070 Ti 12GB" },
-  { value: "RTX3090_24GB", label: "RTX 3090 24GB" },
-  { value: "RTX3090Ti_24GB", label: "RTX 3090 Ti 24GB" },
-  { value: "RTX3080_10GB", label: "RTX 3080 10GB" },
-  { value: "RTX3080Ti_12GB", label: "RTX 3080 Ti 12GB" },
-  { value: "RTX3070_8GB", label: "RTX 3070 8GB" },
-  { value: "L40S_48GB", label: "L40S 48GB" },
-  { value: "L40_48GB", label: "L40 48GB" },
-  { value: "L4_24GB", label: "L4 24GB" },
-  { value: "V100_32GB", label: "V100 32GB" },
-  { value: "V100_16GB", label: "V100 16GB" },
-  { value: "T4_16GB", label: "T4 16GB" },
-  { value: "P100_16GB", label: "P100 16GB" },
-  { value: "A6000_48GB", label: "A6000 48GB" },
-  { value: "A5000_24GB", label: "A5000 24GB" },
-  { value: "A4000_16GB", label: "A4000 16GB" },
-  { value: "RTX6000Ada_48GB", label: "RTX 6000 Ada 48GB" },
-  { value: "RTX5000Ada_32GB", label: "RTX 5000 Ada 32GB" },
-  { value: "RTX4000Ada_20GB", label: "RTX 4000 Ada 20GB" },
+  { value: "H100", label: "H100" },
+  { value: "H200", label: "H200" },
+  { value: "A100", label: "A100" },
+  { value: "A10", label: "A10" },
+  { value: "A30", label: "A30" },
+  { value: "A40", label: "A40" },
+  { value: "A6000", label: "A6000" },
+  { value: "A5000", label: "A5000" },
+  { value: "A4000", label: "A4000" },
+  { value: "L40S", label: "L40S" },
+  { value: "L40", label: "L40" },
+  { value: "L4", label: "L4" },
+  { value: "RTX 4090", label: "RTX 4090" },
+  { value: "RTX 4080", label: "RTX 4080" },
+  { value: "RTX 4070", label: "RTX 4070" },
+  { value: "RTX 3090", label: "RTX 3090" },
+  { value: "RTX 3080", label: "RTX 3080" },
+  { value: "RTX 3070", label: "RTX 3070" },
+  { value: "RTX 6000", label: "RTX 6000 Ada" },
+  { value: "RTX 5000", label: "RTX 5000 Ada" },
+  { value: "RTX 4000", label: "RTX 4000 Ada" },
+  { value: "V100", label: "V100" },
+  { value: "T4", label: "T4" },
+  { value: "P100", label: "P100" },
 ];
+
+// Provider-specific filter categories
+type FilterCategory = "gpu_type" | "gpu_count" | "cloud_type" | "verified" | "reliability";
+
+const getFilterCategoriesForProvider = (provider: string): { value: FilterCategory; label: string }[] => {
+  const common = [
+    { value: "gpu_type" as FilterCategory, label: "GPU Type" },
+    { value: "gpu_count" as FilterCategory, label: "GPU Count" },
+  ];
+
+  switch (provider) {
+    case "runpod":
+      return [
+        ...common,
+        { value: "cloud_type" as FilterCategory, label: "Cloud Type" },
+      ];
+    case "vastai":
+      return [
+        ...common,
+        { value: "verified" as FilterCategory, label: "Verified" },
+        { value: "reliability" as FilterCategory, label: "Reliability" },
+      ];
+    case "lambda_labs":
+    default:
+      return common;
+  }
+};
 
 const FilterPopup: React.FC<FilterPopupProps> = ({
   isOpen,
@@ -51,15 +71,36 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
   filters,
   onFiltersChange,
   onApply,
+  providerName = "runpod",
 }) => {
-  const [filterCategory, setFilterCategory] = React.useState<string>("gpu_type");
+  const categories = getFilterCategoriesForProvider(providerName);
+  const [filterCategory, setFilterCategory] = React.useState<FilterCategory>(categories[0]?.value || "gpu_type");
   const [filterSearch, setFilterSearch] = React.useState<string>("");
+
+  // Reset category when provider changes
+  React.useEffect(() => {
+    const validCategories = getFilterCategoriesForProvider(providerName);
+    if (!validCategories.find(c => c.value === filterCategory)) {
+      setFilterCategory(validCategories[0]?.value || "gpu_type");
+    }
+  }, [providerName, filterCategory]);
 
   if (!isOpen) return null;
 
   const handleClearAll = () => {
     onFiltersChange({});
     setFilterSearch("");
+  };
+
+  // Get the count of active filters
+  const getActiveFilterCount = (): number => {
+    let count = 0;
+    if (filters.gpu_type) count++;
+    if (filters.gpu_count) count++;
+    if (filters.secure_cloud !== undefined || filters.community_cloud !== undefined) count++;
+    if (filters.verified !== undefined) count++;
+    if (filters.min_reliability !== undefined) count++;
+    return count;
   };
 
   return (
@@ -113,7 +154,7 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
               color: "var(--mc-text-color)",
             }}
           >
-            Filter
+            Filter {getActiveFilterCount() > 0 && `(${getActiveFilterCount()})`}
           </h4>
           <button
             onClick={handleClearAll}
@@ -135,7 +176,7 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
         <select
           value={filterCategory}
           onChange={(e) => {
-            setFilterCategory(e.target.value);
+            setFilterCategory(e.target.value as FilterCategory);
             setFilterSearch("");
           }}
           style={{
@@ -150,30 +191,33 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
             cursor: "pointer",
           }}
         >
-          <option value="gpu_type">GPU Type</option>
-          <option value="gpu_count">GPU Count</option>
-          <option value="security">Security</option>
-          <option value="socket">Socket</option>
+          {categories.map((cat) => (
+            <option key={cat.value} value={cat.value}>
+              {cat.label}
+            </option>
+          ))}
         </select>
 
-        {/* Search within category */}
-        <input
-          type="text"
-          placeholder="Search"
-          value={filterSearch}
-          onChange={(e) => setFilterSearch(e.target.value)}
-          style={{
-            width: "100%",
-            padding: "8px 10px",
-            borderRadius: "6px",
-            border: "1px solid var(--mc-border)",
-            backgroundColor: "var(--mc-input-background)",
-            color: "var(--mc-text-color)",
-            fontSize: "12px",
-            marginBottom: "12px",
-            boxSizing: "border-box",
-          }}
-        />
+        {/* Search within category (only for GPU type) */}
+        {filterCategory === "gpu_type" && (
+          <input
+            type="text"
+            placeholder="Search GPU types..."
+            value={filterSearch}
+            onChange={(e) => setFilterSearch(e.target.value)}
+            style={{
+              width: "100%",
+              padding: "8px 10px",
+              borderRadius: "6px",
+              border: "1px solid var(--mc-border)",
+              backgroundColor: "var(--mc-input-background)",
+              color: "var(--mc-text-color)",
+              fontSize: "12px",
+              marginBottom: "12px",
+              boxSizing: "border-box",
+            }}
+          />
+        )}
 
         {/* Options List */}
         <div
@@ -187,8 +231,40 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
             padding: "4px",
           }}
         >
+          {/* GPU Type Filter - Universal */}
           {filterCategory === "gpu_type" && (
             <>
+              <label
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "8px 6px",
+                  cursor: "pointer",
+                  fontSize: "12px",
+                  color: "var(--mc-text-color)",
+                  borderRadius: "4px",
+                  transition: "background-color 0.15s",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.backgroundColor = "transparent")
+                }
+              >
+                <input
+                  type="radio"
+                  checked={!filters.gpu_type}
+                  onChange={() =>
+                    onFiltersChange({
+                      ...filters,
+                      gpu_type: undefined,
+                    })
+                  }
+                  style={{ marginRight: "10px", cursor: "pointer" }}
+                />
+                All GPUs
+              </label>
               {GPU_TYPES.filter((gpu) =>
                 gpu.label.toLowerCase().includes(filterSearch.toLowerCase())
               ).map((gpu) => (
@@ -228,155 +304,195 @@ const FilterPopup: React.FC<FilterPopupProps> = ({
             </>
           )}
 
+          {/* GPU Count Filter - Universal */}
           {filterCategory === "gpu_count" && (
             <>
               {[
-                { value: "", label: "Any" },
-                { value: "1", label: "1 GPU" },
-                { value: "2", label: "2 GPUs" },
-                { value: "4", label: "4 GPUs" },
-                { value: "8", label: "8 GPUs" },
-              ]
-                .filter((option) =>
-                  option.label.toLowerCase().includes(filterSearch.toLowerCase())
-                )
-                .map((option) => (
-                  <label
-                    key={option.value}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "8px 6px",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                      color: "var(--mc-text-color)",
-                      borderRadius: "4px",
-                      transition: "background-color 0.15s",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
+                { value: undefined, label: "Any" },
+                { value: 1, label: "1 GPU" },
+                { value: 2, label: "2 GPUs" },
+                { value: 4, label: "4 GPUs" },
+                { value: 8, label: "8 GPUs" },
+              ].map((option) => (
+                <label
+                  key={option.label}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "8px 6px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    color: "var(--mc-text-color)",
+                    borderRadius: "4px",
+                    transition: "background-color 0.15s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "transparent")
+                  }
+                >
+                  <input
+                    type="radio"
+                    checked={filters.gpu_count === option.value}
+                    onChange={() =>
+                      onFiltersChange({
+                        ...filters,
+                        gpu_count: option.value,
+                      })
                     }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.backgroundColor = "transparent")
-                    }
-                  >
-                    <input
-                      type="radio"
-                      checked={
-                        (filters.gpu_count?.toString() || "") === option.value
-                      }
-                      onChange={() =>
-                        onFiltersChange({
-                          ...filters,
-                          gpu_count: option.value
-                            ? parseInt(option.value)
-                            : undefined,
-                        })
-                      }
-                      style={{ marginRight: "10px", cursor: "pointer" }}
-                    />
-                    {option.label}
-                  </label>
-                ))}
+                    style={{ marginRight: "10px", cursor: "pointer" }}
+                  />
+                  {option.label}
+                </label>
+              ))}
             </>
           )}
 
-          {filterCategory === "security" && (
+          {/* Cloud Type Filter - RunPod specific */}
+          {filterCategory === "cloud_type" && providerName === "runpod" && (
             <>
               {[
-                { value: "", label: "All" },
-                { value: "secure_cloud", label: "Secure Cloud" },
-                {
-                  value: "community_cloud",
-                  label: "Community Cloud",
-                },
-              ]
-                .filter((option) =>
-                  option.label.toLowerCase().includes(filterSearch.toLowerCase())
-                )
-                .map((option) => (
-                  <label
-                    key={option.value}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "8px 6px",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                      color: "var(--mc-text-color)",
-                      borderRadius: "4px",
-                      transition: "background-color 0.15s",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
+                { secure: undefined, community: undefined, label: "All Clouds" },
+                { secure: true, community: undefined, label: "Secure Cloud Only" },
+                { secure: undefined, community: true, label: "Community Cloud Only" },
+              ].map((option) => (
+                <label
+                  key={option.label}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "8px 6px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    color: "var(--mc-text-color)",
+                    borderRadius: "4px",
+                    transition: "background-color 0.15s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "transparent")
+                  }
+                >
+                  <input
+                    type="radio"
+                    checked={
+                      filters.secure_cloud === option.secure &&
+                      filters.community_cloud === option.community
                     }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.backgroundColor = "transparent")
+                    onChange={() =>
+                      onFiltersChange({
+                        ...filters,
+                        secure_cloud: option.secure,
+                        community_cloud: option.community,
+                      })
                     }
-                  >
-                    <input
-                      type="radio"
-                      checked={(filters.security || "") === option.value}
-                      onChange={() =>
-                        onFiltersChange({
-                          ...filters,
-                          security: option.value || undefined,
-                        })
-                      }
-                      style={{ marginRight: "10px", cursor: "pointer" }}
-                    />
-                    {option.label}
-                  </label>
-                ))}
+                    style={{ marginRight: "10px", cursor: "pointer" }}
+                  />
+                  {option.label}
+                </label>
+              ))}
+              <div style={{ padding: "8px 6px", fontSize: "11px", color: "var(--mc-text-secondary)", borderTop: "1px solid var(--mc-border)", marginTop: "8px" }}>
+                Secure Cloud: T3/T4 certified data centers<br />
+                Community Cloud: User-hosted GPUs
+              </div>
             </>
           )}
 
-          {filterCategory === "socket" && (
+          {/* Verified Filter - Vast.ai specific */}
+          {filterCategory === "verified" && providerName === "vastai" && (
             <>
               {[
-                { value: "", label: "All" },
-                { value: "PCIe", label: "PCIe" },
-                { value: "SXM4", label: "SXM4" },
-                { value: "SXM5", label: "SXM5" },
-                { value: "SXM6", label: "SXM6" },
-              ]
-                .filter((option) =>
-                  option.label.toLowerCase().includes(filterSearch.toLowerCase())
-                )
-                .map((option) => (
-                  <label
-                    key={option.value}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: "8px 6px",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                      color: "var(--mc-text-color)",
-                      borderRadius: "4px",
-                      transition: "background-color 0.15s",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
+                { value: undefined, label: "All Hosts" },
+                { value: true, label: "Verified Hosts Only" },
+              ].map((option) => (
+                <label
+                  key={option.label}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "8px 6px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    color: "var(--mc-text-color)",
+                    borderRadius: "4px",
+                    transition: "background-color 0.15s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "transparent")
+                  }
+                >
+                  <input
+                    type="radio"
+                    checked={filters.verified === option.value}
+                    onChange={() =>
+                      onFiltersChange({
+                        ...filters,
+                        verified: option.value,
+                      })
                     }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.backgroundColor = "transparent")
+                    style={{ marginRight: "10px", cursor: "pointer" }}
+                  />
+                  {option.label}
+                </label>
+              ))}
+              <div style={{ padding: "8px 6px", fontSize: "11px", color: "var(--mc-text-secondary)", borderTop: "1px solid var(--mc-border)", marginTop: "8px" }}>
+                Verified hosts have been validated by Vast.ai for reliability
+              </div>
+            </>
+          )}
+
+          {/* Reliability Filter - Vast.ai specific */}
+          {filterCategory === "reliability" && providerName === "vastai" && (
+            <>
+              {[
+                { value: undefined, label: "Any Reliability" },
+                { value: 0.9, label: "90%+ Reliability" },
+                { value: 0.95, label: "95%+ Reliability" },
+                { value: 0.99, label: "99%+ Reliability" },
+              ].map((option) => (
+                <label
+                  key={option.label}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "8px 6px",
+                    cursor: "pointer",
+                    fontSize: "12px",
+                    color: "var(--mc-text-color)",
+                    borderRadius: "4px",
+                    transition: "background-color 0.15s",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.backgroundColor = "var(--mc-secondary)")
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.backgroundColor = "transparent")
+                  }
+                >
+                  <input
+                    type="radio"
+                    checked={filters.min_reliability === option.value}
+                    onChange={() =>
+                      onFiltersChange({
+                        ...filters,
+                        min_reliability: option.value,
+                      })
                     }
-                  >
-                    <input
-                      type="radio"
-                      checked={(filters.socket || "") === option.value}
-                      onChange={() =>
-                        onFiltersChange({
-                          ...filters,
-                          socket: option.value || undefined,
-                        })
-                      }
-                      style={{ marginRight: "10px", cursor: "pointer" }}
-                    />
-                    {option.label}
-                  </label>
-                ))}
+                    style={{ marginRight: "10px", cursor: "pointer" }}
+                  />
+                  {option.label}
+                </label>
+              ))}
+              <div style={{ padding: "8px 6px", fontSize: "11px", color: "var(--mc-text-secondary)", borderTop: "1px solid var(--mc-border)", marginTop: "8px" }}>
+                Higher reliability means fewer unexpected interruptions
+              </div>
             </>
           )}
         </div>

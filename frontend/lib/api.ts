@@ -171,8 +171,13 @@ export interface GpuAvailabilityParams {
   regions?: string[];
   gpu_count?: number;
   gpu_type?: string;
-  socket?: string;
-  security?: string;
+  // RunPod specific
+  secure_cloud?: boolean;
+  community_cloud?: boolean;
+  // Vast.ai specific
+  verified?: boolean;
+  min_reliability?: number;
+  min_gpu_ram?: number;
 }
 
 export interface PodsListParams {
@@ -187,18 +192,26 @@ export interface GpuAvailability {
   socket: string;
   provider: string;
   gpuCount: number;
-  gpuMemory: number;
-  security: string;
-  prices: {
+  gpuMemory?: number;
+  security?: string;
+  // Prime Intellect format
+  prices?: {
     onDemand: number;
     communityPrice: number | null;
     isVariable: boolean | null;
     currency: string;
   };
-  images: string[];
+  // Lambda Labs / other providers format
+  priceHr?: number;
+  gpuName?: string;
+  regionDescription?: string;
+  vcpus?: number;
+  memoryGb?: number;
+  storageGb?: number;
+  images?: string[];
   region: string | null;
-  dataCenter: string | null;
-  country: string | null;
+  dataCenter?: string | null;
+  country?: string | null;
   disk?: {
     minCount: number | null;
     defaultCount: number | null;
@@ -299,11 +312,22 @@ export async function fetchGpuAvailability(
   if (params?.gpu_type) {
     queryParams.set("gpu_type", params.gpu_type);
   }
-  if (params?.socket) {
-    queryParams.set("socket", params.socket);
+  // RunPod specific
+  if (params?.secure_cloud !== undefined) {
+    queryParams.set("secure_cloud", String(params.secure_cloud));
   }
-  if (params?.security) {
-    queryParams.set("security", params.security);
+  if (params?.community_cloud !== undefined) {
+    queryParams.set("community_cloud", String(params.community_cloud));
+  }
+  // Vast.ai specific
+  if (params?.verified !== undefined) {
+    queryParams.set("verified", String(params.verified));
+  }
+  if (params?.min_reliability !== undefined) {
+    queryParams.set("min_reliability", String(params.min_reliability));
+  }
+  if (params?.min_gpu_ram !== undefined) {
+    queryParams.set("min_gpu_ram", String(params.min_gpu_ram));
   }
 
   const query = queryParams.toString();
@@ -470,4 +494,291 @@ export async function fixIndentation(code: string): Promise<string> {
 
   const data = await response.json();
   return data.fixed_code;
+}
+
+// ============================================================================
+// Multi-Provider GPU API Types & Functions
+// ============================================================================
+
+export interface ProviderInfo {
+  name: string;
+  display_name: string;
+  api_key_env_name: string;
+  supports_ssh: boolean;
+  dashboard_url: string;
+  configured: boolean;
+  is_active: boolean;
+}
+
+export interface ProvidersListResponse {
+  providers: ProviderInfo[];
+  active_provider: string | null;
+}
+
+export interface ProviderConfigRequest {
+  api_key: string;
+  make_active?: boolean;
+}
+
+export interface ProviderConfigResponse {
+  configured: boolean;
+  provider: string;
+  is_active: boolean;
+}
+
+export interface SetActiveProviderRequest {
+  provider: string;
+}
+
+export interface SetActiveProviderResponse {
+  active_provider: string;
+  success: boolean;
+}
+
+// Extended pod response with provider info
+export interface PodResponseWithProvider extends PodResponse {
+  provider?: string;
+}
+
+// Extended connection status with provider info
+export interface PodConnectionStatusWithProvider extends PodConnectionStatus {
+  provider?: string;
+}
+
+/**
+ * Fetch list of all available GPU providers with their configuration status.
+ */
+export async function fetchGpuProviders(): Promise<ProvidersListResponse> {
+  const response = await fetch("/api/gpu/providers");
+  if (!response.ok) {
+    throw new Error(`Failed to fetch GPU providers: ${response.status}`);
+  }
+  return response.json();
+}
+
+/**
+ * Configure a GPU provider with an API key.
+ */
+export async function configureGpuProvider(
+  providerName: string,
+  config: ProviderConfigRequest
+): Promise<ProviderConfigResponse> {
+  const response = await fetch(`/api/gpu/providers/${providerName}/config`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(config),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to configure provider: ${response.status} - ${errorText}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Set the active GPU provider.
+ */
+export async function setActiveGpuProvider(
+  providerName: string
+): Promise<SetActiveProviderResponse> {
+  const response = await fetch("/api/gpu/providers/active", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ provider: providerName }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to set active provider: ${response.status} - ${errorText}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch GPU availability from a specific provider.
+ */
+export async function fetchProviderGpuAvailability(
+  providerName: string,
+  params?: GpuAvailabilityParams
+): Promise<GpuAvailabilityResponse & { provider: string }> {
+  const queryParams = new URLSearchParams();
+
+  if (params?.regions) {
+    params.regions.forEach((region) => queryParams.append("regions", region));
+  }
+  if (params?.gpu_count !== undefined) {
+    queryParams.set("gpu_count", String(params.gpu_count));
+  }
+  if (params?.gpu_type) {
+    queryParams.set("gpu_type", params.gpu_type);
+  }
+  // RunPod specific
+  if (params?.secure_cloud !== undefined) {
+    queryParams.set("secure_cloud", String(params.secure_cloud));
+  }
+  if (params?.community_cloud !== undefined) {
+    queryParams.set("community_cloud", String(params.community_cloud));
+  }
+  // Vast.ai specific
+  if (params?.verified !== undefined) {
+    queryParams.set("verified", String(params.verified));
+  }
+  if (params?.min_reliability !== undefined) {
+    queryParams.set("min_reliability", String(params.min_reliability));
+  }
+  if (params?.min_gpu_ram !== undefined) {
+    queryParams.set("min_gpu_ram", String(params.min_gpu_ram));
+  }
+
+  const query = queryParams.toString();
+  const url = query
+    ? `/api/gpu/providers/${providerName}/availability?${query}`
+    : `/api/gpu/providers/${providerName}/availability`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch GPU availability from ${providerName}: ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch pods from a specific provider.
+ */
+export async function fetchProviderPods(
+  providerName: string,
+  params?: PodsListParams
+): Promise<PodsListResponse & { provider: string }> {
+  const queryParams = new URLSearchParams();
+
+  if (params?.status) {
+    queryParams.set("status", params.status);
+  }
+  if (params?.limit !== undefined) {
+    queryParams.set("limit", String(params.limit));
+  }
+  if (params?.offset !== undefined) {
+    queryParams.set("offset", String(params.offset));
+  }
+
+  const query = queryParams.toString();
+  const url = query
+    ? `/api/gpu/providers/${providerName}/pods?${query}`
+    : `/api/gpu/providers/${providerName}/pods`;
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch pods from ${providerName}: ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Create a pod with a specific provider.
+ */
+export async function createProviderPod(
+  providerName: string,
+  podRequest: CreatePodRequest
+): Promise<PodResponseWithProvider> {
+  const response = await fetch(`/api/gpu/providers/${providerName}/pods`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(podRequest),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to create pod with ${providerName}: ${response.status} - ${errorText}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch a specific pod from a provider.
+ */
+export async function fetchProviderPod(
+  providerName: string,
+  podId: string
+): Promise<PodResponseWithProvider> {
+  const response = await fetch(
+    `/api/gpu/providers/${providerName}/pods/${podId}`
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `Failed to fetch pod from ${providerName}: ${response.status}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Delete a pod from a specific provider.
+ */
+export async function deleteProviderPod(
+  providerName: string,
+  podId: string
+): Promise<DeletePodResponse & { provider: string }> {
+  const response = await fetch(
+    `/api/gpu/providers/${providerName}/pods/${podId}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to delete pod from ${providerName}: ${response.status} - ${errorText}`
+    );
+  }
+
+  return response.json();
+}
+
+/**
+ * Connect to a pod from a specific provider.
+ */
+export async function connectToProviderPod(
+  providerName: string,
+  podId: string
+): Promise<PodConnectionResponse & { provider: string }> {
+  const response = await fetch(
+    `/api/gpu/providers/${providerName}/pods/${podId}/connect`,
+    {
+      method: "POST",
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Failed to connect to pod: ${response.status} - ${errorText}`
+    );
+  }
+
+  return response.json();
 }

@@ -14,9 +14,10 @@ const POLL_MS = 3000;
 interface MetricsPopupProps {
   onClose?: () => void;
   sharedHistory?: MetricsSnapshot[]; // Passed from parent when in persistent mode
+  connectedProvider?: string; // Provider name for the connected pod
 }
 
-const MetricsPopup: React.FC<MetricsPopupProps> = ({ onClose, sharedHistory }) => {
+const MetricsPopup: React.FC<MetricsPopupProps> = ({ onClose, sharedHistory, connectedProvider }) => {
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null);
   const [localHistory, setLocalHistory] = useState<MetricsSnapshot[]>([]);
   const intervalRef = useRef<number | null>(null);
@@ -58,8 +59,26 @@ const MetricsPopup: React.FC<MetricsPopupProps> = ({ onClose, sharedHistory }) =
 
   const hasGPU = metrics?.gpu && metrics.gpu.length > 0;
 
+  // Provider display name mapping (SSH-based providers only)
+  const getProviderDisplayName = (provider?: string) => {
+    const names: Record<string, string> = {
+      prime_intellect: "Prime Intellect",
+      runpod: "RunPod",
+      lambda_labs: "Lambda Labs",
+      vastai: "Vast.ai",
+    };
+    return provider ? names[provider] || provider : "Local";
+  };
+
   return (
     <div className="metrics-container">
+      {/* Provider badge */}
+      {connectedProvider && (
+        <div className="metrics-provider-badge ssh-provider">
+          <span className="provider-dot" />
+          <span>Metrics from {getProviderDisplayName(connectedProvider)}</span>
+        </div>
+      )}
       <div className="metrics-grid">
         {metrics?.cpu && (
           <Panel title="CPU Utilization" icon={<Cpu size={14} />}>

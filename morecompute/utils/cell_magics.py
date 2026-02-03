@@ -251,7 +251,6 @@ class CellMagicHandlers:
                 # Track process for interrupt handling
                 if hasattr(cell_magic_handler, 'special_handler'):
                     cell_magic_handler.special_handler.current_process_sync = process
-                    print(f"[CELL_MAGIC] Tracking sync subprocess PID={process.pid}", file=sys.stderr, flush=True)
 
                 # Read and print output line by line (real-time streaming)
                 def read_stream(stream, output_type):
@@ -292,7 +291,6 @@ class CellMagicHandlers:
                             if hasattr(cell_magic_handler, 'special_handler'):
                                 if cell_magic_handler.special_handler.sync_interrupted:
                                     # Process was killed by interrupt handler
-                                    print(f"[CELL_MAGIC] Process was interrupted, raising KeyboardInterrupt", file=sys.stderr, flush=True)
                                     raise KeyboardInterrupt("Execution interrupted by user")
 
                     return_code = process.returncode
@@ -312,7 +310,6 @@ class CellMagicHandlers:
                 # Clear process reference
                 if hasattr(cell_magic_handler, 'special_handler'):
                     cell_magic_handler.special_handler.current_process_sync = None
-                    print(f"[CELL_MAGIC] Cleared sync subprocess reference", file=sys.stderr, flush=True)
 
                 return return_code
 
