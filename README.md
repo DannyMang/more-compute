@@ -1,5 +1,7 @@
 # more-compute
 
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/more-compute?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads)](https://pepy.tech/projects/more-compute)
+
 [![PyPI version](https://badge.fury.io/py/more-compute.svg)](https://pypi.org/project/more-compute/)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
