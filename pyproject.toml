@@ -53,10 +53,11 @@ version = {attr = "morecompute.__version__.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["morecompute*", "frontend"]
+include = ["morecompute*"]
 
 [tool.setuptools.package-data]
-"frontend" = ["**/*.tsx", "**/*.ts", "**/*.js", "**/*.jsx", "**/*.json", "**/*.css", "**/*.mjs", "**/*.md"]
+# Include pre-built static frontend files
+"morecompute" = ["_static/**/*"]
 
 [tool.setuptools.exclude-package-data]
-"frontend" = ["node_modules/**", ".next/**"]
+"morecompute" = ["__pycache__/**"]

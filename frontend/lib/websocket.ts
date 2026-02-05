@@ -1,3 +1,5 @@
+import { getWebSocketUrl } from './config';
+
 type EventCallback = (data?: unknown) => void;
 
 interface SocketWrapper {
@@ -53,12 +55,10 @@ export class WebSocketService {
     };
   }
 
-  connect(url: string = 'ws://localhost:3141'): Promise<void> {
+  connect(url?: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      // For development, connect directly to the backend WebSocket
-      const wsUrl = process.env.NODE_ENV === 'production'
-        ? '/ws'
-        : 'ws://localhost:3141/ws';
+      // Use provided URL or get dynamic URL based on environment
+      const wsUrl = url || getWebSocketUrl();
 
       // Use native WebSocket for FastAPI compatibility
       const ws = new WebSocket(wsUrl);

@@ -15,6 +15,7 @@ import type {
   ClaudeActions,
   ClaudeModel,
 } from "@/types/claude";
+import { getWebSocketUrl } from "@/lib/config";
 
 interface ClaudeContextType extends ClaudeState, ClaudeActions {}
 
@@ -66,7 +67,7 @@ export const ClaudeProvider: React.FC<ClaudeProviderProps> = ({ children }) => {
   // Connect to WebSocket for Claude messages
   useEffect(() => {
     const connectWebSocket = () => {
-      const ws = new WebSocket("ws://127.0.0.1:3141/ws");
+      const ws = new WebSocket(getWebSocketUrl());
 
       ws.onopen = () => {
         // WebSocket connected

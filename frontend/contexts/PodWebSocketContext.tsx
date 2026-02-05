@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { PodResponse } from '@/lib/api';
+import { getWebSocketUrl } from '@/lib/config';
 
 export interface GPUPod {
   id: string;
@@ -97,7 +98,7 @@ export const PodWebSocketProvider: React.FC<PodWebSocketProviderProps> = ({ chil
       wsRef.current = null;
     }
 
-    const wsUrl = 'ws://127.0.0.1:3141/ws';
+    const wsUrl = getWebSocketUrl();
     const ws = new WebSocket(wsUrl);
 
     ws.onopen = () => {

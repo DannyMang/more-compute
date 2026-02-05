@@ -18,6 +18,7 @@ import { ClaudeProvider, useClaude } from "@/contexts/ClaudeContext";
 import ClaudePanel from "@/components/panels/ClaudePanel";
 import { loadSettings, applyTheme, type NotebookSettings } from "@/lib/settings";
 import { fetchMetrics, type MetricsSnapshot } from "@/lib/api";
+import { getWebSocketUrl } from "@/lib/config";
 import "./globals.css";
 
 const POLL_MS = 3000;
@@ -90,7 +91,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
 
   const handleRestartKernel = () => {
     // Send reset kernel command via WebSocket
-    const ws = new WebSocket('ws://127.0.0.1:3141/ws');
+    const ws = new WebSocket(getWebSocketUrl());
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: 'reset_kernel' }));
       setTimeout(() => ws.close(), 100);

@@ -28,8 +28,16 @@ from morecompute.__version__ import __version__
 
 DEFAULT_NOTEBOOK_NAME = "notebook.ipynb"
 
+
+def has_static_frontend() -> bool:
+    """Check if pre-built static frontend is available."""
+    root_dir = Path(__file__).parent
+    static_dir = root_dir / "morecompute" / "_static"
+    return static_dir.exists() and (static_dir / "index.html").exists()
+
+
 class NotebookLauncher:
-    def __init__(self, notebook_path: Path, debug=False):
+    def __init__(self, notebook_path: Path, debug=False, dev_mode=False):
         self.backend_process = None
         self.frontend_process = None
         self.root_dir = Path(__file__).parent
@@ -38,6 +46,13 @@ class NotebookLauncher:
         self.is_windows = platform.system() == "Windows"
         self.cleaning_up = False  # Flag to prevent multiple cleanup calls
         self.frontend_port = int(os.getenv("MORECOMPUTE_FRONTEND_PORT", "2718"))
+        self.backend_port = int(os.getenv("MORECOMPUTE_PORT", "3141"))
+
+        # Production mode: serve static frontend from FastAPI (no Node.js needed)
+        # Dev mode: use Next.js dev server for hot reload
+        # Auto-detect: use dev mode if --dev flag or no static frontend available
+        self.dev_mode = dev_mode or not has_static_frontend()
+
         root_dir = notebook_path.parent if notebook_path.parent != Path('') else Path.cwd()
         os.environ["MORECOMPUTE_ROOT"] = str(root_dir.resolve())
         os.environ["MORECOMPUTE_NOTEBOOK_PATH"] = str(self.notebook_path)
@@ -209,7 +224,15 @@ class NotebookLauncher:
         sys.exit(1)
 
     def start_frontend(self):
-        """Start the Next.js frontend server"""
+        """Start the Next.js frontend server (dev mode only)"""
+        # In production mode, frontend is served by FastAPI - no separate process needed
+        if not self.dev_mode:
+            # Just open browser pointing to the backend (which serves the static frontend)
+            time.sleep(2)
+            webbrowser.open(f"http://localhost:{self.backend_port}")
+            return
+
+        # Development mode: start Next.js dev server for hot reload
         try:
             frontend_dir = self.root_dir / "frontend"
 
@@ -333,8 +356,13 @@ class NotebookLauncher:
 
     def run(self):
         """Main run method"""
+        # In production mode, frontend is served from backend port
+        # In dev mode, frontend is served from separate Next.js server
+        url_port = self.backend_port if not self.dev_mode else self.frontend_port
+        mode_label = "(dev mode)" if self.dev_mode else ""
+
         print("\n        Edit notebook in your browser!\n")
-        print(f"        ➜  URL: http://localhost:{self.frontend_port}\n")
+        print(f"        ➜  URL: http://localhost:{url_port} {mode_label}\n")
 
         # Track Ctrl+C presses
         interrupt_count = [0]  # Use list to allow modification in nested function
@@ -408,6 +436,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Show backend/frontend logs",
     )
     parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="Run in development mode with Node.js hot reload (requires Node.js)",
+    )
+    parser.add_argument(
         "-h",
         "--help",
         action="store_true",
@@ -478,6 +511,7 @@ Commands:
 Options:
   --version, -v                   Show version and exit
   --debug                         Show backend/frontend logs
+  --dev                           Run in dev mode with Node.js hot reload
   --help, -h                      Show this message and exit
 
 Environment variables:
@@ -596,7 +630,8 @@ def main(argv=None):
 
     launcher = NotebookLauncher(
         notebook_path=notebook_path,
-        debug=args.debug
+        debug=args.debug,
+        dev_mode=args.dev
     )
     launcher.run()
 

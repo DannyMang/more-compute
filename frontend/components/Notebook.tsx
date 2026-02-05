@@ -18,6 +18,7 @@ import {
 import { WebSocketService } from "@/lib/websocket-native";
 import AddCellButton from "./cell/AddCellButton";
 import { loadSettings, applyTheme } from "@/lib/settings";
+import { getWebSocketUrl } from "@/lib/config";
 
 // Dynamically import MonacoCell to avoid SSR issues with Monaco Editor
 const CellComponent = dynamic(() => import("./cell/MonacoCell").then(mod => ({ default: mod.MonacoCell })), {
@@ -481,7 +482,7 @@ export const Notebook: React.FC<NotebookProps> = ({
     wsRef.current = ws;
     handleKernelStatusUpdate("connecting");
 
-    ws.connect("ws://127.0.0.1:3141/ws")
+    ws.connect(getWebSocketUrl())
       .then(() => {
         ws.loadNotebook(notebookName || "default");
       })

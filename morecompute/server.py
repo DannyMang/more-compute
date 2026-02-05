@@ -1,6 +1,6 @@
 from cachetools import TTLCache
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import os
 import sys
@@ -1663,3 +1663,61 @@ async def set_claude_config(request: Request):
         raise HTTPException(status_code=500, detail=f"anthropic package not installed: {e}")
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid API key. Please check your credentials.")
+
+
+# ============================================================================
+# Static Frontend Serving (Production Mode)
+# ============================================================================
+
+# Location of pre-built static frontend files
+STATIC_DIR = PACKAGE_DIR / "_static"
+
+
+def _get_index_html() -> str | None:
+    """Read the index.html file from static directory."""
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return index_path.read_text()
+    return None
+
+
+# Serve static frontend if available (production mode)
+if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
+    # Mount static assets (JS, CSS, etc.) - must be before catch-all route
+    app.mount("/_next", StaticFiles(directory=str(STATIC_DIR / "_next")), name="next_static")
+
+    # Serve index.html for the root and any non-API routes (SPA routing)
+    @app.get("/", response_class=HTMLResponse)
+    async def serve_index():
+        """Serve the main index.html for the SPA."""
+        html = _get_index_html()
+        if html:
+            return HTMLResponse(content=html)
+        raise HTTPException(status_code=404, detail="Frontend not found")
+
+    # Catch-all route for SPA client-side routing
+    # This must be defined last to not interfere with API routes
+    @app.get("/{path:path}")
+    async def serve_spa(path: str):
+        """Serve static files or fall back to index.html for SPA routing."""
+        # Don't interfere with API, WebSocket, or assets routes
+        if path.startswith(("api/", "ws", "assets/")):
+            raise HTTPException(status_code=404, detail="Not found")
+
+        # Try to serve static file directly
+        static_file = STATIC_DIR / path
+        if static_file.exists() and static_file.is_file():
+            return FileResponse(static_file)
+
+        # For directories, try index.html inside them (Next.js static export)
+        if static_file.exists() and static_file.is_dir():
+            index_in_dir = static_file / "index.html"
+            if index_in_dir.exists():
+                return FileResponse(index_in_dir)
+
+        # Fall back to main index.html for SPA routing
+        html = _get_index_html()
+        if html:
+            return HTMLResponse(content=html)
+
+        raise HTTPException(status_code=404, detail="Not found")
