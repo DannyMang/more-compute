@@ -72,7 +72,12 @@ packages_cache = TTLCache(maxsize=1, ttl=300)  # 5 minutes cache for packages
 environments_cache = TTLCache(maxsize=1, ttl=300)  # 5 minutes cache for environments
 
 # Mount assets directory for icons, images, etc.
-if ASSETS_DIR.exists():
+# In production mode (static frontend available), use bundled frontend assets
+# Otherwise, fall back to project assets directory
+_STATIC_ASSETS_DIR = PACKAGE_DIR / "_static" / "assets"
+if _STATIC_ASSETS_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(_STATIC_ASSETS_DIR)), name="assets")
+elif ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
 notebook_path_env = os.getenv("MORECOMPUTE_NOTEBOOK_PATH")
@@ -1700,8 +1705,8 @@ if STATIC_DIR.exists() and (STATIC_DIR / "index.html").exists():
     @app.get("/{path:path}")
     async def serve_spa(path: str):
         """Serve static files or fall back to index.html for SPA routing."""
-        # Don't interfere with API, WebSocket, or assets routes
-        if path.startswith(("api/", "ws", "assets/")):
+        # Don't interfere with API or WebSocket routes
+        if path.startswith(("api/", "ws")):
             raise HTTPException(status_code=404, detail="Not found")
 
         # Try to serve static file directly
